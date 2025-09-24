@@ -1,7 +1,6 @@
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TextChatService = game:GetService("TextChatService")
-local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
@@ -11,7 +10,7 @@ local WEBHOOK_URL = "https://discord.com/api/webhooks/1331282303523229716/SJmxqe
 local SEND_COOLDOWN = 2 -- giây tối thiểu giữa 2 request tới Discord
 
 -- === Âm thanh cho Inferno Moon ===
-local SOUND_ID_INFERNO = "rbxassetid://6144653794" -- Brook - Binks' Sake (One Piece)
+local SOUND_ID_INFERNO = "rbxassetid://6144653794"
 local function PlayInfernoSound()
     local sound = Instance.new("Sound")
     sound.SoundId = SOUND_ID_INFERNO
@@ -21,12 +20,8 @@ local function PlayInfernoSound()
     sound:Play()
 
     task.delay(15, function()
-        if sound and sound.IsPlaying then
-            sound:Stop()
-        end
-        if sound then
-            sound:Destroy()
-        end
+        if sound and sound.IsPlaying then sound:Stop() end
+        if sound then sound:Destroy() end
     end)
 end
 
@@ -41,7 +36,7 @@ local moonConfigs = {
     ["monarch moon"]  = { display = "Monarch Moon", color = 0xFFD700 },
     ["tsukuyomi"]     = { display = "Tsukuyomi",    color = 0x00BFFF },
     ["inferno moon"]  = { display = "Inferno Moon", color = 0xFF5555 },
-    ["wolf moon"]     = { display = "Wolf Moon",    color = 0xCCCCFF }, -- thêm Wolf Moon
+    ["wolf moon"]     = { display = "Wolf Moon",    color = 0xCCCCFF },
 }
 
 -- === UI tạo sẵn ===
@@ -62,7 +57,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 34)
 title.Position = UDim2.new(0, 0, 0, 0)
 title.BackgroundColor3 = Color3.fromRGB(40,40,40)
-title.Text = "  :moon: Moon Tracker"
+title.Text = "  🌙 Moon Tracker"
 title.TextColor3 = Color3.fromRGB(255,255,255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 18
@@ -126,7 +121,7 @@ local lastSendTime = 0
 toggleBtn.MouseButton1Click:Connect(function()
     infernoOnly = not infernoOnly
     if infernoOnly then
-        toggleBtn.Text = "Discord: INFERNO :fire:"
+        toggleBtn.Text = "Discord: INFERNO 🔥"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(120,40,40)
     else
         toggleBtn.Text = "Discord: ALL 🌍"
@@ -164,23 +159,17 @@ title.InputBegan:Connect(function(input)
         dragStart = input.Position
         startPos = frame.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
         end)
     end
 end)
 
 title.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then
-        dragInput = input
-    end
+    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
 end)
 
 UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
-        update(input)
-    end
+    if input == dragInput and dragging then update(input) end
 end)
 
 -- Toggle UI bằng phím H
@@ -208,42 +197,27 @@ local function AddLog(text, color)
     logFrame.CanvasPosition = Vector2.new(0, math.max(0, uiList.AbsoluteContentSize.Y - logFrame.AbsoluteSize.Y))
 end
 
--- Hàm escape emoji Discord
-local function escapeDiscord(s)
-    if not s then return "" end
-    s = s:gsub("🌙", ":moon:")
-    s = s:gsub("🔥", ":fire:")
-    return s
-end
-
--- Gửi Discord embed chuẩn, không lỗi font
+-- Gửi Discord embed với emoji thật (chỉ exploit hỗ trợ UTF-8)
 local function SendDiscord(moonDisplay, colorDec, rawText)
     local now = os.time()
     if now - lastSendTime < SEND_COOLDOWN then return end
     lastSendTime = now
 
-    local embed = {
-        title = escapeDiscord("🌙 Moon Cycle Alert"),
-        description = escapeDiscord(("**%s**\n%s"):format(moonDisplay, rawText or "")),
-        color = colorDec or 0xFFFFFF,
-        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
-    }
+    local embedJson = ('{"embeds":[{"title":"🌙 Moon Cycle Alert","description":"**%s**\\n%s","color":%d,"timestamp":"%s"}]}')
+        :format(moonDisplay, rawText or "", colorDec or 16777215, os.date("!%Y-%m-%dT%H:%M:%SZ"))
 
-    local payload = HttpService:JSONEncode({ embeds = { embed } })
-
-    local req = request or http_request or (syn and syn.request)
-    if not req then return end
-
-    task.spawn(function()
-        pcall(function()
-            req({
-                Url = WEBHOOK_URL,
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json; charset=utf-8" },
-                Body = payload
-            })
+    if syn and syn.request then
+        task.spawn(function()
+            pcall(function()
+                syn.request({
+                    Url = WEBHOOK_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json; charset=utf-8" },
+                    Body = embedJson
+                })
+            end)
         end)
-    end)
+    end
 end
 
 -- Detect moon từ chat
@@ -265,6 +239,7 @@ local function detectMoonFromText(text)
     return nil
 end
 
+-- Kết nối chat
 local channel = nil
 pcall(function()
     if TextChatService and TextChatService.TextChannels then
@@ -277,12 +252,10 @@ if channel then
         local raw = (msg.Text or "")
         local key, displayName, colorDec = detectMoonFromText(raw)
         if not key then return end
-
         if key == lastProcessedMoon then return end
         lastProcessedMoon = key
 
-        local timeStr = os.date("[%H:%M:%S] ")
-        AddLog(timeStr .. displayName, Color3.fromRGB(200,200,200))
+        AddLog(os.date("[%H:%M:%S] ") .. displayName, Color3.fromRGB(200,200,200))
 
         if infernoOnly then
             if key == "inferno moon" then
@@ -291,9 +264,7 @@ if channel then
             end
         else
             SendDiscord(displayName, colorDec, raw)
-            if key == "inferno moon" then
-                PlayInfernoSound()
-            end
+            if key == "inferno moon" then PlayInfernoSound() end
         end
     end)
 else
@@ -301,3 +272,4 @@ else
 end
 
 print("MoonTracker loaded. Toggle UI = H, Toggle Discord mode = nút trong UI")
+
