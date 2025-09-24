@@ -20,7 +20,6 @@ local function PlayInfernoSound()
     sound.Parent = workspace
     sound:Play()
 
-    -- Dừng và xóa sau 15s
     task.delay(15, function()
         if sound and sound.IsPlaying then
             sound:Stop()
@@ -33,7 +32,6 @@ end
 
 -- === Bảng tên & màu moon ===
 local moonConfigs = {
-    ["wolf moon"]     = { display = "Wolf Moon",    color = 0xCCCCFF },
     ["full moon"]     = { display = "Full Moon",    color = 0xFFFF00 },
     ["snow moon"]     = { display = "Snow Moon",    color = 0x81D4FA },
     ["blood moon"]    = { display = "Blood Moon",   color = 0xFF4444 },
@@ -43,6 +41,7 @@ local moonConfigs = {
     ["monarch moon"]  = { display = "Monarch Moon", color = 0xFFD700 },
     ["tsukuyomi"]     = { display = "Tsukuyomi",    color = 0x00BFFF },
     ["inferno moon"]  = { display = "Inferno Moon", color = 0xFF5555 },
+    ["wolf moon"]     = { display = "Wolf Moon",    color = 0xCCCCFF }, -- thêm Wolf Moon
 }
 
 -- === UI tạo sẵn ===
@@ -63,7 +62,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 34)
 title.Position = UDim2.new(0, 0, 0, 0)
 title.BackgroundColor3 = Color3.fromRGB(40,40,40)
-title.Text = "  🌙 Moon Tracker"
+title.Text = "  :moon: Moon Tracker"
 title.TextColor3 = Color3.fromRGB(255,255,255)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 18
@@ -127,7 +126,7 @@ local lastSendTime = 0
 toggleBtn.MouseButton1Click:Connect(function()
     infernoOnly = not infernoOnly
     if infernoOnly then
-        toggleBtn.Text = "Discord: INFERNO 🔥"
+        toggleBtn.Text = "Discord: INFERNO :fire:"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(120,40,40)
     else
         toggleBtn.Text = "Discord: ALL 🌍"
@@ -209,25 +208,23 @@ local function AddLog(text, color)
     logFrame.CanvasPosition = Vector2.new(0, math.max(0, uiList.AbsoluteContentSize.Y - logFrame.AbsoluteSize.Y))
 end
 
--- === Hàm escape UTF-8 để Discord không lỗi font ===
-local function escapeUTF8(s)
+-- Hàm escape emoji Discord
+local function escapeDiscord(s)
     if not s then return "" end
-    return s:gsub("[\0-\127\194-\244][\128-\191]*", function(c)
-        return c
-    end)
+    s = s:gsub("🌙", ":moon:")
+    s = s:gsub("🔥", ":fire:")
+    return s
 end
 
--- Gửi Discord embed chuẩn UTF-8
+-- Gửi Discord embed chuẩn, không lỗi font
 local function SendDiscord(moonDisplay, colorDec, rawText)
     local now = os.time()
-    if now - lastSendTime < SEND_COOLDOWN then
-        return
-    end
+    if now - lastSendTime < SEND_COOLDOWN then return end
     lastSendTime = now
 
     local embed = {
-        title = "🌙 Moon Cycle Alert",
-        description = escapeUTF8(("**%s**\n%s"):format(moonDisplay, rawText or "")),
+        title = escapeDiscord("🌙 Moon Cycle Alert"),
+        description = escapeDiscord(("**%s**\n%s"):format(moonDisplay, rawText or "")),
         color = colorDec or 0xFFFFFF,
         timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     }
@@ -290,12 +287,12 @@ if channel then
         if infernoOnly then
             if key == "inferno moon" then
                 SendDiscord(displayName, colorDec, raw)
-                PlayInfernoSound() -- 🔊 phát nhạc
+                PlayInfernoSound()
             end
         else
             SendDiscord(displayName, colorDec, raw)
             if key == "inferno moon" then
-                PlayInfernoSound() -- 🔊 phát nhạc
+                PlayInfernoSound()
             end
         end
     end)
