@@ -1,5 +1,3 @@
-
-
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TextChatService = game:GetService("TextChatService")
@@ -35,6 +33,7 @@ end
 
 -- === Bảng tên & màu moon ===
 local moonConfigs = {
+    ["wolf moon"]     = { display = "Wolf Moon",    color = 0xCCCCFF },
     ["full moon"]     = { display = "Full Moon",    color = 0xFFFF00 },
     ["snow moon"]     = { display = "Snow Moon",    color = 0x81D4FA },
     ["blood moon"]    = { display = "Blood Moon",   color = 0xFF4444 },
@@ -43,7 +42,7 @@ local moonConfigs = {
     ["eclipse moon"]  = { display = "Eclipse Moon", color = 0x6A0DAD },
     ["monarch moon"]  = { display = "Monarch Moon", color = 0xFFD700 },
     ["tsukuyomi"]     = { display = "Tsukuyomi",    color = 0x00BFFF },
-    ["inferno moon"] = { display = "Inferno Moon",color = 0xFF5555 },
+    ["inferno moon"]  = { display = "Inferno Moon", color = 0xFF5555 },
 }
 
 -- === UI tạo sẵn ===
@@ -210,7 +209,15 @@ local function AddLog(text, color)
     logFrame.CanvasPosition = Vector2.new(0, math.max(0, uiList.AbsoluteContentSize.Y - logFrame.AbsoluteSize.Y))
 end
 
--- Gửi Discord embed
+-- === Hàm escape UTF-8 để Discord không lỗi font ===
+local function escapeUTF8(s)
+    if not s then return "" end
+    return s:gsub("[\0-\127\194-\244][\128-\191]*", function(c)
+        return c
+    end)
+end
+
+-- Gửi Discord embed chuẩn UTF-8
 local function SendDiscord(moonDisplay, colorDec, rawText)
     local now = os.time()
     if now - lastSendTime < SEND_COOLDOWN then
@@ -220,10 +227,11 @@ local function SendDiscord(moonDisplay, colorDec, rawText)
 
     local embed = {
         title = "🌙 Moon Cycle Alert",
-        description = ("**%s**\n%s"):format(moonDisplay, rawText or ""),
+        description = escapeUTF8(("**%s**\n%s"):format(moonDisplay, rawText or "")),
         color = colorDec or 0xFFFFFF,
         timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
     }
+
     local payload = HttpService:JSONEncode({ embeds = { embed } })
 
     local req = request or http_request or (syn and syn.request)
@@ -234,7 +242,7 @@ local function SendDiscord(moonDisplay, colorDec, rawText)
             req({
                 Url = WEBHOOK_URL,
                 Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
+                Headers = { ["Content-Type"] = "application/json; charset=utf-8" },
                 Body = payload
             })
         end)
