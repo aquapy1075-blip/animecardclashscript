@@ -64,10 +64,10 @@ local bossList = {
     {id=355, modes={"normal","medium","hard","extreme"}},
     {id=458, modes={"normal","medium","hard","extreme"}},
     {id=348, modes={"normal","medium","hard","extreme"}},
-    {id=322, modes={"normal"}},
-    {id=300, modes={"normal"}},
-    {id=366, modes={"normal"}},
-    {id=343, modes={"normal"}},
+    {id=322, modes={"normal","medium","hard","extreme"}},
+    {id=300, modes={"normal","medium","hard","extreme"}},
+    {id=366, modes={"normal","medium","hard","extreme"}},
+    {id=343, modes={"normal","medium","hard","extreme"}},
 }
 
 -- 🌟 Already fought
