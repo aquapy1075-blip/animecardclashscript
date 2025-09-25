@@ -1,11 +1,12 @@
--- 📌 Auto Boss – Headless + On-screen Boss Name
+-- 📌 Auto Boss GUI – Improved with Boss Names
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
+local UserInputService = game:GetService("UserInputService")
 local networkEvent = game:GetService("ReplicatedStorage")
     :WaitForChild("shared/network@eventDefinitions")
     :WaitForChild("fightStoryBoss")
 
--- 🌟 Mapping id -> boss name
+-- 🌟 Boss ID -> Name
 local bossNames = {
     [308] = "Cuu Vi",
     [381] = "Frieza",
@@ -19,7 +20,43 @@ local bossNames = {
     [343] = "Dead King",
 }
 
--- 📌 Boss list with modes
+-- 🎨 GUI chính
+local autoGui = Instance.new("ScreenGui")
+autoGui.Name = "AutoBossUI"
+autoGui.ResetOnSpawn = false
+autoGui.IgnoreGuiInset = true
+autoGui.Parent = playerGui
+
+-- 🔘 Nút AUTO FIGHT BOSS
+local autoBtn = Instance.new("TextButton")
+autoBtn.Size = UDim2.new(0, 160, 0, 50)
+autoBtn.Position = UDim2.new(0.5, -80, 0.8, 0)
+autoBtn.AnchorPoint = Vector2.new(0.5,0)
+autoBtn.Text = "⚔️ AUTO BOSS"
+autoBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+autoBtn.TextScaled = true
+autoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoBtn.Parent = autoGui
+
+-- 🏷️ Status label (to, nổi bật)
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(0, 400, 0, 60)
+statusLabel.Position = UDim2.new(0, 20, 0, 20) -- góc trên trái
+statusLabel.AnchorPoint = Vector2.new(0, 0)
+statusLabel.BackgroundTransparency = 0.3
+statusLabel.BackgroundColor3 = Color3.fromRGB(0,0,0)
+statusLabel.BorderSizePixel = 2
+statusLabel.BorderColor3 = Color3.fromRGB(255, 215, 0)
+statusLabel.TextColor3 = Color3.fromRGB(255,255,0)
+statusLabel.TextScaled = true
+statusLabel.TextWrapped = true
+statusLabel.Font = Enum.Font.GothamBold
+statusLabel.TextStrokeTransparency = 0.2
+statusLabel.ZIndex = 10
+statusLabel.Text = ""
+statusLabel.Parent = autoGui
+
+-- 📌 Boss list
 local bossList = {
     {id=308, modes={"medium","hard","extreme"}},
     {id=381, modes={"medium","hard","extreme"}},
@@ -36,25 +73,6 @@ local bossList = {
 -- 🌟 Already fought
 local alreadyFought = {}
 
--- 🖥️ TextLabel hiển thị trạng thái boss (đẹp hơn)
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(0, 400, 0, 60)            -- to hơn
-statusLabel.Position = UDim2.new(0, 20, 0, 20)         -- góc trên trái
-statusLabel.AnchorPoint = Vector2.new(0, 0)
-statusLabel.BackgroundTransparency = 0.4               -- hơi mờ
-statusLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0) -- nền đen
-statusLabel.BorderSizePixel = 2
-statusLabel.BorderColor3 = Color3.fromRGB(255, 215, 0) -- viền vàng
-statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)   -- chữ vàng
-statusLabel.TextScaled = true
-statusLabel.TextWrapped = true
-statusLabel.Font = Enum.Font.GothamBold                 -- font đẹp
-statusLabel.TextStrokeTransparency = 0.2                -- viền chữ mờ
-statusLabel.ZIndex = 10                                 -- nổi trên các GUI khác
-statusLabel.Text = ""
-statusLabel.Parent = playerGui
-
-
 -- Check battle finished
 local function isBattleFinished()
     for _, gui in ipairs(playerGui:GetDescendants()) do
@@ -69,25 +87,26 @@ end
 local function fightBoss(id, mode)
     alreadyFought[id] = alreadyFought[id] or {}
 
+    local bossName = bossNames[id] or ("Boss "..id)
+    statusLabel.Text = "⚔️ Fighting "..bossName.." | Mode: "..mode.."..."
+    wait() -- đảm bảo GUI update
+
     if alreadyFought[id][mode] then
-        statusLabel.Text = "⏭️ "..bossNames[id].." | Mode: "..mode.." already done, skipping"
+        statusLabel.Text = "⏭️ "..bossName.." | Mode: "..mode.." already done, skipping"
         wait(1)
         return
     end
 
-    statusLabel.Text = "⚔️ Fighting "..(bossNames[id] or ("Unknown Boss "..id)).." | Mode: "..mode.."..."
-    
     local success, err = pcall(function()
         networkEvent:FireServer(id, mode)
     end)
-
     if not success then
-        statusLabel.Text = "❌ Error with "..(bossNames[id] or id).." | Mode: "..mode
+        statusLabel.Text = "❌ Error with "..bossName.." | Mode: "..mode
         wait(1)
         return
     end
 
-    -- Wait until battle finishes or timeout
+    -- Timeout for cooldown
     local timer = 0
     local timeout = 1.5
     repeat
@@ -96,21 +115,57 @@ local function fightBoss(id, mode)
     until isBattleFinished() or timer >= timeout
 
     if timer >= timeout then
-        statusLabel.Text = "⏱️ "..(bossNames[id] or id).." | Mode: "..mode.." on cooldown, skipping"
+        statusLabel.Text = "⏱️ "..bossName.." | Mode: "..mode.." on cooldown, skipping"
     else
-        statusLabel.Text = "✅ "..(bossNames[id] or id).." | Mode: "..mode.." finished!"
+        statusLabel.Text = "✅ "..bossName.." | Mode: "..mode.." finished!"
         alreadyFought[id][mode] = true
     end
-
-    wait(1) -- hiển thị trạng thái 1s trước khi chuyển boss khác
+    wait(1)
 end
 
--- 🔥 Execute auto boss
-spawn(function()
-    for _, boss in ipairs(bossList) do
-        for _, mode in ipairs(boss.modes) do
-            fightBoss(boss.id, mode)
+-- 🔥 Auto boss button click
+autoBtn.MouseButton1Click:Connect(function()
+    spawn(function()
+        statusLabel.Text = "⚔️ Auto Boss: Running..."
+        for _, boss in ipairs(bossList) do
+            for _, mode in ipairs(boss.modes) do
+                fightBoss(boss.id, mode)
+            end
         end
+        statusLabel.Text = "✅ Auto Boss: All bosses finished!"
+        wait(5)
+        statusLabel.Text = ""
+    end)
+end)
+
+-- 🖱️ Drag GUI
+local dragging = false
+local dragInput, dragStart, startPos
+autoBtn.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startPos = autoBtn.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
     end
-    statusLabel.Text = "✅ Auto Boss: All bosses finished!"
+end)
+autoBtn.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input == dragInput then
+        local delta = input.Position - dragStart
+        autoBtn.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
 end)
