@@ -8,7 +8,7 @@ local networkEvent = game:GetService("ReplicatedStorage")
 
 -- 🌟 Boss ID -> Name
 local bossNames = {
-    [308] = "Cuu Vi",
+    [308] = "Naruto",
     [381] = "Frieza",
     [330] = "Sukuna",
     [355] = "Titan",
@@ -16,7 +16,7 @@ local bossNames = {
     [348] = "Big Mom",
     [322] = "Sungjinwoo",
     [300] = "Cid",
-    [366] = "Boruto",
+    [366] = "Celestial Sovereign",
     [343] = "Dead King",
 }
 
