@@ -1,10 +1,25 @@
--- 📌 Auto Boss – Headless
+-- 📌 Auto Boss – Headless + On-screen Boss Name
 local player = game.Players.LocalPlayer
+local playerGui = player:WaitForChild("PlayerGui")
 local networkEvent = game:GetService("ReplicatedStorage")
     :WaitForChild("shared/network@eventDefinitions")
     :WaitForChild("fightStoryBoss")
 
--- 📌 Boss list
+-- 🌟 Mapping id -> boss name
+local bossNames = {
+    [308] = "Cuu Vi",
+    [381] = "Frieza",
+    [330] = "Sukuna",
+    [355] = "Titan",
+    [458] = "Muzan",
+    [348] = "Big Mom",
+    [322] = "Sungjinwoo",
+    [300] = "Cid",
+    [366] = "Boruto",
+    [343] = "Dead King",
+}
+
+-- 📌 Boss list with modes
 local bossList = {
     {id=308, modes={"medium","hard","extreme"}},
     {id=381, modes={"medium","hard","extreme"}},
@@ -21,9 +36,21 @@ local bossList = {
 -- 🌟 Already fought
 local alreadyFought = {}
 
+-- 🖥️ TextLabel hiển thị trạng thái
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(0, 300, 0, 40)
+statusLabel.Position = UDim2.new(0.5, -150, 0.1, 0) -- góc trên giữa màn hình
+statusLabel.AnchorPoint = Vector2.new(0.5, 0)
+statusLabel.BackgroundTransparency = 0.5
+statusLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+statusLabel.TextScaled = true
+statusLabel.Parent = playerGui
+statusLabel.Text = ""
+
 -- Check battle finished
 local function isBattleFinished()
-    for _, gui in ipairs(player.PlayerGui:GetDescendants()) do
+    for _, gui in ipairs(playerGui:GetDescendants()) do
         if gui:IsA("TextLabel") and (string.find(gui.Text, "Victory") or string.find(gui.Text, "Defeat")) then
             return true
         end
@@ -36,15 +63,20 @@ local function fightBoss(id, mode)
     alreadyFought[id] = alreadyFought[id] or {}
 
     if alreadyFought[id][mode] then
+        statusLabel.Text = "⏭️ "..bossNames[id].." | Mode: "..mode.." already done, skipping"
+        wait(1)
         return
     end
 
+    statusLabel.Text = "⚔️ Fighting "..(bossNames[id] or ("Unknown Boss "..id)).." | Mode: "..mode.."..."
+    
     local success, err = pcall(function()
         networkEvent:FireServer(id, mode)
     end)
 
     if not success then
-        warn("Error with Boss "..id.." | Mode: "..mode)
+        statusLabel.Text = "❌ Error with "..(bossNames[id] or id).." | Mode: "..mode
+        wait(1)
         return
     end
 
@@ -56,7 +88,14 @@ local function fightBoss(id, mode)
         timer = timer + 0.5
     until isBattleFinished() or timer >= timeout
 
-    alreadyFought[id][mode] = true
+    if timer >= timeout then
+        statusLabel.Text = "⏱️ "..(bossNames[id] or id).." | Mode: "..mode.." on cooldown, skipping"
+    else
+        statusLabel.Text = "✅ "..(bossNames[id] or id).." | Mode: "..mode.." finished!"
+        alreadyFought[id][mode] = true
+    end
+
+    wait(1) -- hiển thị trạng thái 1s trước khi chuyển boss khác
 end
 
 -- 🔥 Execute auto boss
@@ -66,5 +105,8 @@ spawn(function()
             fightBoss(boss.id, mode)
         end
     end
-    print("✅ Auto Boss: All bosses finished!")
+    statusLabel.Text = "✅ Auto Boss: All bosses finished!"
 end)
+
+-- 🌐 Load external storyboss.lua
+loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/storyboss.lua", true))()
