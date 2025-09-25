@@ -60,6 +60,13 @@ local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "RedzMoonAutoUI"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
+
+-- ScreenGui riêng cho nút toggle
+local toggleGui = Instance.new("ScreenGui")
+toggleGui.Name = "ToggleUI"
+toggleGui.ResetOnSpawn = false
+toggleGui.Parent = playerGui
+
 -- Nút toggle UI cho mobile
 local toggleBtnMobile = Instance.new("TextButton")
 toggleBtnMobile.Size = UDim2.new(0, 40, 0, 40)
@@ -73,9 +80,9 @@ toggleBtnMobile.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 toggleBtnMobile.Parent = screenGui
 Instance.new("UICorner", toggleBtnMobile).CornerRadius = UDim.new(0, 8)
 
--- Kết nối nút toggle
+-- Kết nối nút toggle chỉ bật/tắt mainGui
 toggleBtnMobile.MouseButton1Click:Connect(function()
-    screenGui.Enabled = not screenGui.Enabled
+    mainGui.Enabled = not mainGui.Enabled
 end)
 
 local frame = Instance.new("Frame")
