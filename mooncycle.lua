@@ -1,5 +1,4 @@
--- MoonTracker.lua – Complete version
-
+-- MoonTracker – Clean Version
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local TextChatService = game:GetService("TextChatService")
@@ -8,7 +7,7 @@ local HttpService = game:GetService("HttpService")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- === Read config ===
+-- === Config from getgenv ===
 local WebhookConfig = getgenv().WebhookConfig or {}
 local WEBHOOK_URL = WebhookConfig.Url or ""
 local MoonFilter = WebhookConfig.MoonFilter or {}
@@ -31,11 +30,10 @@ local moonConfigs = {
     ["wolf moon"]     = { display = "Wolf Moon",    color = 0xCCCCFF },
 }
 
--- === UI ===
+-- === ScreenGui & Main Frame ===
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "MoonTrackerUI"
 screenGui.ResetOnSpawn = false
-screenGui.Enabled = true
 screenGui.Parent = playerGui
 
 local frame = Instance.new("Frame")
@@ -46,10 +44,12 @@ frame.BorderSizePixel = 0
 frame.Parent = screenGui
 Instance.new("UICorner", frame).CornerRadius = UDim.new(0, 10)
 frame.ClipsDescendants = true
+frame.Visible = true
 
+-- Title
 local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, 0, 0, 34)
-title.Position = UDim2.new(0, 0, 0, 0)
+title.Position = UDim2.new(0,0,0,0)
 title.BackgroundColor3 = Color3.fromRGB(40,40,40)
 title.Text = "  Moon Tracker"
 title.TextColor3 = Color3.fromRGB(255,255,255)
@@ -58,6 +58,7 @@ title.TextSize = 18
 title.Parent = frame
 Instance.new("UICorner", title).CornerRadius = UDim.new(0, 10)
 
+-- Hide × button
 local hideBtn = Instance.new("TextButton")
 hideBtn.Size = UDim2.new(0, 28, 0, 28)
 hideBtn.Position = UDim2.new(1, -34, 0, 3)
@@ -67,10 +68,14 @@ hideBtn.TextSize = 20
 hideBtn.TextColor3 = Color3.fromRGB(220,220,220)
 hideBtn.BackgroundTransparency = 1
 hideBtn.Parent = frame
+hideBtn.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
+end)
 
+-- Clear Log button
 local clearBtn = Instance.new("TextButton")
-clearBtn.Size = UDim2.new(0, 100, 0, 28)
-clearBtn.Position = UDim2.new(0, 8, 1, -36)
+clearBtn.Size = UDim2.new(0,100,0,28)
+clearBtn.Position = UDim2.new(0,8,1,-36)
 clearBtn.BackgroundColor3 = Color3.fromRGB(60,60,60)
 clearBtn.Text = "Clear Log"
 clearBtn.Font = Enum.Font.Gotham
@@ -79,23 +84,30 @@ clearBtn.TextColor3 = Color3.fromRGB(255,255,255)
 clearBtn.Parent = frame
 Instance.new("UICorner", clearBtn).CornerRadius = UDim.new(0,6)
 
+clearBtn.MouseButton1Click:Connect(function()
+    for _, child in ipairs(logFrame:GetChildren()) do
+        if child:IsA("TextLabel") then child:Destroy() end
+    end
+    logFrame.CanvasSize = UDim2.new(0,0,0,0)
+end)
+
+-- Log frame
 local logFrame = Instance.new("ScrollingFrame")
 logFrame.Size = UDim2.new(1, -12, 1, -80)
-logFrame.Position = UDim2.new(0, 6, 0, 40)
+logFrame.Position = UDim2.new(0,6,0,40)
 logFrame.BackgroundColor3 = Color3.fromRGB(18,18,18)
 logFrame.BorderSizePixel = 0
 logFrame.ScrollBarThickness = 6
 logFrame.Parent = frame
-
 local uiList = Instance.new("UIListLayout")
 uiList.Parent = logFrame
 uiList.SortOrder = Enum.SortOrder.LayoutOrder
 uiList.Padding = UDim.new(0,6)
 
--- === Mobile toggle 🌙 ===
+-- === Mobile toggle button 🌙 ===
 local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(0, 50, 0, 50)
-toggleBtn.Position = UDim2.new(0.5, -25, 0, 10)
+toggleBtn.Size = UDim2.new(0,50,0,50)
+toggleBtn.Position = UDim2.new(0.5,-25,0,10)
 toggleBtn.AnchorPoint = Vector2.new(0.5,0)
 toggleBtn.Text = "🌙"
 toggleBtn.Font = Enum.Font.GothamBold
@@ -108,33 +120,8 @@ toggleBtn.ZIndex = 100
 toggleBtn.Parent = playerGui
 Instance.new("UICorner", toggleBtn).CornerRadius = UDim.new(0,25)
 
--- Shadow effect
-local shadow = Instance.new("ImageLabel")
-shadow.Size = UDim2.new(1,8,1,8)
-shadow.Position = UDim2.new(0,-4,0,-4)
-shadow.BackgroundTransparency = 1
-shadow.Image = "rbxassetid://12829500718"
-shadow.ImageColor3 = Color3.fromRGB(255,255,255)
-shadow.ImageTransparency = 0.6
-shadow.ZIndex = 0
-shadow.Parent = toggleBtn
-
-toggleBtn.MouseButton1Click:Connect(function()
-    screenGui.Enabled = not screenGui.Enabled
-end)
-
--- Draggable
+-- Dragging toggle button
 local dragging, dragInput, dragStart, startPos
-local function update(input)
-    local delta = input.Position - dragStart
-    toggleBtn.Position = UDim2.new(
-        startPos.X.Scale,
-        startPos.X.Offset + delta.X,
-        startPos.Y.Scale,
-        startPos.Y.Offset + delta.Y
-    )
-end
-
 toggleBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 then
         dragging = true
@@ -147,21 +134,28 @@ toggleBtn.InputBegan:Connect(function(input)
 end)
 
 toggleBtn.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement then dragInput = input end
-end)
-
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input == dragInput then update(input) end
-end)
-
--- Toggle UI bằng H
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == Enum.KeyCode.H then
-        screenGui.Enabled = not screenGui.Enabled
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
     end
 end)
 
--- === Variables ===
+UserInputService.InputChanged:Connect(function(input)
+    if dragging and input == dragInput then
+        local delta = input.Position - dragStart
+        toggleBtn.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
+    end
+end)
+
+toggleBtn.MouseButton1Click:Connect(function()
+    frame.Visible = not frame.Visible
+end)
+
+-- === Helpers ===
 local lastProcessedMoon = nil
 local lastSendTime = 0
 local SEND_COOLDOWN = 2
@@ -173,7 +167,7 @@ local function cleanText(text)
     return t
 end
 
-local function AddLog(text, color)
+local function AddLog(text,color)
     local lbl = Instance.new("TextLabel")
     lbl.Size = UDim2.new(1,-10,0,20)
     lbl.BackgroundTransparency = 1
@@ -184,38 +178,24 @@ local function AddLog(text, color)
     lbl.TextXAlignment = Enum.TextXAlignment.Left
     lbl.TextYAlignment = Enum.TextYAlignment.Center
     lbl.Parent = logFrame
-
     task.wait()
-    logFrame.CanvasSize = UDim2.new(0,0,0,uiList.AbsoluteContentSize.Y+8)
+    logFrame.CanvasSize = UDim2.new(0,0,0,uiList.AbsoluteContentSize.Y + 8)
     logFrame.CanvasPosition = Vector2.new(0, math.max(0, uiList.AbsoluteContentSize.Y - logFrame.AbsoluteSize.Y))
 end
 
-local function SendDiscord(moonDisplay, colorDec, rawText)
+local function SendDiscord(moonDisplay,colorDec,rawText)
     local now = os.time()
     if now - lastSendTime < SEND_COOLDOWN then return end
     lastSendTime = now
-
     if WEBHOOK_URL == "" then return end
-
     local payload = HttpService:JSONEncode({
-        embeds = {{
-            title = "Moon Cycle Alert",
-            description = ("**%s**\n%s"):format(moonDisplay, rawText or ""),
-            color = colorDec or 0xFFFFFF,
-            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
-        }}
+        embeds={{title="Moon Cycle Alert",description=("**%s**\n%s"):format(moonDisplay,rawText or ""),color=colorDec or 0xFFFFFF,timestamp=os.date("!%Y-%m-%dT%H:%M:%SZ")}}
     })
-
     local req = request or http_request or (syn and syn.request)
     if req then
         task.spawn(function()
             pcall(function()
-                req({
-                    Url = WEBHOOK_URL,
-                    Method = "POST",
-                    Headers = { ["Content-Type"] = "application/json" },
-                    Body = payload
-                })
+                req({Url=WEBHOOK_URL, Method="POST", Headers={["Content-Type"]="application/json"}, Body=payload})
             end)
         end)
     end
@@ -225,7 +205,9 @@ local function detectMoonFromText(text)
     if not text or text == "" then return nil end
     local clean = cleanText(text):lower()
     for k,v in pairs(moonConfigs) do
-        if clean:find(k) then return k, v.display or k, v.color end
+        if clean:find(k) then
+            return k, v.display or k, v.color
+        end
     end
     if clean:find("ended") or clean:find("has ended") then
         return "none","No Moon",0x888888
@@ -233,7 +215,7 @@ local function detectMoonFromText(text)
     return nil
 end
 
--- === Connect chat ===
+-- === Chat connection ===
 local channel = nil
 pcall(function()
     if TextChatService and TextChatService.TextChannels then
@@ -248,14 +230,13 @@ if channel then
         if not key then return end
         if key == lastProcessedMoon then return end
         lastProcessedMoon = key
-
         if MoonFilter[key] then
-            AddLog(os.date("[%H:%M:%S] ")..displayName, Color3.fromRGB(200,200,200))
-            SendDiscord(displayName, colorDec, cleanText(raw))
+            AddLog(os.date("[%H:%M:%S] ")..displayName,Color3.fromRGB(200,200,200))
+            SendDiscord(displayName,colorDec,cleanText(raw))
         end
     end)
 else
     warn("Không tìm thấy RBXGeneral channel")
 end
 
-print("MoonTracker loaded. Toggle UI = H / 🌙 button, Clear log = button, Moon filter = getgenv().WebhookConfig.MoonFilter")
+print("MoonTracker loaded. Toggle UI = 🌙 button / H key, Clear log = button, Moon filter = getgenv().WebhookConfig.MoonFilter")
