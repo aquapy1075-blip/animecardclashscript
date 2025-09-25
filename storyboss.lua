@@ -114,6 +114,3 @@ spawn(function()
     end
     statusLabel.Text = "✅ Auto Boss: All bosses finished!"
 end)
-
--- 🌐 Load external storyboss.lua
-loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/storyboss.lua", true))()
