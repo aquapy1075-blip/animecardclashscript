@@ -62,17 +62,18 @@ screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 -- Nút toggle UI cho mobile
 local toggleBtnMobile = Instance.new("TextButton")
-toggleBtnMobile.Size = UDim2.new(0,40,0,40)
-toggleBtnMobile.Position = UDim2.new(1,-50,1,-50) -- góc dưới phải
-toggleBtnMobile.AnchorPoint = Vector2.new(0,0)
+toggleBtnMobile.Size = UDim2.new(0, 40, 0, 40)
+toggleBtnMobile.AnchorPoint = Vector2.new(1, 0.5) -- căn giữa theo chiều cao, bên phải
+toggleBtnMobile.Position = UDim2.new(1, -50, 0, 50 + 40/2) -- cách viền 50px, cộng 1 nửa chiều cao nút
 toggleBtnMobile.Text = "☰" -- icon menu
 toggleBtnMobile.Font = Enum.Font.GothamBold
 toggleBtnMobile.TextSize = 24
-toggleBtnMobile.TextColor3 = Color3.fromRGB(255,255,255)
-toggleBtnMobile.BackgroundColor3 = Color3.fromRGB(200,50,50)
-toggleBtnMobile.Parent = playerGui
-Instance.new("UICorner", toggleBtnMobile).CornerRadius = UDim.new(0,8)
+toggleBtnMobile.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleBtnMobile.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+toggleBtnMobile.Parent = screenGui
+Instance.new("UICorner", toggleBtnMobile).CornerRadius = UDim.new(0, 8)
 
+-- Kết nối nút toggle
 toggleBtnMobile.MouseButton1Click:Connect(function()
     screenGui.Enabled = not screenGui.Enabled
 end)
@@ -215,10 +216,11 @@ statusLabel.Font = Enum.Font.GothamBold
 statusLabel.Parent = panelBoss
 
 -- === Webhook panel contents ===
-local webhookBox = Instance.new("TextBox")
+local webhookBox = Instance.new("Discord Webhook URL")
 webhookBox.Size = UDim2.new(1,-20,0,28)
 webhookBox.Position = UDim2.new(0,10,0,10)
 webhookBox.PlaceholderText = "Enter Discord Webhook URL"
+webhookBox.TextWrapped = true        
 webhookBox.BackgroundColor3 = Color3.fromRGB(60,60,60)
 webhookBox.TextColor3 = Color3.fromRGB(255,255,255)
 webhookBox.TextSize = 14
