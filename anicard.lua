@@ -88,6 +88,47 @@ mainFrame.BackgroundColor3 = Color3.fromRGB(25,25,25)
 mainFrame.BorderSizePixel = 0
 mainFrame.Parent = screenGui
 Instance.new("UICorner", mainFrame).CornerRadius = UDim.new(0,10)
+-- === Dragging mainFrame + toggle button ===
+local dragging, dragInput, dragStart, startFramePos, startBtnPos
+
+local function update(input)
+    local delta = input.Position - dragStart
+    mainFrame.Position = UDim2.new(
+        startFramePos.X.Scale, startFramePos.X.Offset + delta.X,
+        startFramePos.Y.Scale, startFramePos.Y.Offset + delta.Y
+    )
+    toggleBtnMobile.Position = UDim2.new(
+        startBtnPos.X.Scale, startBtnPos.X.Offset + delta.X,
+        startBtnPos.Y.Scale, startBtnPos.Y.Offset + delta.Y
+    )
+end
+
+title.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 then
+        dragging = true
+        dragStart = input.Position
+        startFramePos = mainFrame.Position
+        startBtnPos = toggleBtnMobile.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                dragging = false
+            end
+        end)
+    end
+end)
+
+title.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        update(input)
+    end
+end)
+
 
 -- Header
 local title = Instance.new("TextLabel")
