@@ -1,22 +1,18 @@
--- MoonTracker rút gọn – Discord alerts
-
+-- === Script ===
 local Players = game:GetService("Players")
 local TextChatService = game:GetService("TextChatService")
 local HttpService = game:GetService("HttpService")
 
 local player = Players.LocalPlayer
-
--- === Cấu hình từ getgenv ===
--- Chỉ cần chỉnh WEBHOOK_URL và MoonName mà bạn muốn theo dõi
-getgenv().WebhookConfig = getgenv().WebhookConfig or {}
-local WEBHOOK_URL = getgenv().WebhookConfig.Url or ""
-local MONITOR_MOON = getgenv().WebhookConfig.Moon or "inferno moon"
+local config = getgenv().WebhookConfig or {}
+local WEBHOOK_URL = config.Url or ""
+local MONITOR_MOON = config.Moon or "inferno moon"
 
 if WEBHOOK_URL == "" then
     warn("Webhook chưa được cấu hình trong getgenv().WebhookConfig.Url")
 end
 
--- === Moon definitions ===
+-- Moon definitions
 local moonConfigs = {
     ["full moon"]     = { display = "Full Moon",    color = 0xFFFF00 },
     ["snow moon"]     = { display = "Snow Moon",    color = 0x81D4FA },
@@ -30,31 +26,29 @@ local moonConfigs = {
     ["wolf moon"]     = { display = "Wolf Moon",    color = 0xCCCCFF },
 }
 
--- === Hàm loại bỏ tag HTML / Roblox ===
+-- Helper
 local function cleanText(text)
     if not text then return "" end
-    local t = text:gsub("<[^>]+>", "")
-    t = t:gsub("^%s+", ""):gsub("%s+$", "")
+    local t = text:gsub("<[^>]+>", ""):gsub("^%s+",""):gsub("%s+$","")
     return t
 end
 
--- === Gửi 3 lần về Discord mỗi lần cách 1 giây ===
 local function SendDiscordMultiple(moonDisplay, colorDec, rawText)
-    if WEBHOOK_URL == "" then return end
     local req = request or http_request or (syn and syn.request)
-    if not req then return end
+    if not req or WEBHOOK_URL == "" then return end
+
+    local payload = HttpService:JSONEncode({
+        embeds = {{
+            title = "Moon Cycle Alert",
+            description = ("**%s**\n%s"):format(moonDisplay, rawText or ""),
+            color = colorDec or 0xFFFFFF,
+            timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
+        }}
+    })
 
     task.spawn(function()
         for i = 1, 3 do
             pcall(function()
-                local payload = HttpService:JSONEncode({
-                    embeds = {{
-                        title = "Moon Cycle Alert",
-                        description = ("**%s**\n%s"):format(moonDisplay, rawText or ""),
-                        color = colorDec or 0xFFFFFF,
-                        timestamp = os.date("!%Y-%m-%dT%H:%M:%SZ")
-                    }}
-                })
                 req({
                     Url = WEBHOOK_URL,
                     Method = "POST",
@@ -67,7 +61,6 @@ local function SendDiscordMultiple(moonDisplay, colorDec, rawText)
     end)
 end
 
--- === Detect moon từ chat ===
 local function detectMoonFromText(text)
     if not text or text == "" then return nil end
     local clean = cleanText(text):lower()
@@ -76,10 +69,13 @@ local function detectMoonFromText(text)
             return k, v.display or k, v.color
         end
     end
+    if clean:find("ended") or clean:find("has ended") then
+        return "none", "No Moon", 0x888888
+    end
     return nil
 end
 
--- === Kết nối với RBXGeneral chat ===
+-- Connect chat
 local channel = nil
 pcall(function()
     if TextChatService and TextChatService.TextChannels then
@@ -92,7 +88,11 @@ if channel then
         local raw = msg.Text or ""
         local key, displayName, colorDec = detectMoonFromText(raw)
         if not key then return end
-        if key == MONITOR_MOON then
+
+        -- Chỉ báo Discord nếu đúng moon đã cấu hình
+        local keyLower = key:lower():gsub("^%s+",""):gsub("%s+$","")
+        local monitorLower = MONITOR_MOON:lower():gsub("^%s+",""):gsub("%s+$","")
+        if keyLower == monitorLower then
             SendDiscordMultiple(displayName, colorDec, cleanText(raw))
         end
     end)
@@ -100,4 +100,4 @@ else
     warn("Không tìm thấy RBXGeneral channel")
 end
 
-print("MoonTracker loaded. Monitoring moon:", MONITOR_MOON)
+print("MoonTracker loaded. Monitoring moon: " .. MONITOR_MOON)
