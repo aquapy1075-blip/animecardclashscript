@@ -236,6 +236,28 @@ webhookBox.Font = Enum.Font.Gotham
 webhookBox.ClearTextOnFocus = false
 webhookBox.Parent = panelWebhook
 Instance.new("UICorner", webhookBox).CornerRadius = UDim.new(0,6)
+-- Tạo folder con trong workspace exploit
+local folderName = "RedzMoon"
+if not isfolder(folderName) then
+    makefolder(folderName)
+end
+
+-- Đường dẫn file
+local webhookFile = folderName.."/webhook.txt"
+
+-- Load webhook nếu đã có
+if isfile(webhookFile) then
+    webhookBox.Text = readfile(webhookFile)
+end
+
+-- Khi người dùng điền xong, lưu vào file trong folder này
+webhookBox.FocusLost:Connect(function(enterPressed)
+    if enterPressed then
+        if webhookBox.Text ~= "" then
+            writefile(webhookFile, webhookBox.Text)
+        end
+    end
+end)
 
 -- Tab switching
 local function switchTab(tab)
