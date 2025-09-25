@@ -36,17 +36,24 @@ local bossList = {
 -- 🌟 Already fought
 local alreadyFought = {}
 
--- 🖥️ TextLabel hiển thị trạng thái
+-- 🖥️ TextLabel hiển thị trạng thái boss (đẹp hơn)
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(0, 300, 0, 40)
-statusLabel.Position = UDim2.new(0.5, -150, 0.1, 0) -- góc trên giữa màn hình
-statusLabel.AnchorPoint = Vector2.new(0.5, 0)
-statusLabel.BackgroundTransparency = 0.5
-statusLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+statusLabel.Size = UDim2.new(0, 400, 0, 60)            -- to hơn
+statusLabel.Position = UDim2.new(0, 20, 0, 20)         -- góc trên trái
+statusLabel.AnchorPoint = Vector2.new(0, 0)
+statusLabel.BackgroundTransparency = 0.4               -- hơi mờ
+statusLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0) -- nền đen
+statusLabel.BorderSizePixel = 2
+statusLabel.BorderColor3 = Color3.fromRGB(255, 215, 0) -- viền vàng
+statusLabel.TextColor3 = Color3.fromRGB(255, 255, 0)   -- chữ vàng
 statusLabel.TextScaled = true
-statusLabel.Parent = playerGui
+statusLabel.TextWrapped = true
+statusLabel.Font = Enum.Font.GothamBold                 -- font đẹp
+statusLabel.TextStrokeTransparency = 0.2                -- viền chữ mờ
+statusLabel.ZIndex = 10                                 -- nổi trên các GUI khác
 statusLabel.Text = ""
+statusLabel.Parent = playerGui
+
 
 -- Check battle finished
 local function isBattleFinished()
