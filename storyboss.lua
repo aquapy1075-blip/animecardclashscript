@@ -1,4 +1,4 @@
--- 📌 Auto Boss GUI – Final Optimized
+-- 📌 Auto Boss GUI – Optimized
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local UserInputService = game:GetService("UserInputService")
@@ -8,16 +8,9 @@ local networkEvent = game:GetService("ReplicatedStorage")
 
 -- 🌟 Boss ID -> Name
 local bossNames = {
-    [308] = "Naruto",
-    [381] = "Frieza",
-    [330] = "Sukuna",
-    [355] = "Titan",
-    [458] = "Muzan",
-    [348] = "Big Mom",
-    [322] = "Sungjinwoo",
-    [300] = "Cid",
-    [366] = "Celestial Sovereign",
-    [343] = "Dead King",
+    [308] = "Naruto", [381] = "Frieza", [330] = "Sukuna", [355] = "Titan",
+    [458] = "Muzan", [348] = "Big Mom", [322] = "Sungjinwoo", [300] = "Cid",
+    [366] = "Celestial Sovereign", [343] = "Dead King",
 }
 
 -- 📌 Boss list
@@ -88,20 +81,21 @@ local function hasPopupContaining(keyword)
     return false
 end
 
-local function isErrorPopupPresent()
-    local errorKeywords = {"error", "on cooldown", "need to beat", "locked", "not unlocked"}
-    for _, k in ipairs(errorKeywords) do
-        if hasPopupContaining(k) then return true end
-    end
-    return false
+local function isCooldownPopupPresent()
+    return hasPopupContaining("on cooldown")
+        or hasPopupContaining("need to beat")
+        or hasPopupContaining("locked")
+        or hasPopupContaining("not unlocked")
 end
 
 local function isInBattlePopupPresent()
-    return hasPopupContaining("hide battle") or hasPopupContaining("show battle")
+    return hasPopupContaining("hide battle")
+        or hasPopupContaining("show battle")
+        or hasPopupContaining("you are in battle")
 end
 
 local function didBattleEndAsWinOrLoss()
-    return hasPopupContaining("victory") or hasPopupContaining("defeat") or isErrorPopupPresent()
+    return hasPopupContaining("victory") or hasPopupContaining("defeat")
 end
 
 -------------------------------------------------
@@ -112,75 +106,44 @@ local function fightBoss(id, mode)
     local bossName = bossNames[id] or ("Boss "..id)
 
     if alreadyFought[id][mode] then
-        statusLabel.Text = "⏭️ "..bossName.." | "..mode.." already done"
-        task.wait(1)
+        updateStatus("⏭️ "..bossName.." | "..mode.." already done",1)
         return
     end
 
-    statusLabel.Text = "⚔️ Fighting "..bossName.." | "..mode
-    task.wait(0.15)
-
-    local ok, err = pcall(function()
-        networkEvent:FireServer(id, mode)
-    end)
+    updateStatus("⚔️ Fighting "..bossName.." | "..mode,0.15)
+    local ok, err = pcall(function() networkEvent:FireServer(id, mode) end)
     if not ok then
-        statusLabel.Text = "❌ FireServer error: "..tostring(err)
-        task.wait(2)
+        updateStatus("❌ FireServer error: "..tostring(err),2)
         return
     end
 
-    task.wait(1.2)
+    task.wait(1)
 
-    if isErrorPopupPresent() then
-        statusLabel.Text = "⏱️ "..bossName.." | "..mode.." error/cooldown"
-        task.wait(5)
+    -- Case 1: Boss on cooldown / locked
+    if isCooldownPopupPresent() then
+        updateStatus("⏱️ "..bossName.." | "..mode.." cooldown/locked",3)
         alreadyFought[id][mode] = true
         return
     end
 
+    -- Case 2: Battle started
     if isInBattlePopupPresent() then
-        local elapsed = 0
-        while isInBattlePopupPresent() and elapsed < 120 do
-            task.wait(1)
-            elapsed += 1
-        end
+        while isInBattlePopupPresent() do task.wait(1) end  -- đợi popup biến mất
+        task.wait(1)
 
-        task.wait(1.2)
         if didBattleEndAsWinOrLoss() then
-            statusLabel.Text = "✅ "..bossName.." | "..mode.." finished!"
+            updateStatus("✅ "..bossName.." | "..mode.." finished!",1)
             alreadyFought[id][mode] = true
-            task.wait(1.2)
-            return
         else
-            -- retry 1 lần
-            statusLabel.Text = "⚠️ "..bossName.." | "..mode.." retry..."
-            task.wait(1)
-            local ok2 = pcall(function() networkEvent:FireServer(id, mode) end)
-            task.wait(1.2)
-            if isErrorPopupPresent() then
-                statusLabel.Text = "✅ "..bossName.." | "..mode.." finished (cooldown)"
-                alreadyFought[id][mode] = true
-                task.wait(1.2)
-                return
-            elseif isInBattlePopupPresent() then
-                while isInBattlePopupPresent() do task.wait(1) end
-                task.wait(1.2)
-                if didBattleEndAsWinOrLoss() then
-                    statusLabel.Text = "✅ "..bossName.." | "..mode.." finished (after retry)"
-                    alreadyFought[id][mode] = true
-                    task.wait(1.2)
-                    return
-                end
-            end
-            statusLabel.Text = "❌ "..bossName.." | "..mode.." unknown, skipping"
-            task.wait(2)
+            -- fallback: coi như skip luôn
+            updateStatus("❌ "..bossName.." | "..mode.." ended with no result",2)
             alreadyFought[id][mode] = true
-            return
         end
+        return
     end
 
-    statusLabel.Text = "❌ "..bossName.." | "..mode.." no response"
-    task.wait(2)
+    -- Case 3: Không thấy gì
+    updateStatus("❌ "..bossName.." | "..mode.." no response",2)
     alreadyFought[id][mode] = true
 end
 
@@ -188,48 +151,47 @@ end
 -- 🔥 Auto loop
 -------------------------------------------------
 autoBtn.MouseButton1Click:Connect(function()
-    spawn(function()
-        statusLabel.Text = "⚔️ Auto Boss: Running..."
+    task.spawn(function()
+        updateStatus("⚔️ Auto Boss: Running...")
         for _, boss in ipairs(bossList) do
             for _, mode in ipairs(boss.modes) do
                 fightBoss(boss.id, mode)
             end
         end
-        statusLabel.Text = "✅ Auto Boss: All finished!"
-        task.wait(4)
-        statusLabel.Text = ""
+        updateStatus("✅ Auto Boss: All finished!",4)
+        updateStatus("")
     end)
 end)
 
 -------------------------------------------------
--- 🖱️ Drag support (PC + Mobile)
+-- 🖱️ Drag support
 -------------------------------------------------
-local dragging, dragInput, dragStart, startPos
-autoBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = autoBtn.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-autoBtn.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input == dragInput then
-        local delta = input.Position - dragStart
-        autoBtn.Position = UDim2.new(
-            startPos.X.Scale,
-            startPos.X.Offset + delta.X,
-            startPos.Y.Scale,
-            startPos.Y.Offset + delta.Y
-        )
-    end
-end)
+local function enableDrag(frame)
+    local dragging, dragInput, dragStart, startPos
+    frame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
+            end)
+        end
+    end)
+    frame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and input == dragInput then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+enableDrag(autoBtn)
