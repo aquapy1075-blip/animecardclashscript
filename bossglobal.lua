@@ -126,7 +126,7 @@ uiList.Padding = UDim.new(0, 6)
 
 for key, displayName in pairs(farmModes) do
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 32)
+    btn.Size = UDim2.new(1, 0, 0, 28)
     btn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.TextScaled = true
