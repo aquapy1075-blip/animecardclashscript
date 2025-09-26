@@ -1,4 +1,4 @@
--- 📌 Auto Boss GUI – Mobile Friendly + Hide Status after Finished
+-- 📌 Auto Boss GUI – Final Optimized
 local player = game.Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local UserInputService = game:GetService("UserInputService")
@@ -20,41 +20,6 @@ local bossNames = {
     [343] = "Dead King",
 }
 
--- 🎨 GUI chính
-local autoGui = Instance.new("ScreenGui")
-autoGui.Name = "AutoBossUI"
-autoGui.ResetOnSpawn = false
-autoGui.IgnoreGuiInset = true
-autoGui.Parent = playerGui
-
--- 🔘 Nút AUTO FIGHT BOSS (nhỏ hơn)
-local autoBtn = Instance.new("TextButton")
-autoBtn.Size = UDim2.new(0, 120, 0, 40)
-autoBtn.Position = UDim2.new(0.5, -60, 0.8, 0)
-autoBtn.AnchorPoint = Vector2.new(0.5,0)
-autoBtn.Text = "⚔️ AUTO"
-autoBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-autoBtn.TextScaled = true
-autoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-autoBtn.Parent = autoGui
-
--- 🏷️ Status label (khung vàng)
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(0, 400, 0, 60)
-statusLabel.Position = UDim2.new(0, 20, 0, 20)
-statusLabel.BackgroundTransparency = 0.3
-statusLabel.BackgroundColor3 = Color3.fromRGB(0,0,0)
-statusLabel.BorderSizePixel = 2
-statusLabel.BorderColor3 = Color3.fromRGB(255, 215, 0)
-statusLabel.TextColor3 = Color3.fromRGB(255,255,0)
-statusLabel.TextScaled = true
-statusLabel.Font = Enum.Font.GothamBold
-statusLabel.TextStrokeTransparency = 0.2
-statusLabel.ZIndex = 10
-statusLabel.Text = ""
-statusLabel.Visible = false
-statusLabel.Parent = autoGui
-
 -- 📌 Boss list
 local bossList = {
     {id=308, modes={"medium","hard","extreme"}},
@@ -69,105 +34,179 @@ local bossList = {
     {id=343, modes={"normal","medium","hard","extreme"}},
 }
 
+-- 🌟 Already fought
 local alreadyFought = {}
 
--- 📌 Tìm popup
-local function findPopup(keyword)
+-- 🎨 GUI
+local autoGui = Instance.new("ScreenGui")
+autoGui.Name = "AutoBossUI"
+autoGui.ResetOnSpawn = false
+autoGui.IgnoreGuiInset = true
+autoGui.Parent = playerGui
+
+-- 🔘 Nút AUTO
+local autoBtn = Instance.new("TextButton")
+autoBtn.Size = UDim2.new(0, 120, 0, 40)
+autoBtn.Position = UDim2.new(0.5, -60, 0.85, 0)
+autoBtn.AnchorPoint = Vector2.new(0.5,0)
+autoBtn.Text = "⚔️ AUTO BOSS"
+autoBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+autoBtn.TextScaled = true
+autoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+autoBtn.Parent = autoGui
+
+-- 🏷️ Status label
+local statusLabel = Instance.new("TextLabel")
+statusLabel.Size = UDim2.new(0, 400, 0, 60)
+statusLabel.Position = UDim2.new(0, 20, 0, 20)
+statusLabel.BackgroundTransparency = 0.3
+statusLabel.BackgroundColor3 = Color3.fromRGB(0,0,0)
+statusLabel.BorderSizePixel = 2
+statusLabel.BorderColor3 = Color3.fromRGB(255, 215, 0)
+statusLabel.TextColor3 = Color3.fromRGB(255,255,0)
+statusLabel.TextScaled = true
+statusLabel.Font = Enum.Font.GothamBold
+statusLabel.TextStrokeTransparency = 0.2
+statusLabel.ZIndex = 10
+statusLabel.Text = ""
+statusLabel.Parent = autoGui
+
+-------------------------------------------------
+-- 🔎 Popup helpers
+-------------------------------------------------
+local function hasPopupContaining(keyword)
+    if not keyword or keyword == "" then return false end
+    local kw = keyword:lower()
     for _, gui in ipairs(playerGui:GetDescendants()) do
-        if gui:IsA("TextLabel") and string.find(gui.Text, keyword) then
-            return true
+        if gui:IsA("TextLabel") or gui:IsA("TextButton") then
+            local ok, txt = pcall(function() return tostring(gui.Text) end)
+            if ok and txt and txt ~= "" and string.find(txt:lower(), kw, 1, true) then
+                return true
+            end
         end
     end
     return false
 end
 
--- 📌 Chờ kết quả trận
-local function waitBattleEnd(timeout)
-    local t = 0
-    while t < timeout do
-        if findPopup("Victory") or findPopup("Defeat") then
-            return true
-        end
-        task.wait(1)
-        t = t + 1
+local function isErrorPopupPresent()
+    local errorKeywords = {"error", "on cooldown", "need to beat", "locked", "not unlocked"}
+    for _, k in ipairs(errorKeywords) do
+        if hasPopupContaining(k) then return true end
     end
     return false
 end
 
--- 📌 Fight boss logic
+local function isInBattlePopupPresent()
+    return hasPopupContaining("hide battle") or hasPopupContaining("show battle")
+end
+
+local function didBattleEndAsWinOrLoss()
+    return hasPopupContaining("victory") or hasPopupContaining("defeat") or isErrorPopupPresent()
+end
+
+-------------------------------------------------
+-- ⚔️ Fight logic
+-------------------------------------------------
 local function fightBoss(id, mode)
     alreadyFought[id] = alreadyFought[id] or {}
-    if alreadyFought[id][mode] then return end
-
     local bossName = bossNames[id] or ("Boss "..id)
-    statusLabel.Text = "⚔️ "..bossName.." | "..mode
-    task.wait()
 
-    -- Fire boss
-    networkEvent:FireServer(id, mode)
-    task.wait(1.5)
+    if alreadyFought[id][mode] then
+        statusLabel.Text = "⏭️ "..bossName.." | "..mode.." already done"
+        task.wait(1)
+        return
+    end
 
-    if findPopup("On Cooldown") then
+    statusLabel.Text = "⚔️ Fighting "..bossName.." | "..mode
+    task.wait(0.15)
+
+    local ok, err = pcall(function()
+        networkEvent:FireServer(id, mode)
+    end)
+    if not ok then
+        statusLabel.Text = "❌ FireServer error: "..tostring(err)
+        task.wait(2)
+        return
+    end
+
+    task.wait(1.2)
+
+    if isErrorPopupPresent() then
+        statusLabel.Text = "⏱️ "..bossName.." | "..mode.." error/cooldown"
+        task.wait(5)
         alreadyFought[id][mode] = true
         return
-    elseif findPopup("You are in battle") then
-        if waitBattleEnd(40) then
-            alreadyFought[id][mode] = true
-        else
-            networkEvent:FireServer(id, mode)
-            task.wait(1.5)
-            if findPopup("On Cooldown") then
-                alreadyFought[id][mode] = true
-            end
+    end
+
+    if isInBattlePopupPresent() then
+        local elapsed = 0
+        while isInBattlePopupPresent() and elapsed < 120 do
+            task.wait(1)
+            elapsed += 1
         end
-    else
-        if waitBattleEnd(40) then
+
+        task.wait(1.2)
+        if didBattleEndAsWinOrLoss() then
+            statusLabel.Text = "✅ "..bossName.." | "..mode.." finished!"
             alreadyFought[id][mode] = true
+            task.wait(1.2)
+            return
         else
-            networkEvent:FireServer(id, mode)
-            task.wait(1.5)
-            if findPopup("On Cooldown") then
+            -- retry 1 lần
+            statusLabel.Text = "⚠️ "..bossName.." | "..mode.." retry..."
+            task.wait(1)
+            local ok2 = pcall(function() networkEvent:FireServer(id, mode) end)
+            task.wait(1.2)
+            if isErrorPopupPresent() then
+                statusLabel.Text = "✅ "..bossName.." | "..mode.." finished (cooldown)"
                 alreadyFought[id][mode] = true
+                task.wait(1.2)
+                return
+            elseif isInBattlePopupPresent() then
+                while isInBattlePopupPresent() do task.wait(1) end
+                task.wait(1.2)
+                if didBattleEndAsWinOrLoss() then
+                    statusLabel.Text = "✅ "..bossName.." | "..mode.." finished (after retry)"
+                    alreadyFought[id][mode] = true
+                    task.wait(1.2)
+                    return
+                end
             end
+            statusLabel.Text = "❌ "..bossName.." | "..mode.." unknown, skipping"
+            task.wait(2)
+            alreadyFought[id][mode] = true
+            return
         end
     end
 
-    task.wait(3)
+    statusLabel.Text = "❌ "..bossName.." | "..mode.." no response"
+    task.wait(2)
+    alreadyFought[id][mode] = true
 end
 
--- 🔥 Auto boss button click
+-------------------------------------------------
+-- 🔥 Auto loop
+-------------------------------------------------
 autoBtn.MouseButton1Click:Connect(function()
     spawn(function()
-        statusLabel.Visible = true
         statusLabel.Text = "⚔️ Auto Boss: Running..."
         for _, boss in ipairs(bossList) do
             for _, mode in ipairs(boss.modes) do
                 fightBoss(boss.id, mode)
             end
         end
-        statusLabel.Text = "✅ Auto Boss Finished!"
-        task.wait(3)
-        statusLabel.Visible = false -- 📴 Ẩn sau khi xong
+        statusLabel.Text = "✅ Auto Boss: All finished!"
+        task.wait(4)
+        statusLabel.Text = ""
     end)
 end)
 
--- 🖱️📱 Drag GUI (PC + Mobile)
-local dragging = false
-local dragInput, dragStart, startPos
-
-local function updateDrag(input)
-    local delta = input.Position - dragStart
-    autoBtn.Position = UDim2.new(
-        startPos.X.Scale,
-        startPos.X.Offset + delta.X,
-        startPos.Y.Scale,
-        startPos.Y.Offset + delta.Y
-    )
-end
-
+-------------------------------------------------
+-- 🖱️ Drag support (PC + Mobile)
+-------------------------------------------------
+local dragging, dragInput, dragStart, startPos
 autoBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 
-    or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
         dragStart = input.Position
         startPos = autoBtn.Position
@@ -178,16 +217,19 @@ autoBtn.InputBegan:Connect(function(input)
         end)
     end
 end)
-
 autoBtn.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement 
-    or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
         dragInput = input
     end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
     if dragging and input == dragInput then
-        updateDrag(input)
+        local delta = input.Position - dragStart
+        autoBtn.Position = UDim2.new(
+            startPos.X.Scale,
+            startPos.X.Offset + delta.X,
+            startPos.Y.Scale,
+            startPos.Y.Offset + delta.Y
+        )
     end
 end)
