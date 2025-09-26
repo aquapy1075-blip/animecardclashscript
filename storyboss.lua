@@ -210,7 +210,7 @@ autoBtn.MouseButton1Click:Connect(function()
         end
         statusLabel.Text = "✅ Auto Boss: All finished!"
         task.wait(4)
-        statusLabel.Text = ""
+  statusLabel.Visible = false                
     end)
 end)
 
