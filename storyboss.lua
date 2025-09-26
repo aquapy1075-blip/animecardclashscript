@@ -151,12 +151,12 @@ local function fightBoss(id, mode)
 
     if isInBattlePopupPresent() then
         local elapsed = 0
-        while isInBattlePopupPresent() and elapsed < 120 do
+        while isInBattlePopupPresent() and elapsed < 35 do
             task.wait(1)
             elapsed += 1
         end
 
-        task.wait(1.2)
+        task.wait(0.8)
         if didBattleEndAsWinOrLoss() then
             statusLabel.Text = "✅ "..bossName.." | "..mode.." finished!"
             alreadyFought[id][mode] = true
