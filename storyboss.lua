@@ -47,7 +47,7 @@ autoGui.Parent = playerGui
 -- 🔘 Nút AUTO
 local autoBtn = Instance.new("TextButton")
 autoBtn.Size = UDim2.new(0, 120, 0, 40)
-autoBtn.Position = UDim2.new(0.5, -60, 0.85, 0)
+autoBtn.Position = UDim2.new(0.5, 0, 0, 10)
 autoBtn.AnchorPoint = Vector2.new(0.5,0)
 autoBtn.Text = "⚔️ AUTO BOSS"
 autoBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
