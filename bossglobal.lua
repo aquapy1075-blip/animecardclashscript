@@ -4,7 +4,7 @@ local Players = game:GetService("Players")
 local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 
--- Teleport tới tọa độ mong muốn
+-- Teleport tới tọa độ mong muốn khi execute
 local character = player.Character or player.CharacterAdded:Wait()
 local hrp = character:WaitForChild("HumanoidRootPart")
 hrp.CFrame = CFrame.new(1019, 9, -245)
@@ -19,6 +19,17 @@ local claimInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefini
 
 -- Args
 local bossArgs = {450}
+
+-- Danh sách map farm
+local farmModes = {
+    titans_city = "Titans City",
+    dimensional_fortress = "Dimensional Fortress",
+    candy_island = "Candy Island",
+    base = "Infinite",
+    nightmare = "Hard Core"
+}
+
+-- Map mặc định
 local farmArgs = {"titans_city"}
 
 -- State
@@ -29,29 +40,134 @@ local farmMode = false
 local farmSpamming = false
 local currentHP, maxHP = nil, nil
 
--- UI
+-- UI gốc
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "AutoStatusGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(0, 500, 0, 60)
-statusLabel.Position = UDim2.new(0, 10, 0, 10)
-statusLabel.BackgroundTransparency = 0.3
-statusLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-statusLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+statusLabel.Size = UDim2.new(1, -16, 0, 40)
+statusLabel.BackgroundTransparency = 0.1
+statusLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+statusLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
 statusLabel.TextScaled = true
 statusLabel.Font = Enum.Font.SourceSansBold
 statusLabel.Text = "LOADING..."
-statusLabel.Parent = screenGui
+
+local mapButton = Instance.new("TextButton")
+mapButton.Size = UDim2.new(1, -16, 0, 32)
+mapButton.BackgroundColor3 = Color3.fromRGB(70, 70, 120)
+mapButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+mapButton.TextScaled = true
+mapButton.Text = "Chọn Map"
+
+local mapFrame = Instance.new("Frame")
+mapFrame.Size = UDim2.new(1, -16, 0, 140)
+mapFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 60)
+mapFrame.Visible = false
+
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(1, -16, 0, 32)
+toggleButton.BackgroundColor3 = Color3.fromRGB(0, 150, 80)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextScaled = true
+toggleButton.Text = "AUTO: ON"
+
+----------------------------------------------------------------
+-- Panel UI bên phải
+----------------------------------------------------------------
+local panel = Instance.new("Frame")
+panel.Size = UDim2.new(0, 200, 0, 280)
+panel.Position = UDim2.new(1, -210, 0.5, -140)
+panel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+panel.BackgroundTransparency = 0.2
+panel.BorderSizePixel = 0
+panel.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)
+corner.Parent = panel
+
+local layout = Instance.new("UIListLayout")
+layout.Parent = panel
+layout.FillDirection = Enum.FillDirection.Vertical
+layout.Padding = UDim.new(0, 10)
+layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+layout.VerticalAlignment = Enum.VerticalAlignment.Top
+
+local function addCorner(ui, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 8)
+    c.Parent = ui
+end
+
+statusLabel.Parent = panel
+addCorner(statusLabel)
+
+toggleButton.Parent = panel
+addCorner(toggleButton)
+
+mapButton.Parent = panel
+addCorner(mapButton)
+
+mapFrame.Parent = panel
+addCorner(mapFrame)
+
+local uiPadding = Instance.new("UIPadding", mapFrame)
+uiPadding.PaddingTop = UDim.new(0, 8)
+uiPadding.PaddingLeft = UDim.new(0, 8)
+uiPadding.PaddingRight = UDim.new(0, 8)
+uiPadding.PaddingBottom = UDim.new(0, 8)
+
+local uiList = Instance.new("UIListLayout", mapFrame)
+uiList.FillDirection = Enum.FillDirection.Vertical
+uiList.Padding = UDim.new(0, 6)
+
+for key, displayName in pairs(farmModes) do
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 32)
+    btn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.TextScaled = true
+    btn.Text = displayName
+    btn.Parent = mapFrame
+    addCorner(btn)
+
+    btn.MouseButton1Click:Connect(function()
+        farmArgs = {key}
+        print("Đã chọn map:", displayName, "("..key..")")
+        mapFrame.Visible = false
+        updateStatusUI()
+    end)
+end
+
+mapButton.MouseButton1Click:Connect(function()
+    mapFrame.Visible = not mapFrame.Visible
+end)
+
+toggleButton.MouseButton1Click:Connect(function()
+    auto = not auto
+    if auto then
+        toggleButton.Text = "AUTO: ON"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(0, 150, 80)
+        print("Auto bật ✅")
+    else
+        toggleButton.Text = "AUTO: OFF"
+        toggleButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        stopFarmMode()
+        print("Auto tắt ❌")
+    end
+    updateStatusUI()
+end)
 
 ----------------------------------------------------------------
 -- Helpers
 ----------------------------------------------------------------
 local function updateStatusUI()
-    local hpText = currentHP and maxHP and string.format("%s/%s", currentHP, maxHP) or "N/A"
-    local farmText = farmMode and "ON" or "OFF"
+    local hpText = (currentHP and maxHP) and string.format("%s/%s", currentHP, maxHP) or "N/A"
+    local farmName = farmModes[farmArgs[1]] or farmArgs[1]
+    local farmText = farmMode and ("ON (" .. farmName .. ")") or "OFF"
     statusLabel.Text = string.format("AUTO: %s | HP: %s | Team: %s | FARM: %s",
         auto and "ON" or "OFF", hpText, currentTeam, farmText)
 end
@@ -61,7 +177,6 @@ local function switchTeamSafe(slotName)
         setParty:FireServer(slotName)
         currentTeam = slotName
         updateStatusUI()
-        print("Đã chuyển sang", slotName)
     end
 end
 
@@ -97,6 +212,7 @@ end
 ----------------------------------------------------------------
 -- Spam functions
 ----------------------------------------------------------------
+
 local function spamBoss()
     if spammingBoss then return end
     spammingBoss = true
@@ -113,7 +229,7 @@ local function spamFarm()
     if farmSpamming then return end
     farmSpamming = true
     task.spawn(function()
-        while farmMode do
+        while farmMode and auto do
             if inCombat() then
                 fightFarm:FireServer(unpack(farmArgs))
             end
@@ -128,7 +244,7 @@ local function startFarmMode()
     farmMode = true
     switchTeamSafe("slot_4")
     spamFarm()
-    print("Bắt đầu farm mode")
+    print("Bắt đầu farm mode:", farmModes[farmArgs[1]])
     updateStatusUI()
 end
 
@@ -145,27 +261,31 @@ end
 task.spawn(function()
     while true do
         currentHP, maxHP = getBossHP()
-        if currentHP and currentHP > 0 then
-            -- Boss spawn → dừng farm, forfeit + claim trước
-            if farmMode then
-                stopFarmMode()
-                forfeitBattle:FireServer()
-                task.wait(2)
-                claimInfinite:FireServer(unpack(farmArgs))
-                print("Đã forfeit + claim reward, chuẩn bị spam boss")
-            end
 
-            -- Chọn team và spam boss
-            if currentHP >= 75000000 then
-                switchTeamSafe("slot_2")
+        if auto then
+            if currentHP and currentHP > 0 then
+                -- Boss spawn → dừng farm, forfeit + claim trước
+                if farmMode then
+                    stopFarmMode()
+                    forfeitBattle:FireServer()
+                    task.wait(2)
+                    claimInfinite:FireServer(unpack(farmArgs))
+                    print("Đã forfeit + claim reward, chuẩn bị spam boss")
+                end
+
+                -- Chọn team và spam boss
+                if currentHP >= 75000000 then
+                    switchTeamSafe("slot_2")
+                else
+                    switchTeamSafe("slot_1")
+                end
+                spamBoss()
             else
-                switchTeamSafe("slot_1")
+                -- Boss chưa spawn → farm
+                startFarmMode()
             end
-            spamBoss()
-        else
-            -- Boss chưa spawn → farm
-            startFarmMode()
         end
+
         updateStatusUI()
         task.wait(0.2)
     end
