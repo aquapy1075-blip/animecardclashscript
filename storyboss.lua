@@ -106,31 +106,25 @@ local BossController = {}
 function BossController.fightBoss(id, mode, runId)
     if not State.autoEnabled or runId ~= State.autoRunId then return end
 
-    -- ✅ set team cho boss (string "slot_x")
-    local slot = State.bossTeams[id] or "slot_1"
-    local ok, err = pcall(function()
-        Net.setPartySlot:FireServer(slot)
-    end)
-    if not ok then
-        notify("Error", "setPartySlot failed: "..tostring(err), 2)
-    end
+    -- set team for this boss
+    Net.setPartySlot:FireServer(State.bossTeams[id] or "slot_1")
 
     State.alreadyFought[id] = State.alreadyFought[id] or {}
     if State.alreadyFought[id][mode] then return end
-
     local name = BossData.Names[id] or ("Boss "..id)
     notify("Story Boss", "⚔️ Fighting "..name.." | "..mode, 2)
 
-    local ok2, err2 = pcall(function()
+    local ok, err = pcall(function()
         Net.fightStoryBoss:FireServer(id, mode)
     end)
-    if not ok2 then
-        notify("Error", tostring(err2), 2)
+    if not ok then
+        notify("Error", tostring(err), 2)
         return
     end
 
     task.wait(0.5)
 
+    -- wait if in battle
     if isInBattlePopupPresent() then
         local elapsed = 0
         while isInBattlePopupPresent() and elapsed < 180 do
@@ -175,11 +169,11 @@ function BossController.runAuto()
 
     task.spawn(function()
         while State.autoEnabled and runId == State.autoRunId do
+            -- build plan from selected bosses
             local plan = {}
             for _, boss in ipairs(BossData.List) do
                 if State.selectedBosses[boss.id] then
-                    local modes = { table.unpack(boss.modes) }
-                    table.insert(plan, { id=boss.id, modes=modes })
+                    table.insert(plan, { id=boss.id, modes=table.clone(boss.modes) })
                 end
             end
 
@@ -211,50 +205,44 @@ end
 -- UI
 -------------------------------------------------
 local Window = Rayfield:CreateWindow({
-    Name = "Story Boss Hub",
-    LoadingTitle = "Story Boss",
-    LoadingSubtitle = "by Tran",
-    ConfigurationSaving = { Enabled = true, FolderName = "StoryBossConfig", FileName = "StoryBoss" },
+    Name = "Aqua Hub",
+    LoadingTitle = "Anime Card Clash",
+    LoadingSubtitle = "by Aquane",
+    ConfigurationSaving = { Enabled = true, FolderName = "AccConfig", FileName = "ACC" },
     KeySystem = false
 })
 
-local storyTab = Window:CreateTab("📖 Story Boss", 4483345998)
+local storyTab = Window:CreateTab("Story Boss", 4483345998)
 storyTab:CreateSection("Chọn Boss")
 
 for _, b in ipairs(BossData.List) do
-    local bossId = b.id
-    local label = BossData.Names[bossId] or ("Boss "..bossId)
+    local label = BossData.Names[b.id] or ("Boss "..b.id)
 
+    -- select boss
     storyTab:CreateToggle({
         Name = label,
-        CurrentValue = State.selectedBosses[bossId] or false,
-        Flag = "Boss_"..bossId,
-        Callback = (function(id, lbl)
-            return function(state)
-                State.selectedBosses[id] = (state == true)
-                notify("Boss Select", (state and "✔ " or "✖ ")..lbl, 1.5)
-            end
-        end)(bossId, label)
+        CurrentValue = false,
+        Flag = "Boss_"..b.id,
+        Callback = function(state)
+            State.selectedBosses[b.id] = state
+            notify("Boss Select", (state and "✔ " or "✖ ")..label, 1.5)
+        end
     })
 
+    -- choose team
     storyTab:CreateDropdown({
         Name = label.." | Choose Team",
         Options = BossData.TeamOptions,
-        CurrentOption = State.bossTeams[bossId] or "slot_1",
-        Flag = "Team_"..bossId,
-        Callback = (function(id, lbl)
-            return function(option)
-                local opt = option
-                if type(opt) == "table" then opt = opt[1] end
-                if type(opt) ~= "string" then return end
-                State.bossTeams[id] = opt
-                notify("Team Changed", lbl.." → "..opt, 2)
-            end
-        end)(bossId, label)
+        CurrentOption = {"slot_1"},
+        Flag = "Team_"..b.id,
+        Callback = function(option)
+            State.bossTeams[b.id] = option
+            notify("Team Changed", label.." → "..option, 2)
+        end
     })
 end
 
-storyTab:CreateSection("⚙️ Auto control")
+storyTab:CreateSection("Fight Boss Selected")
 
 storyTab:CreateToggle({
     Name = "Auto Fight",
@@ -269,11 +257,15 @@ storyTab:CreateToggle({
         end
     end
 })
+
 -------------------------------------------------
--- Nút Reload Script
+-- Tab mới: Script Control
 -------------------------------------------------
-storyTab:CreateButton({
-    Name = "🔄 Reload Script",
+local reloadTab = Window:CreateTab("🔄 Script", 4483345998) 
+reloadTab:CreateSection("Script Control")
+
+reloadTab:CreateButton({
+    Name = "Reload Script",
     Callback = function()
         -- dừng auto cũ + reset state
         if State then
@@ -296,3 +288,4 @@ storyTab:CreateButton({
 -- Load config sau cùng
 -------------------------------------------------
 Rayfield:LoadConfiguration()
+
