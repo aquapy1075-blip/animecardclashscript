@@ -168,10 +168,19 @@ local Window = Rayfield:CreateWindow({
 })
 
 -------------------------------------------------
--- Tab: Story Boss (Compact Multi-Mode)
+-- Tab: Story Boss
 -------------------------------------------------
 local storyTab = Window:CreateTab("Story Boss", 4483345998)
 storyTab:CreateSection("Select Bosses & Difficulties")
+
+-- helper nhỏ
+local function tbl_contains(t, v)
+    if not t then return false end
+    for _, x in ipairs(t) do if x == v then return true end end
+    return false
+end
+
+State.modeFrames = {}
 
 for _, b in ipairs(BossData.List) do
     local bossId = b.id
@@ -184,14 +193,22 @@ for _, b in ipairs(BossData.List) do
         Flag = "Boss_"..bossId,
         Callback = function(state)
             State.selectedBosses[bossId] = state
+            if State.modeFrames[bossId] then
+                State.modeFrames[bossId].SetVisible(state)
+            end
         end
     })
 
-    -- Mode toggles cùng 1 dòng (gọn)
-    local modeToggles = {}
+    -- Frame chứa các mode checkbox
+    local frame = storyTab:CreateSection(label.." Modes")
+    frame.SetVisible(State.selectedBosses[bossId])
+
+    State.modeFrames[bossId] = frame
+    State.bossModes[bossId] = State.bossModes[bossId] or {}
+
     for _, mode in ipairs(b.modes) do
         local flag = "Mode_"..bossId.."_"..mode
-        table.insert(modeToggles, storyTab:CreateToggle({
+        frame:CreateToggle({
             Name = mode,
             CurrentValue = tbl_contains(State.bossModes[bossId], mode),
             Flag = flag,
@@ -209,7 +226,7 @@ for _, b in ipairs(BossData.List) do
                     end
                 end
             end)(bossId, mode)
-        }))
+        })
     end
 end
 
@@ -228,8 +245,6 @@ storyTab:CreateToggle({
         end
     end
 })
-
-
 -- Tab Team Setting
 local teamTab = Window:CreateTab("Team Setting", 4483345998)
 teamTab:CreateSection("Choose Teams for Bosses")
