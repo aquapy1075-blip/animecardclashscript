@@ -192,100 +192,36 @@ local Window = Rayfield:CreateWindow({
 })
 
 -------------------------------------------------
--- Tab: Story Boss (boss toggles + per-boss mode toggles hidden)
+-- Tab: Story Boss
 -------------------------------------------------
 local storyTab = Window:CreateTab("Story Boss", 4483345998)
 storyTab:CreateSection("Select Bosses & Difficulties")
-
--- helper nhỏ
-local function tbl_contains(t, v)
-    if not t then return false end
-    for _, x in ipairs(t) do if x == v then return true end end
-    return false
-end
-
--- store per-boss mode-toggle objects so we can show/hide and set values
-local BossModeUI = {}
 
 for _, b in ipairs(BossData.List) do
     local bossId = b.id
     local label = BossData.Names[bossId] or ("Boss "..bossId)
 
-    -- Toggle chọn boss
     storyTab:CreateToggle({
         Name = label,
         CurrentValue = State.selectedBosses[bossId] or false,
         Flag = "Boss_"..bossId,
-        Callback = (function(id)
-            return function(state)
-                State.selectedBosses[id] = state
-
-                -- show/hide mode widgets (use colon :SetVisible to pass self)
-                if BossModeUI[id] then
-                    for _, widget in ipairs(BossModeUI[id].widgets) do
-                        if type(widget.SetVisible) == "function" then
-                            pcall(function() widget:SetVisible(state) end)
-                        end
-                    end
-                end
-
-                -- nếu tắt boss thì clear modes và uncheck toggles (pcall cho an toàn)
-                if not state and BossModeUI[id] then
-                    State.bossModes[id] = {}
-                    for _, tgl in ipairs(BossModeUI[id].toggles) do
-                        if type(tgl.Set) == "function" then
-                            pcall(function() tgl:Set(false) end)
-                        end
-                    end
-                end
-            end
-        end)(bossId)
+        Callback = function(state)
+            State.selectedBosses[bossId] = state
+        end
     })
 
-    -- create a small "modes" section header (hidden by default)
-    local widgets = {}
-    local toggles = {}
-
-    local sec = storyTab:CreateSection("  → "..label.." Modes")
-    if sec and type(sec.SetVisible) == "function" then
-        pcall(function() sec:SetVisible(State.selectedBosses[bossId] or false) end)
-        table.insert(widgets, sec)
-    end
-
-    -- create toggles for each mode (hidden by default)
-    for _, mode in ipairs(b.modes) do
-        local flag = "Mode_"..bossId.."_"..mode -- unique flag
-        local cur = tbl_contains(State.bossModes[bossId], mode)
-        local tgl = storyTab:CreateToggle({
-            Name = "     "..mode,
-            CurrentValue = cur,
-            Flag = flag,
-            Callback = (function(id, md)
-                return function(state)
-                    State.bossModes[id] = State.bossModes[id] or {}
-                    if state then
-                        if not tbl_contains(State.bossModes[id], md) then
-                            table.insert(State.bossModes[id], md)
-                        end
-                    else
-                        for i, v in ipairs(State.bossModes[id]) do
-                            if v == md then table.remove(State.bossModes[id], i); break end
-                        end
-                    end
-                end
-            end)(bossId, mode)
-        })
-        if tgl and type(tgl.SetVisible) == "function" then
-            pcall(function() tgl:SetVisible(State.selectedBosses[bossId] or false) end)
-            table.insert(widgets, tgl)
+    storyTab:CreateDropdown({
+        Name = label.." | Difficulties",
+        Options = b.modes,
+        CurrentOption = State.bossModes[bossId] or {b.modes[1]},
+        MultiDropdown = true,
+        Flag = "Mode_"..bossId,
+        Callback = function(options)
+            State.bossModes[bossId] = options
         end
-        table.insert(toggles, tgl)
-    end
-
-    BossModeUI[bossId] = { widgets = widgets, toggles = toggles }
+    })
 end
 
--- Auto Fight toggle (kept at bottom)
 storyTab:CreateSection("Fight Boss Selected")
 storyTab:CreateToggle({
     Name = "Auto Fight",
@@ -300,8 +236,6 @@ storyTab:CreateToggle({
         end
     end
 })
-
-
 
 -------------------------------------------------
 -- Tab: Team Setting
