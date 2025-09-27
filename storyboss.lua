@@ -285,18 +285,45 @@ scriptTab:CreateButton({
 scriptTab:CreateButton({
     Name = "❌ Destroy Script",
     Callback = function()
-        -- Hủy toàn bộ UI
-        if Window then
-            Window:Destroy()
+        -- 1) Stop auto và force các coroutine thoát
+        if State then
+            State.autoEnabled = false
+            State.autoRunId = (State.autoRunId or 0) + 1
+            State.alreadyFought = {}
         end
 
-        -- Reset state để loop dừng
-        State = {}
-        getgenv().AutoBossRunning = false
+        -- nhẹ để các coroutine kịp check điều kiện và exit
+        task.wait(0.05)
 
-        print("✅ Script destroyed.")
+        -- 2) Destroy UI an toàn (pcall cho chắc)
+        pcall(function()
+            if Window and type(Window.Destroy) == "function" then
+                Window:Destroy()
+            end
+        end)
+        pcall(function()
+            if Rayfield and type(Rayfield.Destroy) == "function" then
+                Rayfield:Destroy()
+            end
+        end)
+
+        -- 3) Reset nội dung State nhưng KHÔNG gán hẳn = nil (tránh lỗi ở coroutine)
+        if State then
+            State.autoEnabled = false
+            State.autoRunId = 0
+            State.selectedBosses = {}
+            State.bossModes = {}
+            State.bossTeams = {}
+            State.alreadyFought = {}
+        end
+
+        -- 4) Clear flag toàn cục để reload sạch
+        pcall(function() getgenv().StoryBossLoaded = false end)
+
+        print("✅ Script destroyed: UI removed and auto stopped.")
     end
 })
+
 
 -------------------------------------------------
 -- Load config sau cùng
