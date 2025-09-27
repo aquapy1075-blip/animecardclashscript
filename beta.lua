@@ -54,7 +54,7 @@ local State = {
 }
 for _, b in ipairs(BossData.List) do
     State.selectedBosses[b.id] = false
-    State.bossModes[b.id] = b.modes[1]
+    State.bossModes[b.id] = {b.modes[1]}
     State.bossTeams[b.id] = "slot_1"
 end
 
@@ -160,7 +160,8 @@ function BossController.runAuto()
             local plan = {}
             for _, boss in ipairs(BossData.List) do
                 if State.selectedBosses[boss.id] then
-                    table.insert(plan, { id=boss.id, mode=State.bossModes[boss.id] })
+                    table.insert(plan, { id=boss.id, modes=State.bossModes[boss.id] })
+
                 end
             end
 
@@ -169,10 +170,12 @@ function BossController.runAuto()
                 task.wait(2)
             else
                 for _, item in ipairs(plan) do
-                    if not State.autoEnabled or runId ~= State.autoRunId then break end
-                    BossController.fightBoss(item.id, item.mode, runId)
-                end
-            end
+                   for _, mode in ipairs(item.modes) do
+                        if not State.autoEnabled or runId ~= State.autoRunId then break end
+                         BossController.fightBoss(item.id, mode, runId)
+                 end
+              end
+
 
             State.alreadyFought = {}
             task.wait(2)
@@ -217,13 +220,14 @@ for _, b in ipairs(BossData.List) do
 
     -- chọn độ khó
     storyTab:CreateDropdown({
-        Name = label.." | Difficulty",
+        Name = label.." | Difficulties",
         Options = b.modes,
         CurrentOption = {b.modes[1]},
+        MultiDropdown = true,
         Flag = "Mode_"..b.id,
-        Callback = function(option)
+        Callback = function(options)
             local selected = option[1]
-            State.bossModes[b.id] = selected
+            State.bossModes[b.id] = options
         end
     })
 end
