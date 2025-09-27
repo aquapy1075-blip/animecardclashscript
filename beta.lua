@@ -171,16 +171,7 @@ local Window = Rayfield:CreateWindow({
 -- Tab: Story Boss
 -------------------------------------------------
 local storyTab = Window:CreateTab("Story Boss", 4483345998)
-storyTab:CreateSection("Select Bosses & Difficulties")
-
--- helper nhỏ
-local function tbl_contains(t, v)
-    if not t then return false end
-    for _, x in ipairs(t) do if x == v then return true end end
-    return false
-end
-
-State.modeFrames = {}
+storyTab:CreateSection("Select Bosses")
 
 for _, b in ipairs(BossData.List) do
     local bossId = b.id
@@ -193,41 +184,8 @@ for _, b in ipairs(BossData.List) do
         Flag = "Boss_"..bossId,
         Callback = function(state)
             State.selectedBosses[bossId] = state
-            if State.modeFrames[bossId] then
-                State.modeFrames[bossId].SetVisible(state)
-            end
         end
     })
-
-    -- Frame chứa các mode checkbox
-    local frame = storyTab:CreateSection(label.." Modes")
-    frame.SetVisible(State.selectedBosses[bossId])
-
-    State.modeFrames[bossId] = frame
-    State.bossModes[bossId] = State.bossModes[bossId] or {}
-
-    for _, mode in ipairs(b.modes) do
-        local flag = "Mode_"..bossId.."_"..mode
-        frame:CreateToggle({
-            Name = mode,
-            CurrentValue = tbl_contains(State.bossModes[bossId], mode),
-            Flag = flag,
-            Callback = (function(id, md)
-                return function(state)
-                    State.bossModes[id] = State.bossModes[id] or {}
-                    if state then
-                        if not tbl_contains(State.bossModes[id], md) then
-                            table.insert(State.bossModes[id], md)
-                        end
-                    else
-                        for i, v in ipairs(State.bossModes[id]) do
-                            if v == md then table.remove(State.bossModes[id], i); break end
-                        end
-                    end
-                end
-            end)(bossId, mode)
-        })
-    end
 end
 
 -- Auto Fight toggle
@@ -245,6 +203,7 @@ storyTab:CreateToggle({
         end
     end
 })
+
 -- Tab Team Setting
 local teamTab = Window:CreateTab("Team Setting", 4483345998)
 teamTab:CreateSection("Choose Teams for Bosses")
