@@ -46,14 +46,16 @@ local BossData = {
 -------------------------------------------------
 local State = {
     selectedBosses = {},
+    bossModes = {},
     bossTeams = {},
     alreadyFought = {},
     autoEnabled = false,
     autoRunId = 0,
 }
-for id in pairs(BossData.Names) do
-    State.selectedBosses[id] = false
-    State.bossTeams[id] = "slot_1"
+for _, b in ipairs(BossData.List) do
+    State.selectedBosses[b.id] = false
+    State.bossModes[b.id] = b.modes[1]
+    State.bossTeams[b.id] = "slot_1"
 end
 
 -------------------------------------------------
@@ -106,11 +108,12 @@ local BossController = {}
 function BossController.fightBoss(id, mode, runId)
     if not State.autoEnabled or runId ~= State.autoRunId then return end
 
-    -- set team for this boss
+    -- set team
     Net.setPartySlot:FireServer(State.bossTeams[id] or "slot_1")
 
     State.alreadyFought[id] = State.alreadyFought[id] or {}
     if State.alreadyFought[id][mode] then return end
+
     local name = BossData.Names[id] or ("Boss "..id)
     notify("Story Boss", "⚔️ Fighting "..name.." | "..mode, 2)
 
@@ -143,22 +146,6 @@ function BossController.fightBoss(id, mode, runId)
         return
     end
 
-    if isInBattlePopupPresent() then
-        local elapsed = 0
-        while isInBattlePopupPresent() and elapsed < 40 do
-            if not State.autoEnabled or runId ~= State.autoRunId then return end
-            task.wait(1)
-            elapsed += 1
-        end
-        if didBattleEndAsWinOrLoss() then
-            notify("Finished", name.." | "..mode.." done!", 2)
-        else
-            notify("Skipped", name.." | "..mode.." skipped", 2)
-        end
-        State.alreadyFought[id][mode] = true
-        return
-    end
-
     notify("No Response", name.." | "..mode.." no response", 2)
     State.alreadyFought[id][mode] = true
 end
@@ -169,11 +156,11 @@ function BossController.runAuto()
 
     task.spawn(function()
         while State.autoEnabled and runId == State.autoRunId do
-            -- build plan from selected bosses
+            -- build plan
             local plan = {}
             for _, boss in ipairs(BossData.List) do
                 if State.selectedBosses[boss.id] then
-                    table.insert(plan, { id=boss.id, modes=table.clone(boss.modes) })
+                    table.insert(plan, { id=boss.id, mode=State.bossModes[boss.id] })
                 end
             end
 
@@ -182,11 +169,8 @@ function BossController.runAuto()
                 task.wait(2)
             else
                 for _, item in ipairs(plan) do
-                    for _, mode in ipairs(item.modes) do
-                        if not State.autoEnabled or runId ~= State.autoRunId then break end
-                        BossController.fightBoss(item.id, mode, runId)
-                    end
                     if not State.autoEnabled or runId ~= State.autoRunId then break end
+                    BossController.fightBoss(item.id, item.mode, runId)
                 end
             end
 
@@ -212,39 +196,39 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false
 })
 
+-------------------------------------------------
+-- Tab: Story Boss
+-------------------------------------------------
 local storyTab = Window:CreateTab("Story Boss", 4483345998)
-storyTab:CreateSection("Chọn Boss")
+storyTab:CreateSection("Select Bosses & Difficulty")
 
 for _, b in ipairs(BossData.List) do
     local label = BossData.Names[b.id] or ("Boss "..b.id)
 
-    -- select boss
+    -- chọn boss
     storyTab:CreateToggle({
         Name = label,
         CurrentValue = false,
         Flag = "Boss_"..b.id,
         Callback = function(state)
             State.selectedBosses[b.id] = state
-            notify("Boss Select", (state and "✔ " or "✖ ")..label, 1.5)
         end
     })
 
-    -- choose team
+    -- chọn độ khó
     storyTab:CreateDropdown({
-        Name = label.." | Choose Team",
-        Options = BossData.TeamOptions,
-        CurrentOption = {"slot_1"},
-        Flag = "Team_"..b.id,
+        Name = label.." | Difficulty",
+        Options = b.modes,
+        CurrentOption = {b.modes[1]},
+        Flag = "Mode_"..b.id,
         Callback = function(option)
-            local selected = option[1] or "slot_1"
-            State.bossTeams[b.id] = selected
-            notify("Team Changed", label.." → "..selected, 2)
+            local selected = option[1]
+            State.bossModes[b.id] = selected
         end
     })
 end
 
 storyTab:CreateSection("Fight Boss Selected")
-
 storyTab:CreateToggle({
     Name = "Auto Fight",
     CurrentValue = false,
@@ -258,6 +242,26 @@ storyTab:CreateToggle({
         end
     end
 })
+
+-------------------------------------------------
+-- Tab: Team Setting
+-------------------------------------------------
+local teamTab = Window:CreateTab("Team Setting", 4483345998)
+teamTab:CreateSection("Choose Teams for Bosses")
+
+for _, b in ipairs(BossData.List) do
+    local label = BossData.Names[b.id] or ("Boss "..b.id)
+    teamTab:CreateDropdown({
+        Name = label.." | Choose Team",
+        Options = BossData.TeamOptions,
+        CurrentOption = {"slot_1"},
+        Flag = "Team_"..b.id,
+        Callback = function(option)
+            local selected = option[1]
+            State.bossTeams[b.id] = selected
+        end
+    })
+end
 
 -------------------------------------------------
 -- Tab mới: Script Control
