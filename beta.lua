@@ -54,7 +54,7 @@ local State = {
 }
 for _, b in ipairs(BossData.List) do
     State.selectedBosses[b.id] = false
-    State.bossModes[b.id] = { b.modes[1] } -- multi modes default (table)
+    State.bossModes[b.id] = { b.modes[1] }
     State.bossTeams[b.id] = "slot_1"
 end
 
@@ -94,12 +94,6 @@ local function isInBattlePopupPresent()
         or hasPopupContaining("already in battle")
 end
 
-local function didBattleEndAsWinOrLoss()
-    return hasPopupContaining("victory")
-        or hasPopupContaining("defeat")
-        or isErrorPopupPresent()
-end
-
 -------------------------------------------------
 -- Boss controller
 -------------------------------------------------
@@ -108,7 +102,6 @@ local BossController = {}
 function BossController.fightBoss(id, mode, runId)
     if not State.autoEnabled or runId ~= State.autoRunId then return end
 
-    -- set team (server expects "slot_x" string)
     local slot = State.bossTeams[id] or "slot_1"
     pcall(function() Net.setPartySlot:FireServer(slot) end)
 
@@ -128,7 +121,6 @@ function BossController.fightBoss(id, mode, runId)
 
     task.wait(0.5)
 
-    -- wait if in battle
     if isInBattlePopupPresent() then
         local elapsed = 0
         while isInBattlePopupPresent() and elapsed < 180 do
@@ -152,16 +144,15 @@ function BossController.fightBoss(id, mode, runId)
 end
 
 function BossController.runAuto()
-    State.autoRunId = (State.autoRunId or 0) + 1
+    State.autoRunId += 1
     local runId = State.autoRunId
 
     task.spawn(function()
         while State.autoEnabled and runId == State.autoRunId do
-            -- build plan
             local plan = {}
             for _, boss in ipairs(BossData.List) do
                 if State.selectedBosses[boss.id] then
-                    table.insert(plan, { id = boss.id, modes = State.bossModes[boss.id] or {} })
+                    table.insert(plan, { id=boss.id, modes=State.bossModes[boss.id] })
                 end
             end
 
@@ -181,10 +172,10 @@ function BossController.runAuto()
             task.wait(2)
         end
     end)
-end  -- <-- đây là END để đóng function BossController.runAuto()
+end
 
 function BossController.stopAuto()
-    State.autoRunId = (State.autoRunId or 0) + 1
+    State.autoRunId += 1
     State.alreadyFought = {}
     State.autoEnabled = false
 end
@@ -210,30 +201,24 @@ for _, b in ipairs(BossData.List) do
     local bossId = b.id
     local label = BossData.Names[bossId] or ("Boss "..bossId)
 
-    -- chọn boss (capture id)
     storyTab:CreateToggle({
         Name = label,
         CurrentValue = State.selectedBosses[bossId] or false,
         Flag = "Boss_"..bossId,
-        Callback = (function(id)
-            return function(state)
-                State.selectedBosses[id] = state
-            end
-        end)(bossId)
+        Callback = (function(id) return function(state)
+            State.selectedBosses[id] = state
+        end end)(bossId)
     })
 
-    -- chọn độ khó (multi)
     storyTab:CreateDropdown({
         Name = label.." | Difficulties",
         Options = b.modes,
-        CurrentOption = { b.modes[1] },
+        CurrentOption = {"normal","hard","medium","extreme"},
         MultiDropdown = true,
         Flag = "Mode_"..bossId,
-        Callback = (function(id)
-            return function(options)
-                State.bossModes[id] = options or {}
-            end
-        end)(bossId)
+        Callback = (function(id) return function(options)
+            State.bossModes[id] = options or {}
+        end end)(bossId)
     })
 end
 
@@ -267,18 +252,15 @@ for _, b in ipairs(BossData.List) do
         Options = BossData.TeamOptions,
         CurrentOption = State.bossTeams[bossId] or "slot_1",
         Flag = "Team_"..bossId,
-        Callback = (function(id, lbl)
-            return function(option)
-                -- option is a string like "slot_2"
-                State.bossTeams[id] = option or "slot_1"
-                notify("Team Changed", lbl.." → "..(option or "slot_1"), 1.5)
-            end
-        end)(bossId, label)
+        Callback = (function(id, lbl) return function(option)
+            State.bossTeams[id] = option or "slot_1"
+            notify("Team Changed", lbl.." → "..(option or "slot_1"), 1.5)
+        end end)(bossId, label)
     })
 end
 
 -------------------------------------------------
--- Tab: Script Control (reload + destroy)
+-- Tab: Script Control
 -------------------------------------------------
 local scriptTab = Window:CreateTab("🔄 Script", 4483345998)
 scriptTab:CreateSection("Script Control")
@@ -288,7 +270,7 @@ scriptTab:CreateButton({
     Callback = function()
         if State then
             State.autoEnabled = false
-            State.autoRunId = (State.autoRunId or 0) + 1
+            State.autoRunId += 1
             State.alreadyFought = {}
         end
         if Rayfield then pcall(function() Rayfield:Destroy() end) end
@@ -301,26 +283,19 @@ scriptTab:CreateButton({
     Callback = function()
         if State then
             State.autoEnabled = false
-            State.autoRunId = (State.autoRunId or 0) + 1
+            State.autoRunId += 1
             State.alreadyFought = {}
         end
         task.wait(0.05)
-        pcall(function() if Window and type(Window.Destroy) == "function" then Window:Destroy() end end)
-        pcall(function() if Rayfield and type(Rayfield.Destroy) == "function" then Rayfield:Destroy() end end)
-        if State then
-            State.autoEnabled = false
-            State.autoRunId = 0
-            State.selectedBosses = {}
-            State.bossModes = {}
-            State.bossTeams = {}
-            State.alreadyFought = {}
-        end
-        pcall(function() getgenv().StoryBossLoaded = false end)
+        pcall(function() if Window and type(Window.Destroy)=="function" then Window:Destroy() end end)
+        pcall(function() if Rayfield and type(Rayfield.Destroy)=="function" then Rayfield:Destroy() end end)
+        State = {}
+        getgenv().StoryBossLoaded = false
         print("✅ Script destroyed: UI removed and auto stopped.")
     end
 })
 
 -------------------------------------------------
--- Load config sau cùng
+-- Load config
 -------------------------------------------------
 Rayfield:LoadConfiguration()
