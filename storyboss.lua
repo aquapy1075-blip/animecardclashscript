@@ -236,8 +236,9 @@ for _, b in ipairs(BossData.List) do
         CurrentOption = {"slot_1"},
         Flag = "Team_"..b.id,
         Callback = function(option)
-            State.bossTeams[b.id] = option
-            notify("Team Changed", label.." → "..option, 2)
+            local selected = option[1] or "slot_1"
+            State.bossTeams[b.id] = selected
+            notify("Team Changed", label.." → "..selected, 2)
         end
     })
 end
