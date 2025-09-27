@@ -30,7 +30,7 @@ local farmModes = {
 }
 
 -- Map mặc định
-local farmArgs = {"Dimensional Fortress"}
+local farmArgs = {"dimensional_fortress"}
 
 -- State
 local auto = true
