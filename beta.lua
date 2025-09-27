@@ -168,16 +168,18 @@ local Window = Rayfield:CreateWindow({
 })
 
 -------------------------------------------------
--- Tab Story Boss gọn
+-- Tab: Story Boss (Compact Multi-Mode)
 -------------------------------------------------
 local storyTab = Window:CreateTab("Story Boss", 4483345998)
 storyTab:CreateSection("Select Bosses & Difficulties")
 
 for _, b in ipairs(BossData.List) do
     local bossId = b.id
+    local label = BossData.Names[bossId] or ("Boss "..bossId)
+
     -- Toggle chọn boss
     storyTab:CreateToggle({
-        Name = BossData.Names[bossId] or ("Boss "..bossId),
+        Name = label,
         CurrentValue = State.selectedBosses[bossId] or false,
         Flag = "Boss_"..bossId,
         Callback = function(state)
@@ -185,21 +187,30 @@ for _, b in ipairs(BossData.List) do
         end
     })
 
-    -- Hàng mode toggle trên 1 dòng
-    local modesStr = ""
-    for i, mode in ipairs(b.modes) do
-        modesStr = modesStr .. mode .. (i<#b.modes and " | " or "")
+    -- Mode toggles cùng 1 dòng (gọn)
+    local modeToggles = {}
+    for _, mode in ipairs(b.modes) do
+        local flag = "Mode_"..bossId.."_"..mode
+        table.insert(modeToggles, storyTab:CreateToggle({
+            Name = mode,
+            CurrentValue = tbl_contains(State.bossModes[bossId], mode),
+            Flag = flag,
+            Callback = (function(id, md)
+                return function(state)
+                    State.bossModes[id] = State.bossModes[id] or {}
+                    if state then
+                        if not tbl_contains(State.bossModes[id], md) then
+                            table.insert(State.bossModes[id], md)
+                        end
+                    else
+                        for i, v in ipairs(State.bossModes[id]) do
+                            if v == md then table.remove(State.bossModes[id], i); break end
+                        end
+                    end
+                end
+            end)(bossId, mode)
+        }))
     end
-
-    storyTab:CreateToggle({
-        Name = modesStr,
-        CurrentValue = true,
-        Flag = "ModeRow_"..bossId,
-        Callback = function(state)
-            -- Bật/tắt tất cả mode nếu muốn (option)
-            State.bossModes[bossId] = state and b.modes or {}
-        end
-    })
 end
 
 -- Auto Fight toggle
@@ -210,7 +221,11 @@ storyTab:CreateToggle({
     Flag = "AutoFight",
     Callback = function(state)
         State.autoEnabled = state
-        if state then BossController.runAuto() else BossController.stopAuto() end
+        if State.autoEnabled then
+            BossController.runAuto()
+        else
+            BossController.stopAuto()
+        end
     end
 })
 
