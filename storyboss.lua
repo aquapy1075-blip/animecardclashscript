@@ -1,9 +1,10 @@
 -------------------------------------------------
--- Services & net
+-- Services & Net
 -------------------------------------------------
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
 
@@ -51,6 +52,7 @@ local State = {
     autoEnabled = false,
     autoRunId = 0,
 }
+
 for id in pairs(BossData.Names) do
     State.selectedBosses[id] = false
     State.bossTeams[id] = "slot_1"
@@ -59,8 +61,6 @@ end
 -------------------------------------------------
 -- Utils
 -------------------------------------------------
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
 local function notify(title, content, duration)
     Rayfield:Notify({ Title = title, Content = content, Duration = duration or 2 })
 end
@@ -80,8 +80,10 @@ local function hasPopupContaining(keyword)
 end
 
 local function isErrorPopupPresent()
-    local errorKeywords = {"on cooldown", "need to beat", "locked", "not unlocked"}
-    for _, k in ipairs(errorKeywords) do if hasPopupContaining(k) then return true end end
+    local errorKeywords = {"need to beat", "locked", "not unlocked", "on cooldown"}
+    for _, k in ipairs(errorKeywords) do 
+        if hasPopupContaining(k) then return true end 
+    end
     if hasPopupContaining("error") and not hasPopupContaining("already in battle") then return true end
     return false
 end
@@ -99,7 +101,7 @@ local function didBattleEndAsWinOrLoss()
 end
 
 -------------------------------------------------
--- Boss controller
+-- Boss Controller
 -------------------------------------------------
 local BossController = {}
 
@@ -190,7 +192,7 @@ function BossController.runAuto()
                 end
             end
 
-            State.alreadyFought = {}
+            --State.alreadyFought = {}
             task.wait(2)
         end
     end)
@@ -212,6 +214,7 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false
 })
 
+-- Story Boss Tab
 local storyTab = Window:CreateTab("Story Boss", 4483345998)
 storyTab:CreateSection("Chọn Boss")
 
@@ -228,23 +231,9 @@ for _, b in ipairs(BossData.List) do
             notify("Boss Select", (state and "✔ " or "✖ ")..label, 1.5)
         end
     })
-
-    -- choose team
-    storyTab:CreateDropdown({
-        Name = label.." | Choose Team",
-        Options = BossData.TeamOptions,
-        CurrentOption = {"slot_1"},
-        Flag = "Team_"..b.id,
-        Callback = function(option)
-            local selected = option[1] or "slot_1"
-            State.bossTeams[b.id] = selected
-            notify("Team Changed", label.." → "..selected, 2)
-        end
-    })
 end
 
 storyTab:CreateSection("Fight Boss Selected")
-
 storyTab:CreateToggle({
     Name = "Auto Fight",
     CurrentValue = false,
@@ -259,74 +248,63 @@ storyTab:CreateToggle({
     end
 })
 
--------------------------------------------------
--- Tab mới: Script Control
--------------------------------------------------
-local scriptTab = Window:CreateTab("🔄 Script", 4483345998) 
+-- Team Select Tab
+local teamTab = Window:CreateTab("Team Select", 4483345998)
+teamTab:CreateSection("Select Team for Each Boss")
+for _, b in ipairs(BossData.List) do
+    local label = BossData.Names[b.id] or ("Boss "..b.id)
+    teamTab:CreateDropdown({
+        Name = label.." | Choose Team",
+        Options = BossData.TeamOptions,
+        CurrentOption = {"slot_1"},
+        Flag = "Team_"..b.id,
+        Callback = function(option)
+            local selected = option[1] or "slot_1"
+            State.bossTeams[b.id] = selected
+            notify("Team Changed", label.." → "..selected, 2)
+        end
+    })
+end
 
+-- Script Control Tab
+local scriptTab = Window:CreateTab("🔄 Script", 4483345998)
 scriptTab:CreateSection("Script Control")
 scriptTab:CreateButton({
     Name = "Reload Script",
     Callback = function()
-        -- dừng auto cũ + reset state
         if State then
             State.autoEnabled = false
             State.autoRunId += 1
             State.alreadyFought = {}
         end
-        -- hủy UI cũ
         if Rayfield then
             pcall(function() Rayfield:Destroy() end)
         end
-        -- tải lại script
         loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/storyboss.lua"))()
     end
 })
 scriptTab:CreateButton({
     Name = "❌ Destroy Script",
     Callback = function()
-        -- 1) Stop auto và force các coroutine thoát
         if State then
             State.autoEnabled = false
-            State.autoRunId = (State.autoRunId or 0) + 1
+            State.autoRunId += 1
             State.alreadyFought = {}
         end
-
-        -- nhẹ để các coroutine kịp check điều kiện và exit
         task.wait(0.05)
-
-        -- 2) Destroy UI an toàn (pcall cho chắc)
-        pcall(function()
-            if Window and type(Window.Destroy) == "function" then
-                Window:Destroy()
-            end
-        end)
-        pcall(function()
-            if Rayfield and type(Rayfield.Destroy) == "function" then
-                Rayfield:Destroy()
-            end
-        end)
-
-        -- 3) Reset nội dung State nhưng KHÔNG gán hẳn = nil (tránh lỗi ở coroutine)
+        pcall(function() if Window and type(Window.Destroy) == "function" then Window:Destroy() end end)
+        pcall(function() if Rayfield and type(Rayfield.Destroy) == "function" then Rayfield:Destroy() end end)
         if State then
             State.autoEnabled = false
             State.autoRunId = 0
             State.selectedBosses = {}
-            State.bossModes = {}
             State.bossTeams = {}
             State.alreadyFought = {}
         end
-
-        -- 4) Clear flag toàn cục để reload sạch
         pcall(function() getgenv().StoryBossLoaded = false end)
-
         print("✅ Script destroyed: UI removed and auto stopped.")
     end
 })
 
-
--------------------------------------------------
--- Load config sau cùng
--------------------------------------------------
+-- Load config
 Rayfield:LoadConfiguration()
-
