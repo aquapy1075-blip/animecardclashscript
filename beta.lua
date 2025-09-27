@@ -201,19 +201,21 @@ for _, b in ipairs(BossData.List) do
     local bossId = b.id
     local label = BossData.Names[bossId] or ("Boss "..bossId)
 
+    -- toggle chọn boss
     storyTab:CreateToggle({
         Name = label,
-        CurrentValue = State.selectedBosses[bossId] or false,
+        CurrentValue = State.selectedBosses[bossId],
         Flag = "Boss_"..bossId,
         Callback = function(state)
             State.selectedBosses[bossId] = state
         end
     })
 
+    -- dropdown chọn độ khó
     storyTab:CreateDropdown({
         Name = label.." | Difficulties",
         Options = b.modes,
-        CurrentOption = State.bossModes[bossId] or {b.modes[1]},
+        CurrentOption = State.bossModes[bossId],
         MultiDropdown = true,
         Flag = "Mode_"..bossId,
         Callback = function(options)
@@ -225,7 +227,7 @@ end
 storyTab:CreateSection("Fight Boss Selected")
 storyTab:CreateToggle({
     Name = "Auto Fight",
-    CurrentValue = State.autoEnabled or false,
+    CurrentValue = State.autoEnabled,
     Flag = "AutoFight",
     Callback = function(state)
         State.autoEnabled = state
@@ -250,7 +252,7 @@ for _, b in ipairs(BossData.List) do
     teamTab:CreateDropdown({
         Name = label.." | Choose Team",
         Options = BossData.TeamOptions,
-        CurrentOption = State.bossTeams[bossId] or "slot_1",
+        CurrentOption = State.bossTeams[bossId],
         Flag = "Team_"..bossId,
         Callback = (function(id, lbl) return function(option)
             State.bossTeams[id] = option or "slot_1"
