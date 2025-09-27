@@ -197,7 +197,7 @@ local Window = Rayfield:CreateWindow({
 local storyTab = Window:CreateTab("Story Boss", 4483345998)
 storyTab:CreateSection("Select Bosses & Difficulties")
 
--- helper exists?
+-- helper nhỏ
 local function tbl_contains(t, v)
     if not t then return false end
     for _, x in ipairs(t) do if x == v then return true end end
@@ -219,23 +219,22 @@ for _, b in ipairs(BossData.List) do
         Callback = (function(id)
             return function(state)
                 State.selectedBosses[id] = state
-                -- show/hide mode toggles
+
+                -- show/hide mode widgets (use colon :SetVisible to pass self)
                 if BossModeUI[id] then
-                    for _, obj in ipairs(BossModeUI[id].widgets) do
-                        if type(obj.SetVisible) == "function" then
-                            obj:SetVisible(state)
+                    for _, widget in ipairs(BossModeUI[id].widgets) do
+                        if type(widget.SetVisible) == "function" then
+                            pcall(function() widget:SetVisible(state) end)
                         end
                     end
                 end
-                -- if unticked, clear chosen modes (optional)
-                if not state then
+
+                -- nếu tắt boss thì clear modes và uncheck toggles (pcall cho an toàn)
+                if not state and BossModeUI[id] then
                     State.bossModes[id] = {}
-                    if BossModeUI[id] then
-                        for _, obj in ipairs(BossModeUI[id].toggles) do
-                            -- try to set UI toggle off if API available
-                            if type(obj.Set) == "function" then
-                                pcall(function() obj:Set(false) end)
-                            end
+                    for _, tgl in ipairs(BossModeUI[id].toggles) do
+                        if type(tgl.Set) == "function" then
+                            pcall(function() tgl:Set(false) end)
                         end
                     end
                 end
@@ -247,10 +246,9 @@ for _, b in ipairs(BossData.List) do
     local widgets = {}
     local toggles = {}
 
-    -- create a section label for clarity (some Rayfield versions return an object)
     local sec = storyTab:CreateSection("  → "..label.." Modes")
     if sec and type(sec.SetVisible) == "function" then
-        sec:SetVisible(State.selectedBosses[bossId] or false)
+        pcall(function() sec:SetVisible(State.selectedBosses[bossId] or false) end)
         table.insert(widgets, sec)
     end
 
@@ -277,9 +275,8 @@ for _, b in ipairs(BossData.List) do
                 end
             end)(bossId, mode)
         })
-        -- hide toggle initially if API supports SetVisible
         if tgl and type(tgl.SetVisible) == "function" then
-            tgl:SetVisible(State.selectedBosses[bossId] or false)
+            pcall(function() tgl:SetVisible(State.selectedBosses[bossId] or false) end)
             table.insert(widgets, tgl)
         end
         table.insert(toggles, tgl)
@@ -305,6 +302,7 @@ storyTab:CreateToggle({
 })
 
 
+
 -------------------------------------------------
 -- Tab: Team Setting
 -------------------------------------------------
@@ -326,44 +324,7 @@ for _, b in ipairs(BossData.List) do
         end end)(bossId, label)
     })
 end
--------------------------------------------------
--- Tab: Mode Setting (Difficulty per boss, multi-toggle)
--------------------------------------------------
-local modeTab = Window:CreateTab("Mode Setting", 4483345998)
-modeTab:CreateSection("Choose difficulties for each boss")
 
-for _, b in ipairs(BossData.List) do
-    local bossId = b.id
-    local label = BossData.Names[bossId] or ("Boss "..bossId)
-
-    -- tạo 1 section nhỏ cho boss để nhìn rõ
-    modeTab:CreateSection(label)
-
-    for _, mode in ipairs(b.modes) do
-        local flag = "Mode_"..bossId.."_"..mode  -- unique flag per boss+mode
-        modeTab:CreateToggle({
-            Name = mode,
-            CurrentValue = tbl_contains(State.bossModes[bossId], mode),
-            Flag = flag,
-            Callback = (function(id, md)
-                return function(state)
-                    State.bossModes[id] = State.bossModes[id] or {}
-                    if state then
-                        -- add nếu chưa có
-                        if not tbl_contains(State.bossModes[id], md) then
-                            table.insert(State.bossModes[id], md)
-                        end
-                    else
-                        -- remove nếu off
-                        for i, v in ipairs(State.bossModes[id]) do
-                            if v == md then table.remove(State.bossModes[id], i); break end
-                        end
-                    end
-                end
-            end)(bossId, mode)
-        })
-    end
-end
 -------------------------------------------------
 -- Tab: Script Control
 -------------------------------------------------
