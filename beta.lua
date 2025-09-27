@@ -1,11 +1,14 @@
 -------------------------------------------------
--- Services & net
+-- Services & Net
 -------------------------------------------------
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
-local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
+-- Load Fluent
+pcall(function() if getgenv().Fluent and getgenv().Fluent.Destroy then getgenv().Fluent:Destroy() end end)
+local Fluent = loadstring(game:HttpGet("https://raw.githubusercontent.com/dawid-scripts/Fluent/main/Fluent.lua"))()
+getgenv().Fluent = Fluent
 
 local Net = {
     fightStoryBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightStoryBoss"),
@@ -54,14 +57,44 @@ for _, b in ipairs(BossData.List) do
     State.bossTeams[b.id] = "slot_1"
 end
 
+-------------------------------------------------
+-- Utils
+-------------------------------------------------
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-
 local function notify(title, content, duration)
     Fluent:Notify({ Title = title, Content = content, Duration = duration or 2 })
 end
 
+local function isInBattlePopupPresent()
+    for _, gui in ipairs(PlayerGui:GetDescendants()) do
+        if gui:IsA("TextLabel") or gui:IsA("TextButton") then
+            local ok, txt = pcall(function() return tostring(gui.Text) end)
+            if ok and txt then
+                txt = txt:lower()
+                if txt:find("hide battle") or txt:find("show battle") or txt:find("already in battle") then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function isErrorPopupPresent()
+    local keywords = {"on cooldown","need to beat","locked","not unlocked"}
+    for _, k in ipairs(keywords) do
+        for _, gui in ipairs(PlayerGui:GetDescendants()) do
+            if gui:IsA("TextLabel") or gui:IsA("TextButton") then
+                local ok, txt = pcall(function() return tostring(gui.Text) end)
+                if ok and txt and txt:lower():find(k) then return true end
+            end
+        end
+    end
+    return false
+end
+
 -------------------------------------------------
--- Boss controller
+-- Boss Controller
 -------------------------------------------------
 local BossController = {}
 
@@ -76,33 +109,40 @@ function BossController.fightBoss(id, mode, runId)
     local name = BossData.Names[id] or ("Boss "..id)
     notify("Story Boss", "⚔️ Fighting "..name.." | "..mode.." | "..slot, 2)
 
-    local ok, err = pcall(function()
-        Net.fightStoryBoss:FireServer(id, mode)
-    end)
+    local ok, err = pcall(function() Net.fightStoryBoss:FireServer(id, mode) end)
     if not ok then
         notify("Error", tostring(err), 2)
         return
     end
 
     task.wait(0.5)
+    local elapsed = 0
+    while isInBattlePopupPresent() and elapsed < 180 do
+        if not State.autoEnabled or runId ~= State.autoRunId then return end
+        task.wait(1)
+        elapsed += 1
+    end
     State.alreadyFought[id][mode] = true
+
+    if isErrorPopupPresent() then
+        notify("Cooldown/Error", name.." | "..mode, 3)
+        task.wait(3)
+    end
 end
 
 function BossController.runAuto()
     State.autoRunId += 1
     local runId = State.autoRunId
-
     task.spawn(function()
         while State.autoEnabled and runId == State.autoRunId do
             local plan = {}
             for _, boss in ipairs(BossData.List) do
                 if State.selectedBosses[boss.id] then
-                    table.insert(plan, { id=boss.id, modes=State.bossModes[boss.id] })
+                    table.insert(plan, {id=boss.id, modes=State.bossModes[boss.id]})
                 end
             end
-
             if #plan == 0 then
-                notify("Info", "No bosses selected", 2)
+                notify("Info","No bosses selected",2)
                 task.wait(2)
             else
                 for _, item in ipairs(plan) do
@@ -112,7 +152,6 @@ function BossController.runAuto()
                     end
                 end
             end
-
             State.alreadyFought = {}
             task.wait(2)
         end
@@ -120,32 +159,23 @@ function BossController.runAuto()
 end
 
 function BossController.stopAuto()
-    State.autoEnabled = false
     State.autoRunId += 1
     State.alreadyFought = {}
+    State.autoEnabled = false
 end
 
 -------------------------------------------------
 -- UI
 -------------------------------------------------
-local Window = Fluent:CreateWindow({
-    Title = "Aqua Hub | Anime Card Clash",
-    SubTitle = "by Aquane",
-    Size = UDim2.fromOffset(550, 400),
-    Acrylic = true,
-    Theme = "Dark"
-})
+local Window = Fluent:CreateWindow({ Title = "Aqua Hub" })
 
--- Tab Story Boss
-local storyTab = Window:AddTab({ Title = "Story Boss", Icon = "rbxassetid://4483345998" })
-storyTab:AddSection("Select Bosses & Difficulties")
-
+-- Story Boss Tab
+local storyTab = Window:AddTab({ Title = "Story Boss" })
 for _, b in ipairs(BossData.List) do
     local bossId = b.id
     local label = BossData.Names[bossId] or ("Boss "..bossId)
 
-    -- Toggle chọn boss
-    storyTab:AddToggle("Boss_"..bossId, {
+    storyTab:AddToggle({
         Title = label,
         Default = State.selectedBosses[bossId],
         Callback = function(state)
@@ -153,20 +183,18 @@ for _, b in ipairs(BossData.List) do
         end
     })
 
-    -- Multi-dropdown difficulty
-    storyTab:AddDropdown("Mode_"..bossId, {
+    storyTab:AddDropdown({
         Title = label.." | Difficulties",
-        Values = b.modes,
+        Options = b.modes,
         Default = State.bossModes[bossId],
-        Multi = true,
-        Callback = function(values)
-            State.bossModes[bossId] = values
+        MultiSelect = true,
+        Callback = function(options)
+            State.bossModes[bossId] = options
         end
     })
 end
 
-storyTab:AddSection("Auto Fight")
-storyTab:AddToggle("AutoFight", {
+storyTab:AddToggle({
     Title = "Auto Fight",
     Default = State.autoEnabled,
     Callback = function(state)
@@ -175,49 +203,43 @@ storyTab:AddToggle("AutoFight", {
     end
 })
 
--- Tab Team Setting
-local teamTab = Window:AddTab({ Title = "Team Setting", Icon = "rbxassetid://4483345998" })
-teamTab:AddSection("Choose Teams for Bosses")
+-- Team Setting Tab
+local teamTab = Window:AddTab({ Title = "Team Setting" })
 for _, b in ipairs(BossData.List) do
     local bossId = b.id
     local label = BossData.Names[bossId] or ("Boss "..bossId)
 
-    teamTab:AddDropdown("Team_"..bossId, {
-        Title = label.." | Choose Team",
-        Values = BossData.TeamOptions,
+    teamTab:AddDropdown({
+        Title = label.." | Team",
+        Options = BossData.TeamOptions,
         Default = { State.bossTeams[bossId] },
-        Multi = false,
         Callback = function(option)
             State.bossTeams[bossId] = option[1] or "slot_1"
-            notify("Team Changed", label.." → "..(option[1] or "slot_1"), 1.5)
+            notify("Team Changed", label.." → "..State.bossTeams[bossId],1.5)
         end
     })
 end
 
--- Tab Script Control
-local scriptTab = Window:AddTab({ Title = "Script", Icon = "rbxassetid://4483345998" })
-scriptTab:AddSection("Script Control")
-
-scriptTab:AddButton("ReloadScript", {
+-- Script Control Tab
+local scriptTab = Window:AddTab({ Title = "Script Control" })
+scriptTab:AddButton({
     Title = "Reload Script",
     Callback = function()
         State.autoEnabled = false
         State.autoRunId += 1
         State.alreadyFought = {}
-        pcall(function() Fluent:Destroy() end)
+        pcall(function() if getgenv().Fluent and getgenv().Fluent.Destroy then getgenv().Fluent:Destroy() end end)
         loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/beta.lua"))()
     end
 })
-
-scriptTab:AddButton("DestroyScript", {
-    Title = "❌ Destroy Script",
+scriptTab:AddButton({
+    Title = "Destroy Script",
     Callback = function()
         State.autoEnabled = false
         State.autoRunId += 1
         State.alreadyFought = {}
-        task.wait(0.05)
-        pcall(function() if Window then Window:Destroy() end end)
-        State = {}
-        print("✅ Script destroyed: UI removed and auto stopped.")
+        pcall(function() if Window.Destroy then Window:Destroy() end end)
+        getgenv().Fluent = nil
+        print("✅ Script destroyed")
     end
 })
