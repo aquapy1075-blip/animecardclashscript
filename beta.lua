@@ -213,7 +213,7 @@ for _, b in ipairs(BossData.List) do
     storyTab:CreateDropdown({
         Name = label.." | Difficulties",
         Options = b.modes,
-        CurrentOption = {"normal","hard","medium","extreme"},
+        CurrentOption = {},
         MultiDropdown = true,
         Flag = "Mode_"..bossId,
         Callback = (function(id) return function(options)
