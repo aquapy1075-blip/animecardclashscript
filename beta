@@ -283,7 +283,7 @@ scriptTab:CreateButton({
             pcall(function() Rayfield:Destroy() end)
         end
         -- tải lại script
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/beta"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/beta.lua"))()
     end
 })
 scriptTab:CreateButton({
