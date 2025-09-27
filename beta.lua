@@ -154,34 +154,33 @@ function BossController.runAuto()
     State.autoRunId += 1
     local runId = State.autoRunId
 
-    task.spawn(function()
-        while State.autoEnabled and runId == State.autoRunId do
-            -- build plan
-            local plan = {}
-            for _, boss in ipairs(BossData.List) do
-                if State.selectedBosses[boss.id] then
-                    table.insert(plan, { id=boss.id, modes=State.bossModes[boss.id] })
+   task.spawn(function()
+    while State.autoEnabled and runId == State.autoRunId do
+        -- build plan
+        local plan = {}
+        for _, boss in ipairs(BossData.List) do
+            if State.selectedBosses[boss.id] then
+                table.insert(plan, { id=boss.id, modes=State.bossModes[boss.id] })
+            end
+        end
 
+        if #plan == 0 then
+            notify("Info", "No bosses selected", 2)
+            task.wait(2)
+        else
+            for _, item in ipairs(plan) do
+                for _, mode in ipairs(item.modes) do
+                    if not State.autoEnabled or runId ~= State.autoRunId then break end
+                    BossController.fightBoss(item.id, mode, runId)
                 end
             end
-
-            if #plan == 0 then
-                notify("Info", "No bosses selected", 2)
-                task.wait(2)
-            else
-                for _, item in ipairs(plan) do
-                   for _, mode in ipairs(item.modes) do
-                        if not State.autoEnabled or runId ~= State.autoRunId then break end
-                         BossController.fightBoss(item.id, mode, runId)
-                 end
-              end
-
-
-            State.alreadyFought = {}
-            task.wait(2)
         end
-    end)
-end
+
+        State.alreadyFought = {}
+        task.wait(2)
+    end
+end)
+
 
 function BossController.stopAuto()
     State.autoRunId += 1
@@ -226,7 +225,6 @@ for _, b in ipairs(BossData.List) do
         MultiDropdown = true,
         Flag = "Mode_"..b.id,
         Callback = function(options)
-            local selected = option[1]
             State.bossModes[b.id] = options
         end
     })
@@ -261,8 +259,7 @@ for _, b in ipairs(BossData.List) do
         CurrentOption = {"slot_1"},
         Flag = "Team_"..b.id,
         Callback = function(option)
-            local selected = option[1]
-            State.bossTeams[b.id] = selected
+            State.bossTeams[b.id] = option  -- option là string
         end
     })
 end
