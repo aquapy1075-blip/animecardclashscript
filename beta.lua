@@ -191,37 +191,58 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false
 })
 
+-- helper nhỏ
+local function tbl_contains(t, v)
+    if not t then return false end
+    for _, x in ipairs(t) do if x == v then return true end end
+    return false
+end
 -------------------------------------------------
 -- Tab: Story Boss
 -------------------------------------------------
 local storyTab = Window:CreateTab("Story Boss", 4483345998)
-storyTab:CreateSection("Select Bosses & Difficulty")
+storyTab:CreateSection("Select Bosses & Difficulties")
+
+-- lưu dropdown để quản lý ẩn/hiện
+State.modeDropdowns = {}
 
 for _, b in ipairs(BossData.List) do
     local bossId = b.id
     local label = BossData.Names[bossId] or ("Boss "..bossId)
 
+    -- Toggle chọn boss
     storyTab:CreateToggle({
         Name = label,
         CurrentValue = State.selectedBosses[bossId] or false,
         Flag = "Boss_"..bossId,
-        Callback = (function(id) return function(state)
-            State.selectedBosses[id] = state
-        end end)(bossId)
+        Callback = function(state)
+            State.selectedBosses[bossId] = state
+
+            -- Ẩn/hiện dropdown độ khó theo toggle
+            if State.modeDropdowns[bossId] then
+                State.modeDropdowns[bossId].SetVisible(state)
+            end
+        end
     })
 
-    storyTab:CreateDropdown({
+    -- Dropdown chọn độ khó (ẩn mặc định)
+    local dd = storyTab:CreateDropdown({
         Name = label.." | Difficulties",
         Options = b.modes,
-        CurrentOption = {},
+        CurrentOption = State.bossModes[bossId] or {b.modes[1]},
         MultiDropdown = true,
         Flag = "Mode_"..bossId,
-        Callback = (function(id) return function(options)
-            State.bossModes[id] = options or {}
-        end end)(bossId)
+        Callback = function(options)
+            State.bossModes[bossId] = options
+        end
     })
+    dd.SetVisible(false) -- mặc định ẩn
+
+    -- Lưu lại để toggle gọi
+    State.modeDropdowns[bossId] = dd
 end
 
+-- Auto Fight toggle
 storyTab:CreateSection("Fight Boss Selected")
 storyTab:CreateToggle({
     Name = "Auto Fight",
@@ -258,7 +279,44 @@ for _, b in ipairs(BossData.List) do
         end end)(bossId, label)
     })
 end
+-------------------------------------------------
+-- Tab: Mode Setting (Difficulty per boss, multi-toggle)
+-------------------------------------------------
+local modeTab = Window:CreateTab("Mode Setting", 4483345998)
+modeTab:CreateSection("Choose difficulties for each boss")
 
+for _, b in ipairs(BossData.List) do
+    local bossId = b.id
+    local label = BossData.Names[bossId] or ("Boss "..bossId)
+
+    -- tạo 1 section nhỏ cho boss để nhìn rõ
+    modeTab:CreateSection(label)
+
+    for _, mode in ipairs(b.modes) do
+        local flag = "Mode_"..bossId.."_"..mode  -- unique flag per boss+mode
+        modeTab:CreateToggle({
+            Name = mode,
+            CurrentValue = tbl_contains(State.bossModes[bossId], mode),
+            Flag = flag,
+            Callback = (function(id, md)
+                return function(state)
+                    State.bossModes[id] = State.bossModes[id] or {}
+                    if state then
+                        -- add nếu chưa có
+                        if not tbl_contains(State.bossModes[id], md) then
+                            table.insert(State.bossModes[id], md)
+                        end
+                    else
+                        -- remove nếu off
+                        for i, v in ipairs(State.bossModes[id]) do
+                            if v == md then table.remove(State.bossModes[id], i); break end
+                        end
+                    end
+                end
+            end)(bossId, mode)
+        })
+    end
+end
 -------------------------------------------------
 -- Tab: Script Control
 -------------------------------------------------
