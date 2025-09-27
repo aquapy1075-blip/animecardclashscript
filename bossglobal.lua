@@ -52,7 +52,7 @@ statusLabel.BackgroundTransparency = 0.1
 statusLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 statusLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
 statusLabel.TextScaled = true
-statusLabel.Font = Font.SourceSans
+statusLabel.Font = Enum.Font.SourceSans
 statusLabel.Text = "LOADING..."
 
 local mapButton = Instance.new("TextButton")
@@ -60,7 +60,7 @@ mapButton.Size = UDim2.new(1, -12, 0, 28)
 mapButton.BackgroundColor3 = Color3.fromRGB(60, 60, 100)
 mapButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 mapButton.TextScaled = true
-mapButton.Font = Font.SourceSansBold
+mapButton.Font = Enum.Font.SourceSansBold
 mapButton.Text = "Chọn Map"
 
 local mapFrame = Instance.new("Frame")
@@ -73,7 +73,7 @@ toggleButton.Size = UDim2.new(1, -12, 0, 28)
 toggleButton.BackgroundColor3 = Color3.fromRGB(0, 130, 70)
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleButton.TextScaled = true
-toggleButton.Font = Font.SourceSansBold
+toggleButton.Font = Enum.Font.SourceSansBold
 toggleButton.Text = "AUTO: ON"
 
 ----------------------------------------------------------------
