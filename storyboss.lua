@@ -1,85 +1,74 @@
--- 📌 Auto Boss GUI – Final Optimized
-local player = game.Players.LocalPlayer
-local playerGui = player:WaitForChild("PlayerGui")
-local UserInputService = game:GetService("UserInputService")
-local networkEvent = game:GetService("ReplicatedStorage")
-    :WaitForChild("shared/network@eventDefinitions")
-    :WaitForChild("fightStoryBoss")
+-------------------------------------------------
+-- Services & net
+-------------------------------------------------
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
 
--- 🌟 Boss ID -> Name
-local bossNames = {
-    [308] = "Naruto",
-    [381] = "Frieza",
-    [330] = "Sukuna",
-    [355] = "Titan",
-    [458] = "Muzan",
-    [348] = "Big Mom",
-    [322] = "Sungjinwoo",
-    [300] = "Cid",
-    [366] = "Celestial Sovereign",
-    [343] = "Dead King",
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+local Net = {
+    fightStoryBoss = ReplicatedStorage
+        :WaitForChild("shared/network@eventDefinitions")
+        :WaitForChild("fightStoryBoss"),
+    setPartySlot = ReplicatedStorage
+        :WaitForChild("shared/network@eventDefinitions")
+        :WaitForChild("setPartySlot"),
 }
 
--- 📌 Boss list
-local bossList = {
-    {id=308, modes={"medium","hard","extreme"}},
-    {id=381, modes={"medium","hard","extreme"}},
-    {id=330, modes={"medium","hard","extreme"}},
-    {id=355, modes={"normal","medium","hard","extreme"}},
-    {id=458, modes={"normal","medium","hard","extreme"}},
-    {id=348, modes={"normal","medium","hard","extreme"}},
-    {id=322, modes={"normal","medium","hard","extreme"}},
-    {id=300, modes={"normal","medium","hard","extreme"}},
-    {id=366, modes={"normal","medium","hard","extreme"}},
-    {id=343, modes={"normal","medium","hard","extreme"}},
+-------------------------------------------------
+-- Data
+-------------------------------------------------
+local BossData = {
+    Names = {
+        [308] = "Naruto", [381] = "Frieza", [330] = "Sukuna",
+        [355] = "Titan", [458] = "Muzan", [348] = "Big Mom",
+        [322] = "Sungjinwoo", [300] = "Cid",
+        [366] = "Celestial Sovereign", [343] = "Dead King",
+    },
+    List = {
+        {id=308, modes={"medium","hard","extreme"}},
+        {id=381, modes={"medium","hard","extreme"}},
+        {id=330, modes={"medium","hard","extreme"}},
+        {id=355, modes={"normal","medium","hard","extreme"}},
+        {id=458, modes={"normal","medium","hard","extreme"}},
+        {id=348, modes={"normal","medium","hard","extreme"}},
+        {id=322, modes={"normal","medium","hard","extreme"}},
+        {id=300, modes={"normal","medium","hard","extreme"}},
+        {id=366, modes={"normal","medium","hard","extreme"}},
+        {id=343, modes={"normal","medium","hard","extreme"}},
+    },
+    TeamOptions = {"slot_1","slot_2","slot_3","slot_4","slot_5","slot_6","slot_7","slot_8"},
 }
 
--- 🌟 Already fought
-local alreadyFought = {}
-
--- 🎨 GUI
-local autoGui = Instance.new("ScreenGui")
-autoGui.Name = "AutoBossUI"
-autoGui.ResetOnSpawn = false
-autoGui.IgnoreGuiInset = true
-autoGui.Parent = playerGui
-
--- 🔘 Nút AUTO
-local autoBtn = Instance.new("TextButton")
-autoBtn.Size = UDim2.new(0, 120, 0, 40)
-autoBtn.Position = UDim2.new(0.5, 0, 0, 10)
-autoBtn.AnchorPoint = Vector2.new(0.5,0)
-autoBtn.Text = "⚔️ AUTO BOSS"
-autoBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-autoBtn.TextScaled = true
-autoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-autoBtn.Parent = autoGui
-
--- 🏷️ Status label
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(0, 400, 0, 60)
-statusLabel.Position = UDim2.new(0, 20, 0, 20)
-statusLabel.BackgroundTransparency = 0.3
-statusLabel.BackgroundColor3 = Color3.fromRGB(0,0,0)
-statusLabel.BorderSizePixel = 2
-statusLabel.BorderColor3 = Color3.fromRGB(255, 215, 0)
-statusLabel.TextColor3 = Color3.fromRGB(255,255,0)
-statusLabel.TextScaled = true
-statusLabel.Font = Enum.Font.GothamBold
-statusLabel.TextStrokeTransparency = 0.2
-statusLabel.ZIndex = 10
-statusLabel.Text = ""
-statusLabel.Visible = false   -- 🚩 Thêm dòng này
-statusLabel.Parent = autoGui
-
+-------------------------------------------------
+-- State
+-------------------------------------------------
+local State = {
+    selectedBosses = {},
+    bossTeams = {},
+    alreadyFought = {},
+    autoEnabled = false,
+    autoRunId = 0,
+}
+for id in pairs(BossData.Names) do
+    State.selectedBosses[id] = false
+    State.bossTeams[id] = "slot_1"
+end
 
 -------------------------------------------------
--- 🔎 Popup helpers
+-- Utils
 -------------------------------------------------
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+local function notify(title, content, duration)
+    Rayfield:Notify({ Title = title, Content = content, Duration = duration or 2 })
+end
+
 local function hasPopupContaining(keyword)
     if not keyword or keyword == "" then return false end
     local kw = keyword:lower()
-    for _, gui in ipairs(playerGui:GetDescendants()) do
+    for _, gui in ipairs(PlayerGui:GetDescendants()) do
         if gui:IsA("TextLabel") or gui:IsA("TextButton") then
             local ok, txt = pcall(function() return tostring(gui.Text) end)
             if ok and txt and txt ~= "" and string.find(txt:lower(), kw, 1, true) then
@@ -91,152 +80,219 @@ local function hasPopupContaining(keyword)
 end
 
 local function isErrorPopupPresent()
-    -- mấy lỗi cần skip
     local errorKeywords = {"on cooldown", "need to beat", "locked", "not unlocked"}
-    for _, k in ipairs(errorKeywords) do
-        if hasPopupContaining(k) then return true end
-    end
-    -- check error chung, nhưng bỏ qua "already in battle"
-    if hasPopupContaining("error") and not hasPopupContaining("already in battle") then
-        return true
-    end
+    for _, k in ipairs(errorKeywords) do if hasPopupContaining(k) then return true end end
+    if hasPopupContaining("error") and not hasPopupContaining("already in battle") then return true end
     return false
 end
 
 local function isInBattlePopupPresent()
-    -- thêm cả trường hợp "already in battle" vào
-    return hasPopupContaining("hide battle") 
-        or hasPopupContaining("show battle") 
+    return hasPopupContaining("hide battle")
+        or hasPopupContaining("show battle")
         or hasPopupContaining("already in battle")
 end
 
-
 local function didBattleEndAsWinOrLoss()
-    return hasPopupContaining("victory") or hasPopupContaining("defeat") or isErrorPopupPresent()
+    return hasPopupContaining("victory")
+        or hasPopupContaining("defeat")
+        or isErrorPopupPresent()
 end
 
 -------------------------------------------------
--- ⚔️ Fight logic
+-- Boss controller
 -------------------------------------------------
-local function fightBoss(id, mode)
-    alreadyFought[id] = alreadyFought[id] or {}
-    local bossName = bossNames[id] or ("Boss "..id)
+local BossController = {}
 
-    if alreadyFought[id][mode] then
-        statusLabel.Text = "⏭️ "..bossName.." | "..mode.." already done"
-        task.wait(1)
-        return
-    end
+function BossController.fightBoss(id, mode, runId)
+    if not State.autoEnabled or runId ~= State.autoRunId then return end
 
-    statusLabel.Text = "⚔️ Fighting "..bossName.." | "..mode
-    task.wait(0.15)
-
+    -- ✅ set team cho boss (string "slot_x")
+    local slot = State.bossTeams[id] or "slot_1"
     local ok, err = pcall(function()
-        networkEvent:FireServer(id, mode)
+        Net.setPartySlot:FireServer(slot)
     end)
     if not ok then
-        statusLabel.Text = "❌ FireServer error: "..tostring(err)
-        task.wait(2)
+        notify("Error", "setPartySlot failed: "..tostring(err), 2)
+    end
+
+    State.alreadyFought[id] = State.alreadyFought[id] or {}
+    if State.alreadyFought[id][mode] then return end
+
+    local name = BossData.Names[id] or ("Boss "..id)
+    notify("Story Boss", "⚔️ Fighting "..name.." | "..mode, 2)
+
+    local ok2, err2 = pcall(function()
+        Net.fightStoryBoss:FireServer(id, mode)
+    end)
+    if not ok2 then
+        notify("Error", tostring(err2), 2)
         return
     end
 
-    task.wait(1.2)
+    task.wait(0.5)
+
+    if isInBattlePopupPresent() then
+        local elapsed = 0
+        while isInBattlePopupPresent() and elapsed < 180 do
+            if not State.autoEnabled or runId ~= State.autoRunId then return end
+            task.wait(1)
+            elapsed += 1
+        end
+        State.alreadyFought[id][mode] = true
+        return
+    end
 
     if isErrorPopupPresent() then
-        statusLabel.Text = "⏱️ "..bossName.." | "..mode.." error/cooldown"
-        task.wait(5)
-        alreadyFought[id][mode] = true
+        notify("Cooldown", name.." | "..mode.." cooldown/error", 3)
+        State.alreadyFought[id][mode] = true
+        task.wait(3)
         return
     end
 
     if isInBattlePopupPresent() then
         local elapsed = 0
-        while isInBattlePopupPresent() and elapsed < 35 do
+        while isInBattlePopupPresent() and elapsed < 40 do
+            if not State.autoEnabled or runId ~= State.autoRunId then return end
             task.wait(1)
             elapsed += 1
         end
-
-        task.wait(0.8)
         if didBattleEndAsWinOrLoss() then
-            statusLabel.Text = "✅ "..bossName.." | "..mode.." finished!"
-            alreadyFought[id][mode] = true
-            task.wait(1.2)
-            return
+            notify("Finished", name.." | "..mode.." done!", 2)
         else
-            -- retry 1 lần
-            statusLabel.Text = "⚠️ "..bossName.." | "..mode.." retry..."
-            task.wait(1)
-            local ok2 = pcall(function() networkEvent:FireServer(id, mode) end)
-            task.wait(1.2)
-            if isErrorPopupPresent() then
-                statusLabel.Text = "✅ "..bossName.." | "..mode.." finished (cooldown)"
-                alreadyFought[id][mode] = true
-                task.wait(1.2)
-                return
-            elseif isInBattlePopupPresent() then
-                while isInBattlePopupPresent() do task.wait(1) end
-                task.wait(1.2)
-                if didBattleEndAsWinOrLoss() then
-                    statusLabel.Text = "✅ "..bossName.." | "..mode.." finished (after retry)"
-                    alreadyFought[id][mode] = true
-                    task.wait(1.2)
-                    return
-                end
-            end
-            statusLabel.Text = "❌ "..bossName.." | "..mode.." unknown, skipping"
-            task.wait(2)
-            alreadyFought[id][mode] = true
-            return
+            notify("Skipped", name.." | "..mode.." skipped", 2)
         end
+        State.alreadyFought[id][mode] = true
+        return
     end
 
-    statusLabel.Text = "❌ "..bossName.." | "..mode.." no response"
-    task.wait(2)
-    alreadyFought[id][mode] = true
+    notify("No Response", name.." | "..mode.." no response", 2)
+    State.alreadyFought[id][mode] = true
+end
+
+function BossController.runAuto()
+    State.autoRunId += 1
+    local runId = State.autoRunId
+
+    task.spawn(function()
+        while State.autoEnabled and runId == State.autoRunId do
+            local plan = {}
+            for _, boss in ipairs(BossData.List) do
+                if State.selectedBosses[boss.id] then
+                    local modes = { table.unpack(boss.modes) }
+                    table.insert(plan, { id=boss.id, modes=modes })
+                end
+            end
+
+            if #plan == 0 then
+                notify("Info", "No bosses selected", 2)
+                task.wait(2)
+            else
+                for _, item in ipairs(plan) do
+                    for _, mode in ipairs(item.modes) do
+                        if not State.autoEnabled or runId ~= State.autoRunId then break end
+                        BossController.fightBoss(item.id, mode, runId)
+                    end
+                    if not State.autoEnabled or runId ~= State.autoRunId then break end
+                end
+            end
+
+            State.alreadyFought = {}
+            task.wait(2)
+        end
+    end)
+end
+
+function BossController.stopAuto()
+    State.autoRunId += 1
+    State.alreadyFought = {}
 end
 
 -------------------------------------------------
--- 🔥 Auto loop
+-- UI
 -------------------------------------------------
-autoBtn.MouseButton1Click:Connect(function()
-    spawn(function()
-        alreadyFought = {}  -- reset lại mỗi lần bấm nút
-         statusLabel.Visible = true
-        statusLabel.Text = "⚔️ Auto Boss: Running..."
-        for _, boss in ipairs(bossList) do
-            for _, mode in ipairs(boss.modes) do
-                fightBoss(boss.id, mode)
+local Window = Rayfield:CreateWindow({
+    Name = "Story Boss Hub",
+    LoadingTitle = "Story Boss",
+    LoadingSubtitle = "by Tran",
+    ConfigurationSaving = { Enabled = true, FolderName = "StoryBossConfig", FileName = "StoryBoss" },
+    KeySystem = false
+})
+
+local storyTab = Window:CreateTab("📖 Story Boss", 4483345998)
+storyTab:CreateSection("Chọn Boss")
+
+for _, b in ipairs(BossData.List) do
+    local bossId = b.id
+    local label = BossData.Names[bossId] or ("Boss "..bossId)
+
+    storyTab:CreateToggle({
+        Name = label,
+        CurrentValue = State.selectedBosses[bossId] or false,
+        Flag = "Boss_"..bossId,
+        Callback = (function(id, lbl)
+            return function(state)
+                State.selectedBosses[id] = (state == true)
+                notify("Boss Select", (state and "✔ " or "✖ ")..lbl, 1.5)
             end
+        end)(bossId, label)
+    })
+
+    storyTab:CreateDropdown({
+        Name = label.." | Choose Team",
+        Options = BossData.TeamOptions,
+        CurrentOption = State.bossTeams[bossId] or "slot_1",
+        Flag = "Team_"..bossId,
+        Callback = (function(id, lbl)
+            return function(option)
+                local opt = option
+                if type(opt) == "table" then opt = opt[1] end
+                if type(opt) ~= "string" then return end
+                State.bossTeams[id] = opt
+                notify("Team Changed", lbl.." → "..opt, 2)
+            end
+        end)(bossId, label)
+    })
+end
+
+storyTab:CreateSection("⚙️ Auto control")
+
+storyTab:CreateToggle({
+    Name = "Auto Fight",
+    CurrentValue = false,
+    Flag = "AutoFight",
+    Callback = function(state)
+        State.autoEnabled = state
+        if State.autoEnabled then
+            BossController.runAuto()
+        else
+            BossController.stopAuto()
         end
-        statusLabel.Text = "✅ Auto Boss: All finished!"
-        task.wait(4)
-  statusLabel.Visible = false                
-    end)
-end)
+    end
+})
+-------------------------------------------------
+-- Nút Reload Script
+-------------------------------------------------
+storyTab:CreateButton({
+    Name = "🔄 Reload Script",
+    Callback = function()
+        -- dừng auto cũ + reset state
+        if State then
+            State.autoEnabled = false
+            State.autoRunId += 1
+            State.alreadyFought = {}
+        end
 
+        -- hủy UI cũ
+        if Rayfield then
+            pcall(function() Rayfield:Destroy() end)
+        end
+
+        -- tải lại script
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/storyboss.lua"))()
+    end
+})
 
 -------------------------------------------------
--- 🖱️ Drag support (PC + Mobile)
+-- Load config sau cùng
 -------------------------------------------------
-local dragging, dragInput, dragStart, startPos
-autoBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = autoBtn.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
-        end)
-    end
-end)
-autoBtn.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and input == dragInput then
-        local delta = input.Position - dragStart
-        autoBtn.Position = UDim2.new( startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y ) end end)
+Rayfield:LoadConfiguration()
