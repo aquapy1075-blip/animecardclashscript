@@ -30,7 +30,7 @@ local farmModes = {
 }
 
 -- Map mặc định
-local farmArgs = {"titans_city"}
+local farmArgs = {"Dimensional Fortress"}
 
 -- State
 local auto = true
@@ -47,40 +47,42 @@ screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 
 local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -16, 0, 40)
+statusLabel.Size = UDim2.new(1, -12, 0, 32)
 statusLabel.BackgroundTransparency = 0.1
-statusLabel.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+statusLabel.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 statusLabel.TextColor3 = Color3.fromRGB(0, 255, 150)
 statusLabel.TextScaled = true
-statusLabel.Font = Enum.Font.SourceSansBold
+statusLabel.Font = Font.SourceSans
 statusLabel.Text = "LOADING..."
 
 local mapButton = Instance.new("TextButton")
-mapButton.Size = UDim2.new(1, -16, 0, 32)
-mapButton.BackgroundColor3 = Color3.fromRGB(70, 70, 120)
+mapButton.Size = UDim2.new(1, -12, 0, 28)
+mapButton.BackgroundColor3 = Color3.fromRGB(60, 60, 100)
 mapButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 mapButton.TextScaled = true
+mapButton.Font = Font.SourceSansBold
 mapButton.Text = "Chọn Map"
 
 local mapFrame = Instance.new("Frame")
-mapFrame.Size = UDim2.new(1, -16, 0, 140)
+mapFrame.Size = UDim2.new(1, -12, 0, 120)
 mapFrame.BackgroundColor3 = Color3.fromRGB(35, 35, 60)
 mapFrame.Visible = false
 
 local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(1, -16, 0, 32)
-toggleButton.BackgroundColor3 = Color3.fromRGB(0, 150, 80)
+toggleButton.Size = UDim2.new(1, -12, 0, 28)
+toggleButton.BackgroundColor3 = Color3.fromRGB(0, 130, 70)
 toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleButton.TextScaled = true
+toggleButton.Font = Font.SourceSansBold
 toggleButton.Text = "AUTO: ON"
 
 ----------------------------------------------------------------
 -- Panel UI bên phải
 ----------------------------------------------------------------
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 200, 0, 280)
-panel.Position = UDim2.new(1, -210, 0.5, -140)
-panel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+panel.Size = UDim2.new(0, 160, 0, 220)
+panel.Position = UDim2.new(1, -170, 0.5, -110)
+panel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 panel.BackgroundTransparency = 0.2
 panel.BorderSizePixel = 0
 panel.Parent = screenGui
@@ -126,7 +128,7 @@ uiList.Padding = UDim.new(0, 6)
 
 for key, displayName in pairs(farmModes) do
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(1, 0, 0, 28)
+   btn.Size = UDim2.new(1, 0, 0, 24)
     btn.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
     btn.TextColor3 = Color3.fromRGB(255, 255, 255)
     btn.TextScaled = true
@@ -155,12 +157,15 @@ toggleButton.MouseButton1Click:Connect(function()
     else
         toggleButton.Text = "AUTO: OFF"
         toggleButton.BackgroundColor3 = Color3.fromRGB(150, 50, 50)
+        -- Tắt auto → dừng tất cả
         stopFarmMode()
+        spammingBoss = false
+        farmSpamming = false
+        currentHP, maxHP = nil, nil
         print("Auto tắt ❌")
     end
     updateStatusUI()
 end)
-
 ----------------------------------------------------------------
 -- Helpers
 ----------------------------------------------------------------
