@@ -262,10 +262,10 @@ storyTab:CreateToggle({
 -------------------------------------------------
 -- Tab mới: Script Control
 -------------------------------------------------
-local reloadTab = Window:CreateTab("🔄 Script", 4483345998) 
-reloadTab:CreateSection("Script Control")
+local scriptTab = Window:CreateTab("🔄 Script", 4483345998) 
 
-reloadTab:CreateButton({
+scriptTab:CreateSection("Script Control")
+scriptTab:CreateButton({
     Name = "Reload Script",
     Callback = function()
         -- dừng auto cũ + reset state
@@ -274,14 +274,27 @@ reloadTab:CreateButton({
             State.autoRunId += 1
             State.alreadyFought = {}
         end
-
         -- hủy UI cũ
         if Rayfield then
             pcall(function() Rayfield:Destroy() end)
         end
-
         -- tải lại script
         loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/storyboss.lua"))()
+    end
+})
+scriptTab:CreateButton({
+    Name = "❌ Destroy Script",
+    Callback = function()
+        -- Hủy toàn bộ UI
+        if Window then
+            Window:Destroy()
+        end
+
+        -- Reset state để loop dừng
+        State = {}
+        getgenv().AutoBossRunning = false
+
+        print("✅ Script destroyed.")
     end
 })
 
