@@ -54,7 +54,7 @@ local State = {
 }
 for _, b in ipairs(BossData.List) do
     State.selectedBosses[b.id] = false
-    State.bossModes[b.id] = {b.modes[1]}
+    State.bossModes[b.id] = { b.modes[1] } -- multi modes default (table)
     State.bossTeams[b.id] = "slot_1"
 end
 
@@ -108,14 +108,15 @@ local BossController = {}
 function BossController.fightBoss(id, mode, runId)
     if not State.autoEnabled or runId ~= State.autoRunId then return end
 
-    -- set team
-    Net.setPartySlot:FireServer(State.bossTeams[id] or "slot_1")
+    -- set team (server expects "slot_x" string)
+    local slot = State.bossTeams[id] or "slot_1"
+    pcall(function() Net.setPartySlot:FireServer(slot) end)
 
     State.alreadyFought[id] = State.alreadyFought[id] or {}
     if State.alreadyFought[id][mode] then return end
 
     local name = BossData.Names[id] or ("Boss "..id)
-    notify("Story Boss", "⚔️ Fighting "..name.." | "..mode, 2)
+    notify("Story Boss", "⚔️ Fighting "..name.." | "..mode.." | "..(slot or "slot_1"), 2)
 
     local ok, err = pcall(function()
         Net.fightStoryBoss:FireServer(id, mode)
@@ -133,7 +134,7 @@ function BossController.fightBoss(id, mode, runId)
         while isInBattlePopupPresent() and elapsed < 180 do
             if not State.autoEnabled or runId ~= State.autoRunId then return end
             task.wait(1)
-            elapsed += 1
+            elapsed = elapsed + 1
         end
         State.alreadyFought[id][mode] = true
         return
@@ -151,40 +152,41 @@ function BossController.fightBoss(id, mode, runId)
 end
 
 function BossController.runAuto()
-    State.autoRunId += 1
+    State.autoRunId = (State.autoRunId or 0) + 1
     local runId = State.autoRunId
 
-   task.spawn(function()
-    while State.autoEnabled and runId == State.autoRunId do
-        -- build plan
-        local plan = {}
-        for _, boss in ipairs(BossData.List) do
-            if State.selectedBosses[boss.id] then
-                table.insert(plan, { id=boss.id, modes=State.bossModes[boss.id] })
-            end
-        end
-
-        if #plan == 0 then
-            notify("Info", "No bosses selected", 2)
-            task.wait(2)
-        else
-            for _, item in ipairs(plan) do
-                for _, mode in ipairs(item.modes) do
-                    if not State.autoEnabled or runId ~= State.autoRunId then break end
-                    BossController.fightBoss(item.id, mode, runId)
+    task.spawn(function()
+        while State.autoEnabled and runId == State.autoRunId do
+            -- build plan
+            local plan = {}
+            for _, boss in ipairs(BossData.List) do
+                if State.selectedBosses[boss.id] then
+                    table.insert(plan, { id = boss.id, modes = State.bossModes[boss.id] or {} })
                 end
             end
+
+            if #plan == 0 then
+                notify("Info", "No bosses selected", 2)
+                task.wait(2)
+            else
+                for _, item in ipairs(plan) do
+                    for _, mode in ipairs(item.modes) do
+                        if not State.autoEnabled or runId ~= State.autoRunId then break end
+                        BossController.fightBoss(item.id, mode, runId)
+                    end
+                end
+            end
+
+            State.alreadyFought = {}
+            task.wait(2)
         end
-
-        State.alreadyFought = {}
-        task.wait(2)
-    end
-end)
-
+    end)
+end  -- <-- đây là END để đóng function BossController.runAuto()
 
 function BossController.stopAuto()
-    State.autoRunId += 1
+    State.autoRunId = (State.autoRunId or 0) + 1
     State.alreadyFought = {}
+    State.autoEnabled = false
 end
 
 -------------------------------------------------
@@ -205,35 +207,40 @@ local storyTab = Window:CreateTab("Story Boss", 4483345998)
 storyTab:CreateSection("Select Bosses & Difficulty")
 
 for _, b in ipairs(BossData.List) do
-    local label = BossData.Names[b.id] or ("Boss "..b.id)
+    local bossId = b.id
+    local label = BossData.Names[bossId] or ("Boss "..bossId)
 
-    -- chọn boss
+    -- chọn boss (capture id)
     storyTab:CreateToggle({
         Name = label,
-        CurrentValue = false,
-        Flag = "Boss_"..b.id,
-        Callback = function(state)
-            State.selectedBosses[b.id] = state
-        end
+        CurrentValue = State.selectedBosses[bossId] or false,
+        Flag = "Boss_"..bossId,
+        Callback = (function(id)
+            return function(state)
+                State.selectedBosses[id] = state
+            end
+        end)(bossId)
     })
 
-    -- chọn độ khó
+    -- chọn độ khó (multi)
     storyTab:CreateDropdown({
         Name = label.." | Difficulties",
         Options = b.modes,
-        CurrentOption = {b.modes[1]},
+        CurrentOption = { b.modes[1] },
         MultiDropdown = true,
-        Flag = "Mode_"..b.id,
-        Callback = function(options)
-            State.bossModes[b.id] = options
-        end
+        Flag = "Mode_"..bossId,
+        Callback = (function(id)
+            return function(options)
+                State.bossModes[id] = options or {}
+            end
+        end)(bossId)
     })
 end
 
 storyTab:CreateSection("Fight Boss Selected")
 storyTab:CreateToggle({
     Name = "Auto Fight",
-    CurrentValue = false,
+    CurrentValue = State.autoEnabled or false,
     Flag = "AutoFight",
     Callback = function(state)
         State.autoEnabled = state
@@ -252,67 +259,54 @@ local teamTab = Window:CreateTab("Team Setting", 4483345998)
 teamTab:CreateSection("Choose Teams for Bosses")
 
 for _, b in ipairs(BossData.List) do
-    local label = BossData.Names[b.id] or ("Boss "..b.id)
+    local bossId = b.id
+    local label = BossData.Names[bossId] or ("Boss "..bossId)
+
     teamTab:CreateDropdown({
         Name = label.." | Choose Team",
         Options = BossData.TeamOptions,
-        CurrentOption = {"slot_1"},
-        Flag = "Team_"..b.id,
-        Callback = function(option)
-            State.bossTeams[b.id] = option  -- option là string
-        end
+        CurrentOption = State.bossTeams[bossId] or "slot_1",
+        Flag = "Team_"..bossId,
+        Callback = (function(id, lbl)
+            return function(option)
+                -- option is a string like "slot_2"
+                State.bossTeams[id] = option or "slot_1"
+                notify("Team Changed", lbl.." → "..(option or "slot_1"), 1.5)
+            end
+        end)(bossId, label)
     })
 end
 
 -------------------------------------------------
--- Tab mới: Script Control
+-- Tab: Script Control (reload + destroy)
 -------------------------------------------------
-local scriptTab = Window:CreateTab("🔄 Script", 4483345998) 
-
+local scriptTab = Window:CreateTab("🔄 Script", 4483345998)
 scriptTab:CreateSection("Script Control")
+
 scriptTab:CreateButton({
     Name = "Reload Script",
     Callback = function()
-        -- dừng auto cũ + reset state
-        if State then
-            State.autoEnabled = false
-            State.autoRunId += 1
-            State.alreadyFought = {}
-        end
-        -- hủy UI cũ
-        if Rayfield then
-            pcall(function() Rayfield:Destroy() end)
-        end
-        -- tải lại script
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/beta.lua"))()
-    end
-})
-scriptTab:CreateButton({
-    Name = "❌ Destroy Script",
-    Callback = function()
-        -- 1) Stop auto và force các coroutine thoát
         if State then
             State.autoEnabled = false
             State.autoRunId = (State.autoRunId or 0) + 1
             State.alreadyFought = {}
         end
+        if Rayfield then pcall(function() Rayfield:Destroy() end) end
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/beta.lua"))()
+    end
+})
 
-        -- nhẹ để các coroutine kịp check điều kiện và exit
+scriptTab:CreateButton({
+    Name = "❌ Destroy Script",
+    Callback = function()
+        if State then
+            State.autoEnabled = false
+            State.autoRunId = (State.autoRunId or 0) + 1
+            State.alreadyFought = {}
+        end
         task.wait(0.05)
-
-        -- 2) Destroy UI an toàn (pcall cho chắc)
-        pcall(function()
-            if Window and type(Window.Destroy) == "function" then
-                Window:Destroy()
-            end
-        end)
-        pcall(function()
-            if Rayfield and type(Rayfield.Destroy) == "function" then
-                Rayfield:Destroy()
-            end
-        end)
-
-        -- 3) Reset nội dung State nhưng KHÔNG gán hẳn = nil (tránh lỗi ở coroutine)
+        pcall(function() if Window and type(Window.Destroy) == "function" then Window:Destroy() end end)
+        pcall(function() if Rayfield and type(Rayfield.Destroy) == "function" then Rayfield:Destroy() end end)
         if State then
             State.autoEnabled = false
             State.autoRunId = 0
@@ -321,17 +315,12 @@ scriptTab:CreateButton({
             State.bossTeams = {}
             State.alreadyFought = {}
         end
-
-        -- 4) Clear flag toàn cục để reload sạch
         pcall(function() getgenv().StoryBossLoaded = false end)
-
         print("✅ Script destroyed: UI removed and auto stopped.")
     end
 })
-
 
 -------------------------------------------------
 -- Load config sau cùng
 -------------------------------------------------
 Rayfield:LoadConfiguration()
-
