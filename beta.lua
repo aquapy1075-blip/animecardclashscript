@@ -5,15 +5,11 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+local Fluent = loadstring(game:HttpGet("https://github.com/dawid-scripts/Fluent/releases/latest/download/main.lua"))()
 
 local Net = {
-    fightStoryBoss = ReplicatedStorage
-        :WaitForChild("shared/network@eventDefinitions")
-        :WaitForChild("fightStoryBoss"),
-    setPartySlot = ReplicatedStorage
-        :WaitForChild("shared/network@eventDefinitions")
-        :WaitForChild("setPartySlot"),
+    fightStoryBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightStoryBoss"),
+    setPartySlot = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("setPartySlot"),
 }
 
 -------------------------------------------------
@@ -58,40 +54,10 @@ for _, b in ipairs(BossData.List) do
     State.bossTeams[b.id] = "slot_1"
 end
 
--------------------------------------------------
--- Utils
--------------------------------------------------
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 local function notify(title, content, duration)
-    Rayfield:Notify({ Title = title, Content = content, Duration = duration or 2 })
-end
-
-local function hasPopupContaining(keyword)
-    if not keyword or keyword == "" then return false end
-    local kw = keyword:lower()
-    for _, gui in ipairs(PlayerGui:GetDescendants()) do
-        if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-            local ok, txt = pcall(function() return tostring(gui.Text) end)
-            if ok and txt and txt ~= "" and string.find(txt:lower(), kw, 1, true) then
-                return true
-            end
-        end
-    end
-    return false
-end
-
-local function isErrorPopupPresent()
-    local errorKeywords = {"on cooldown", "need to beat", "locked", "not unlocked"}
-    for _, k in ipairs(errorKeywords) do if hasPopupContaining(k) then return true end end
-    if hasPopupContaining("error") and not hasPopupContaining("already in battle") then return true end
-    return false
-end
-
-local function isInBattlePopupPresent()
-    return hasPopupContaining("hide battle")
-        or hasPopupContaining("show battle")
-        or hasPopupContaining("already in battle")
+    Fluent:Notify({ Title = title, Content = content, Duration = duration or 2 })
 end
 
 -------------------------------------------------
@@ -101,7 +67,6 @@ local BossController = {}
 
 function BossController.fightBoss(id, mode, runId)
     if not State.autoEnabled or runId ~= State.autoRunId then return end
-
     local slot = State.bossTeams[id] or "slot_1"
     pcall(function() Net.setPartySlot:FireServer(slot) end)
 
@@ -109,7 +74,7 @@ function BossController.fightBoss(id, mode, runId)
     if State.alreadyFought[id][mode] then return end
 
     local name = BossData.Names[id] or ("Boss "..id)
-    notify("Story Boss", "⚔️ Fighting "..name.." | "..mode.." | "..(slot or "slot_1"), 2)
+    notify("Story Boss", "⚔️ Fighting "..name.." | "..mode.." | "..slot, 2)
 
     local ok, err = pcall(function()
         Net.fightStoryBoss:FireServer(id, mode)
@@ -120,26 +85,6 @@ function BossController.fightBoss(id, mode, runId)
     end
 
     task.wait(0.5)
-
-    if isInBattlePopupPresent() then
-        local elapsed = 0
-        while isInBattlePopupPresent() and elapsed < 180 do
-            if not State.autoEnabled or runId ~= State.autoRunId then return end
-            task.wait(1)
-            elapsed = elapsed + 1
-        end
-        State.alreadyFought[id][mode] = true
-        return
-    end
-
-    if isErrorPopupPresent() then
-        notify("Cooldown", name.." | "..mode.." cooldown/error", 3)
-        State.alreadyFought[id][mode] = true
-        task.wait(3)
-        return
-    end
-
-    notify("No Response", name.." | "..mode.." no response", 2)
     State.alreadyFought[id][mode] = true
 end
 
@@ -175,129 +120,104 @@ function BossController.runAuto()
 end
 
 function BossController.stopAuto()
+    State.autoEnabled = false
     State.autoRunId += 1
     State.alreadyFought = {}
-    State.autoEnabled = false
 end
 
 -------------------------------------------------
 -- UI
 -------------------------------------------------
-local Window = Rayfield:CreateWindow({
-    Name = "Aqua Hub",
-    LoadingTitle = "Anime Card Clash",
-    LoadingSubtitle = "by Aquane",
-    ConfigurationSaving = { Enabled = true, FolderName = "AccConfig", FileName = "ACC" },
-    KeySystem = false
+local Window = Fluent:CreateWindow({
+    Title = "Aqua Hub | Anime Card Clash",
+    SubTitle = "by Aquane",
+    Size = UDim2.fromOffset(550, 400),
+    Acrylic = true,
+    Theme = "Dark"
 })
 
--------------------------------------------------
--- Tab: Story Boss
--------------------------------------------------
-local storyTab = Window:CreateTab("Story Boss", 4483345998)
-storyTab:CreateSection("Select Bosses & Difficulties")
+-- Tab Story Boss
+local storyTab = Window:AddTab({ Title = "Story Boss", Icon = "rbxassetid://4483345998" })
+storyTab:AddSection("Select Bosses & Difficulties")
 
 for _, b in ipairs(BossData.List) do
     local bossId = b.id
     local label = BossData.Names[bossId] or ("Boss "..bossId)
 
-    -- toggle chọn boss
-    storyTab:CreateToggle({
-        Name = label,
-        CurrentValue = State.selectedBosses[bossId],
-        Flag = "Boss_"..bossId,
+    -- Toggle chọn boss
+    storyTab:AddToggle("Boss_"..bossId, {
+        Title = label,
+        Default = State.selectedBosses[bossId],
         Callback = function(state)
             State.selectedBosses[bossId] = state
         end
     })
 
-    -- dropdown chọn độ khó
-    storyTab:CreateDropdown({
-        Name = label.." | Difficulties",
-        Options = b.modes,
-        CurrentOption = State.bossModes[bossId],
-        MultiDropdown = true,
-        Flag = "Mode_"..bossId,
-        Callback = function(options)
-            State.bossModes[bossId] = options
+    -- Multi-dropdown difficulty
+    storyTab:AddDropdown("Mode_"..bossId, {
+        Title = label.." | Difficulties",
+        Values = b.modes,
+        Default = State.bossModes[bossId],
+        Multi = true,
+        Callback = function(values)
+            State.bossModes[bossId] = values
         end
     })
 end
 
-storyTab:CreateSection("Fight Boss Selected")
-storyTab:CreateToggle({
-    Name = "Auto Fight",
-    CurrentValue = State.autoEnabled,
-    Flag = "AutoFight",
+storyTab:AddSection("Auto Fight")
+storyTab:AddToggle("AutoFight", {
+    Title = "Auto Fight",
+    Default = State.autoEnabled,
     Callback = function(state)
         State.autoEnabled = state
-        if State.autoEnabled then
-            BossController.runAuto()
-        else
-            BossController.stopAuto()
-        end
+        if state then BossController.runAuto() else BossController.stopAuto() end
     end
 })
 
--------------------------------------------------
--- Tab: Team Setting
--------------------------------------------------
-local teamTab = Window:CreateTab("Team Setting", 4483345998)
-teamTab:CreateSection("Choose Teams for Bosses")
-
+-- Tab Team Setting
+local teamTab = Window:AddTab({ Title = "Team Setting", Icon = "rbxassetid://4483345998" })
+teamTab:AddSection("Choose Teams for Bosses")
 for _, b in ipairs(BossData.List) do
     local bossId = b.id
     local label = BossData.Names[bossId] or ("Boss "..bossId)
 
-    teamTab:CreateDropdown({
-        Name = label.." | Choose Team",
-        Options = BossData.TeamOptions,
-        CurrentOption = State.bossTeams[bossId],
-        Flag = "Team_"..bossId,
-        Callback = (function(id, lbl) return function(option)
-            State.bossTeams[id] = option or "slot_1"
-            notify("Team Changed", lbl.." → "..(option or "slot_1"), 1.5)
-        end end)(bossId, label)
+    teamTab:AddDropdown("Team_"..bossId, {
+        Title = label.." | Choose Team",
+        Values = BossData.TeamOptions,
+        Default = { State.bossTeams[bossId] },
+        Multi = false,
+        Callback = function(option)
+            State.bossTeams[bossId] = option[1] or "slot_1"
+            notify("Team Changed", label.." → "..(option[1] or "slot_1"), 1.5)
+        end
     })
 end
 
--------------------------------------------------
--- Tab: Script Control
--------------------------------------------------
-local scriptTab = Window:CreateTab("🔄 Script", 4483345998)
-scriptTab:CreateSection("Script Control")
+-- Tab Script Control
+local scriptTab = Window:AddTab({ Title = "Script", Icon = "rbxassetid://4483345998" })
+scriptTab:AddSection("Script Control")
 
-scriptTab:CreateButton({
-    Name = "Reload Script",
+scriptTab:AddButton("ReloadScript", {
+    Title = "Reload Script",
     Callback = function()
-        if State then
-            State.autoEnabled = false
-            State.autoRunId += 1
-            State.alreadyFought = {}
-        end
-        if Rayfield then pcall(function() Rayfield:Destroy() end) end
+        State.autoEnabled = false
+        State.autoRunId += 1
+        State.alreadyFought = {}
+        pcall(function() Fluent:Destroy() end)
         loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/beta.lua"))()
     end
 })
 
-scriptTab:CreateButton({
-    Name = "❌ Destroy Script",
+scriptTab:AddButton("DestroyScript", {
+    Title = "❌ Destroy Script",
     Callback = function()
-        if State then
-            State.autoEnabled = false
-            State.autoRunId += 1
-            State.alreadyFought = {}
-        end
+        State.autoEnabled = false
+        State.autoRunId += 1
+        State.alreadyFought = {}
         task.wait(0.05)
-        pcall(function() if Window and type(Window.Destroy)=="function" then Window:Destroy() end end)
-        pcall(function() if Rayfield and type(Rayfield.Destroy)=="function" then Rayfield:Destroy() end end)
+        pcall(function() if Window then Window:Destroy() end end)
         State = {}
-        getgenv().StoryBossLoaded = false
         print("✅ Script destroyed: UI removed and auto stopped.")
     end
 })
-
--------------------------------------------------
--- Load config
--------------------------------------------------
-Rayfield:LoadConfiguration()
