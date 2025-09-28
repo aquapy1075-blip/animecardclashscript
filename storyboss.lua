@@ -108,11 +108,9 @@ local BossController = {}
 function BossController.fightBoss(id, mode, runId)
     if not State.autoEnabled or runId ~= State.autoRunId then return end
 
-    -- set team for this boss
+    -- set team cho boss
     Net.setPartySlot:FireServer(State.bossTeams[id] or "slot_1")
 
-    State.alreadyFought[id] = State.alreadyFought[id] or {}
-    if State.alreadyFought[id][mode] then return end
     local name = BossData.Names[id] or ("Boss "..id)
     notify("Story Boss", "⚔️ Fighting "..name.." | "..mode, 2)
 
@@ -121,49 +119,50 @@ function BossController.fightBoss(id, mode, runId)
     end)
     if not ok then
         notify("Error", tostring(err), 2)
+        State.alreadyFought[id] = State.alreadyFought[id] or {}
+        State.alreadyFought[id][mode] = true
         return
     end
 
     task.wait(0.5)
 
-    -- wait if in battle
-    if isInBattlePopupPresent() then
-        local elapsed = 0
-        while isInBattlePopupPresent() and elapsed < 180 do
-            if not State.autoEnabled or runId ~= State.autoRunId then return end
-            task.wait(1)
-            elapsed += 1
-        end
+    -- chờ popup battle xuất hiện
+    local battleElapsed = 0
+    while not isInBattlePopupPresent() and battleElapsed < 3 do
+        if not State.autoEnabled or runId ~= State.autoRunId then return end
+        task.wait(1)
+        battleElapsed += 1
+    end
+
+    -- nếu vẫn không thấy popup, thông báo no response
+    if not isInBattlePopupPresent() then
+        notify("No Response", name.." | "..mode.." no response", 2)
+        State.alreadyFought[id] = State.alreadyFought[id] or {}
         State.alreadyFought[id][mode] = true
         return
     end
 
-    if isErrorPopupPresent() then
-        notify("Cooldown", name.." | "..mode.." cooldown/error", 3)
-        State.alreadyFought[id][mode] = true
-        task.wait(3)
-        return
+    -- đợi battle kết thúc
+    local elapsed = 0
+    while isInBattlePopupPresent() and elapsed < 180 do
+        if not State.autoEnabled or runId ~= State.autoRunId then return end
+        task.wait(1)
+        elapsed += 1
     end
 
-    if isInBattlePopupPresent() then
-        local elapsed = 0
-        while isInBattlePopupPresent() and elapsed < 40 do
-            if not State.autoEnabled or runId ~= State.autoRunId then return end
-            task.wait(1)
-            elapsed += 1
-        end
-        if didBattleEndAsWinOrLoss() then
-            notify("Finished", name.." | "..mode.." done!", 2)
-        else
-            notify("Skipped", name.." | "..mode.." skipped", 2)
-        end
-        State.alreadyFought[id][mode] = true
-        return
+    -- check kết quả
+    if didBattleEndAsWinOrLoss() then
+        notify("Finished", name.." | "..mode.." done!", 2)
+    elseif isErrorPopupPresent() then
+        notify("Cooldown/Error", name.." | "..mode, 3)
+    else
+        notify("Skipped", name.." | "..mode.." skipped", 2)
     end
 
-    notify("No Response", name.." | "..mode.." no response", 2)
+    State.alreadyFought[id] = State.alreadyFought[id] or {}
     State.alreadyFought[id][mode] = true
 end
+
 
 function BossController.runAuto()
     State.autoRunId += 1
@@ -173,15 +172,24 @@ function BossController.runAuto()
         while State.autoEnabled and runId == State.autoRunId do
             -- build plan from selected bosses
             local plan = {}
-            for _, boss in ipairs(BossData.List) do
-                if State.selectedBosses[boss.id] then
-                    table.insert(plan, { id=boss.id, modes=table.clone(boss.modes) })
-                end
+                for _, boss in ipairs(BossData.List) do
+    if State.selectedBosses[boss.id] then
+        local modesToFight = {}
+        for _, mode in ipairs(boss.modes) do
+            if not (State.alreadyFought[boss.id] and State.alreadyFought[boss.id][mode]) then
+                table.insert(modesToFight, mode)
             end
+        end
+        if #modesToFight > 0 then
+            table.insert(plan, {id=boss.id, modes=modesToFight})
+        end
+    end
+end
 
             if #plan == 0 then
-                notify("Info", "No bosses selected", 2)
-                task.wait(2)
+                notify("Info", "All selected bosses are on cooldown or done", 2)
+                State.autoEnabled = false
+                 break
             else
                 for _, item in ipairs(plan) do
                     for _, mode in ipairs(item.modes) do
@@ -192,7 +200,7 @@ function BossController.runAuto()
                 end
             end
 
-            --State.alreadyFought = {}
+              --State.alreadyFought = {}
             task.wait(2)
         end
     end)
