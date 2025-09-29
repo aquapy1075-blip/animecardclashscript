@@ -367,9 +367,9 @@ function BossController.fightBoss(id, mode, runId)
     end
 
     -- check kết quả
-    if Utils.didBattleEndAsWinOrLoss() then
+    if Utils.didBattleEndAsWinOrLoss(PlayerGui) then
         Utils.notify("Finished", name.." | "..mode.." done!", 2)
-    elseif Utils.isErrorPopupPresent() then
+    elseif Utils.isErrorPopupPresent(PlayerGui) then
         Utils.notify("Cooldown/Error", name.." | "..mode, 3)
     else
         Utils.notify("Skipped", name.." | "..mode.." skipped", 2)
