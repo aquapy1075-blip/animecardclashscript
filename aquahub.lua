@@ -608,7 +608,7 @@ scriptTab:CreateButton({
         _G.AquaHubLoaded = false
     
         -- Load script lại
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/test.lua"))()
+        loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/aquahub.lua"))()
     end
 })
 
@@ -654,6 +654,8 @@ scriptTab:CreateButton({
         print("✅ Script destroyed: UI removed and auto stopped.")
     end
 })
+
+
 -- Load config safely
 pcall(function()
     Rayfield:LoadConfiguration()
