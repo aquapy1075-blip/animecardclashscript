@@ -1,18 +1,8 @@
--- Nếu script đã chạy, không chạy nữa
-if _G.AquaHubLoaded then
-    warn("Script đã được chạy, không thể chạy lại!")
-    return
-end
-
--- Đánh dấu script đã load
-_G.AquaHubLoaded = true
-
 -- Services
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:FindFirstChild("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui")
-
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- UI
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
@@ -22,14 +12,21 @@ local Net = {
     fightStoryBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightStoryBoss"),
     setPartySlot   = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("setPartySlot"),
     fightBattleTowerWave = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightBattleTowerWave"),
+    fightGlobalBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightGlobalBoss"),
+    fightInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightInfinite"),
+    forfeitBattle = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("forfeitBattle"),
+    claimInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("claimInfinite"),
+
 }
 
 
 -------------------------------------------------
 -- Data
 -------------------------------------------------
+
+
 local BossData = {
-    Names = {
+       Names = {
         [308] = "Naruto", [381] = "Frieza", [330] = "Sukuna",
         [355] = "Titan", [458] = "Muzan", [348] = "Big Mom",
         [322] = "Sungjinwoo", [300] = "Cid",
@@ -58,8 +55,15 @@ local BossData = {
         lunar_esclipe = "Lunar Esclipe",
     },
     TeamOptions = {"slot_1","slot_2","slot_3","slot_4","slot_5","slot_6","slot_7","slot_8"}
-}
+}  
 
+
+    local GlobalBossData = {
+            Position = CFrame.new(1019,9,-245),
+            SpawnUTCWindows = { {18,20}, {21,23}, {0,2}, {3,5},{6,8}, {9,11}, {12,14}, {15,17}},
+            DurationHours = 2, 
+            TeamOptions = {"slot_1","slot_2","slot_3","slot_4","slot_5","slot_6","slot_7","slot_8"}
+    }
 
 
 
@@ -68,9 +72,9 @@ local BossData = {
 -------------------------------------------------
 local State = {}
 
--- ==============================
--- Boss
--- ==============================
+
+------------- Boss--------------
+
 State.selectedBosses = {}      -- toggle chọn boss trong UI
 State.bossTeams = {}           -- team slot cho từng boss
 State.alreadyFought = {}       -- boss đã đánh xong, table { [bossId] = {mode1=true, mode2=true} }
@@ -79,50 +83,83 @@ State.bossSelectedModes = {}   -- multi-mode chọn trong UI, table { [bossId] =
 -- Auto control riêng cho Boss
 State.autoEnabledBoss = false
 State.autoRunIdBoss = 0
--- ==============================
--- Tower
--- ==============================
-State.selectedTowerModes = {}       -- toggle chọn mode trong UI
-State.towerTeams = {}               -- team slot cho từng mode
-State.towerAlreadyFought = {}       -- wave đã đánh xong, table { [mode] = {wave1=true, wave2=true} }
-State.towerSelectedWaves = {}       -- multi-wave chọn trong UI, table { [mode] = {1,2,3} }
+-- Khởi tạo Boss 
 
--- Auto control riêng cho Tower
-State.autoEnabledTower = false
-State.autoRunIdTower = 0
-
--- ==============================
--- Khởi tạo mặc định Boss
--- ==============================
 for id in pairs(BossData.Names) do
     State.selectedBosses[id] = false
     State.bossTeams[id] = "slot_1"
     State.alreadyFought[id] = {}
     State.bossSelectedModes[id] = {}  -- chưa chọn mode nào
 end
-print("Selected Bosses:", State.selectedBosses)
 
--- ==============================
--- Khởi tạo mặc định Tower
--- ==============================
+-------------- Battle Tower-------------
+State.selectedTowerModes = {}       -- toggle chọn mode trong UI
+State.towerTeams = {}               -- team slot cho từng mode
+State.towerAlreadyFought = {}       -- wave đã đánh xong, table { [mode] = {wave1=true, wave2=true} }
+State.towerSelectedWaves = {}       -- multi-wave chọn trong UI, table { [mode] = {1,2,3} }
+
+-- Auto control riêng cho Battle Tower
+State.autoEnabledTower = false
+State.autoRunIdTower = 0
+-- Khởi tạo Battle Tower
 for _, mode in ipairs(TowerData.Modes) do
     State.selectedTowerModes[mode] = false
     State.towerTeams[mode] = "slot_1"
     State.towerAlreadyFought[mode] = {}   -- chưa đánh wave nào
     State.towerSelectedWaves[mode] = {}   -- chưa chọn wave nào
 end
-print("Selected Tower Waves:", State.towerSelectedWaves)
+
+--------------- Global Boss ---------------
+State.globalBossTeamHighHP = "slot_1"   -- team khi boss HP ≥ 75m
+State.globalBossTeamLowHP  = "slot_1"   -- team khi boss HP < 75m
+State.gbSwitchedHighHp = false
+State.autoEnabledGb = false
+State.hasTeleported = false
+
+
 
 
 -------------------------------------------------
 -- Utils
 -------------------------------------------------
 
+
 local Utils = {}
 
 function Utils.notify(title, content, duration)
     Rayfield:Notify({ Title = title, Content = content, Duration = duration or 2 })
 end
+
+-- Global Boss Check -- 
+function Utils.isBossSpawnTime()
+    local now = os.date("!*t")  -- giờ UTC
+    local hour = now.hour
+
+    for _, window in ipairs(GlobalBossData.SpawnUTCWindows) do
+        local startH, endH = table.unpack(window)
+        if startH <= endH then
+            if hour >= startH and hour < endH then
+                return true
+            end
+        else
+            -- qua 0h
+            if hour >= startH or hour < endH then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function Utils.teleportToBoss()
+    local Players = game:GetService("Players")
+    local player = Players.LocalPlayer
+    local character = player.Character or player.CharacterAdded:Wait()
+    local hrp = character:WaitForChild("HumanoidRootPart")
+    hrp.CFrame = GlobalBossData.Position
+end
+
+
 -- Boss check
 function Utils.hasPopupContaining(PlayerGui, keyword)
      if not PlayerGui then return false end
@@ -152,11 +189,11 @@ function Utils.isErrorPopupPresent(PlayerGui)
     return false
 end
 
-function Utils.isInBattlePopupPresent(PlayerGui)
+function Utils.isInBattlePopupPresent(PlayerGui)    pg = pg or PlayerGui
     if not PlayerGui then return false end
-    return Utils.hasPopupContaining(PlayerGui, "hide battle")
-        or Utils.hasPopupContaining(PlayerGui, "show battle")
-        or Utils.hasPopupContaining(PlayerGui, "already in battle")
+    return Utils.hasPopupContaining(pg, "hide battle")
+        or Utils.hasPopupContaining(pg, "show battle")
+        or Utils.hasPopupContaining(pg, "already in battle")
 end
 
 function Utils.didBattleEndAsWinOrLoss(PlayerGui)
@@ -183,10 +220,95 @@ function Utils.isTowerBattlePopupPresent(PlayerGui, TowerData)
     end
     return false
 end
+-------------------------------------------------
+-- Global Boss Controller
+-------------------------------------------------
+local GlobalBossController = {}
+
+
+local function getBossHP()
+    for _, v in ipairs(PlayerGui:GetDescendants()) do
+        if v:IsA("TextLabel") then
+            local txt = v.Text:gsub(",", ""):gsub("%s+", "")
+            local cur, max = txt:match("(%d+%.?%d*)/(%d+)")
+            if cur and max then
+                cur = math.floor(tonumber(cur))
+                max = tonumber(max)
+                if max and max >= 1000000 then
+                    
+                    return cur -- chỉ trả current HP
+                end
+            end
+        end
+    end
+    return nil
+end
+
+
+-- Run Auto Global Boss
+-- Run Auto Global Boss
+function GlobalBossController.runAuto()
+    if State.autoEnabledGb then return end
+    State.autoEnabledGb = true
+
+    task.spawn(function()
+        while State.autoEnabledGb do
+            -- Kiểm tra boss spawn theo giờ
+            if Utils.isBossSpawnTime() then
+                -- Teleport nếu chưa teleport trong khung giờ
+                if not State.hasTeleported then
+                    Utils.teleportToBoss()
+                    State.hasTeleported = true
+                    State.gbCheckedHighHp = false
+                    Utils.notify("Global Boss", "Teleported to boss!", 2)
+                     Net.setPartySlot:FireServer(State.globalBossTeamLowHP or "slot_1")
+                end
+
+                -- use whichever PlayerGui variable exists
+                local gui = playerGui or PlayerGui
+
+                -- Nếu không đang popup combat → bắt đầu fight
+                if not Utils.isInBattlePopupPresent(gui) then
+                    -- Lấy current HP của boss
+                    local curHp = getBossHP()
+
+                    -- Đổi team theo HP (chỉ ELSE nằm trong cùng if curHp)
+                     if curHp and curHp >= 75000000 and not State.gbCheckedHighHp then
+                        
+                            Net.setPartySlot:FireServer(State.globalBossTeamHighHP or "slot_1")
+                            Utils.notify("Global Boss", "Switch to High HP Team ("..curHp..")", 2)
+                          State.gbCheckedHighHp = true
+                    end
+
+                    -- Spam fight boss
+                    pcall(function()
+                        Net.fightGlobalBoss:FireServer(450) -- boss ID fix = 450
+                    end)
+                end
+            else
+                -- Boss despawn → reset flag
+                State.hasTeleported = false
+                State.gbSwitchedHighHp = false
+            end
+
+            task.wait(0.5) -- delay giữa mỗi lần check/fight
+        end
+    end)
+end
+
+
+-- Stop Auto Global Boss
+function GlobalBossController.stopAuto()
+    State.autoEnabledGb = false
+    State.hasTeleported = false
+end
+
+
 
 -------------------------------------------------
 -- Boss Controller
--------------------------------------------------
+-------------------------------------------------   
+
 local BossController = {}
 
 function BossController.fightBoss(id, mode, runId)
@@ -212,14 +334,14 @@ function BossController.fightBoss(id, mode, runId)
 
     -- chờ popup battle xuất hiện
     local battleElapsed = 0
-    while not Utils.isInBattlePopupPresent() and battleElapsed < 3 do
+    while not Utils.isInBattlePopupPresent(PlayerGui) and battleElapsed < 3 do
         if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then return end
         task.wait(1)
         battleElapsed += 1
     end
 
     -- nếu vẫn không thấy popup, thông báo no response
-    if not Utils.isInBattlePopupPresent() then
+    if not Utils.isInBattlePopupPresent(PlayerGui) then
         Utils.notify("No Response", name.." | "..mode.." no response", 2)
         State.alreadyFought[id] = State.alreadyFought[id] or {}
         State.alreadyFought[id][mode] = true
@@ -228,7 +350,7 @@ function BossController.fightBoss(id, mode, runId)
 
     -- đợi battle kết thúc
     local elapsed = 0
-    while Utils.isInBattlePopupPresent() and elapsed < 180 do
+    while Utils.isInBattlePopupPresent(PlayerGui) and elapsed < 180 do
         if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then return end
         task.wait(1)
         elapsed += 1
@@ -304,9 +426,11 @@ end
 
 
 
+
 -------------------------------------------------
 -- BATTLE TOWER CONTROLLER 
 -------------------------------------------------
+
 local TowerController = {}
 
 -- Mỗi wave đánh bao nhiêu floor
@@ -415,6 +539,12 @@ function TowerController.stopAuto()
     State.autoRunIdTower += 1
     State.towerAlreadyFought = {}
 end
+
+
+
+
+
+
 -------------------------------------------------
 -- UI
 -------------------------------------------------
@@ -538,11 +668,26 @@ towerTab:CreateToggle({
         end
     end
 })
+-------------------------------------------------
+-- Global Boss Tab
+-------------------------------------------------
+local globalBossTab = Window:CreateTab("Global Boss", 4483362458)
+globalBossTab:CreateToggle({
+    Name = "Auto Global Boss",
+    CurrentValue = false,
+    Flag = "AutoGlobalBoss",
+    Callback = function(value)
+        if value then
+            GlobalBossController.runAuto()
+        else
+            GlobalBossController.stopAuto()
+        end
+    end
+})
+-------------------------------------------------
+-- Team Select Tab
+-------------------------------------------------
 
--------------------------------------------------
--- Team Select Tab
--------------------------------------------------
--- Team Select Tab
 local teamTab = Window:CreateTab("Team Select", 4483345998)
 teamTab:CreateSection("Select Team for Each Boss")
 for _, b in ipairs(BossData.List) do
@@ -579,6 +724,31 @@ for _, mode in ipairs(TowerData.Modes) do
         end
     })
 end
+ teamTab:CreateSection("Select Team for Global Boss") 
+
+teamTab:CreateDropdown({
+    Name = "Team (Boss HP ≥ 75M)",
+    Options = GlobalBossData.TeamOptions,
+    CurrentOption = {State.globalBossTeamHighHP or "slot_1"},
+    Flag = "GbHighHpTeam",
+    Callback = function(option)
+        local selected = option[1] or "slot_1"
+        State.globalBossTeamHighHP = tostring(selected)
+        Utils.notify("Global Boss", "Set High HP Team: " .. selected, 2)
+    end
+})
+
+teamTab:CreateDropdown({
+    Name = "Team (Boss HP < 75M)",
+    Options = GlobalBossData.TeamOptions,
+    CurrentOption = {State.globalBossTeamLowHP or "slot_1"},
+    Flag = "GbLowHpTeam",
+    Callback = function(option)
+        local selected = option[1] or "slot_1"
+        State.globalBossTeamLowHP = tostring(selected)
+        Utils.notify("Global Boss", "Set Low HP Team: " .. selected, 2)
+    end
+})
 
 -- Script Control Tab --
 local scriptTab = Window:CreateTab("🔄 Script", 4483345998)
