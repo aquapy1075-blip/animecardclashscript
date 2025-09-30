@@ -592,7 +592,7 @@ local InfState = {
 
 -- Hàm run auto
 function InfTowerController.runAuto()
-    if not State.autoEnabledInf then return end
+    if State.autoEnabledInf then return end
     State.autoEnabledInf = true
 
     task.spawn(function()
@@ -658,19 +658,7 @@ local combineState = {
         StoryBoss = 0
     }
 }
--- Bật hiển thị cooldown debug
-task.spawn(function()
-    while combineState.running do
-        local btCd = combineState.cooldown.BattleTower
-        local sbCd = combineState.cooldown.StoryBoss
 
-        local btStr = btCd > 0 and string.format("%dh %dm", math.floor(btCd/3600), math.floor((btCd%3600)/60)) or "Can fight now!"
-        local sbStr = sbCd > 0 and string.format("%dh %dm", math.floor(sbCd/3600), math.floor((sbCd%3600)/60)) or "Can fight now!"
-
-        print(string.format("[Cooldown] Battle Tower: %s | Story Boss: %s", btStr, sbStr))
-        task.wait(1)  -- in mỗi giây để debug realtime
-    end
-end)
 
 -- Hàm convert input "xhxm" sang giây
 local function parseTimeInput(input)
@@ -708,7 +696,7 @@ local function displayCooldowns()
                 print("Story Boss: Can fight now!")
             end
 
-            task.wait(5)
+            task.wait(60)
         end
     end)
 end
@@ -1192,5 +1180,3 @@ scriptTab:CreateButton({
 pcall(function()
     Rayfield:LoadConfiguration()
 end)
-
-
