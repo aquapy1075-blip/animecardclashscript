@@ -658,6 +658,19 @@ local combineState = {
         StoryBoss = 0
     }
 }
+-- Bật hiển thị cooldown debug
+task.spawn(function()
+    while combineState.running do
+        local btCd = combineState.cooldown.BattleTower
+        local sbCd = combineState.cooldown.StoryBoss
+
+        local btStr = btCd > 0 and string.format("%dh %dm", math.floor(btCd/3600), math.floor((btCd%3600)/60)) or "Can fight now!"
+        local sbStr = sbCd > 0 and string.format("%dh %dm", math.floor(sbCd/3600), math.floor((sbCd%3600)/60)) or "Can fight now!"
+
+        print(string.format("[Cooldown] Battle Tower: %s | Story Boss: %s", btStr, sbStr))
+        task.wait(1)  -- in mỗi giây để debug realtime
+    end
+end)
 
 -- Hàm convert input "xhxm" sang giây
 local function parseTimeInput(input)
@@ -703,6 +716,7 @@ end
 
 function CombineModeController.run()
     combineState.running = true
+    displayCooldowns()
     task.spawn(function()
         while combineState.running do
             updateCooldowns(1) -- giảm cooldown mỗi giây
@@ -752,8 +766,8 @@ end
 
 function CombineModeController.stop()
     combineState.running = false
-    state.autoEnabledGb = false
-    state.autoEnabledInf = false
+    State.autoEnabledGb = false
+    State.autoEnabledInf = false
     
 end
 
