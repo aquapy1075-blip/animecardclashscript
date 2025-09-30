@@ -1099,44 +1099,53 @@ combineTab:CreateToggle({
     end
 })
 --------- MULTIMODE STATUS ---------
-local combineTab = Window:CreateTab("Combine Debug", 4483345998)
-combineTab:CreateSection("Current Mode & Cooldown")
+ocal combineDebugTab = Window:CreateTab("Combine Debug", 4483345998)
+combineDebugTab:CreateSection("Status")
 
--- Tạo label trống
-local modeLabel = combineTab:CreateLabel("Mode: None")
-local cdLabel = combineTab:CreateLabel("Cooldown: Ready!")
+-- Mode đang chạy
+local runningModeLabel = combineDebugTab:CreateLabel("Mode: None")
 
--- Hàm chuyển giây -> xh ym
+-- Cooldown hiện tại
+local cooldownLabel = combineDebugTab:CreateLabel("Cooldown: 0h 0m")
+
+-- Function chuyển giây -> "xh ym"
 local function formatTime(sec)
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
     return string.format("%dh %dm", h, m)
 end
 
--- Task cập nhật liên tục
+-- Cập nhật UI liên tục
 task.spawn(function()
     while true do
         local currentMode = "None"
         local currentCd = 0
 
-        -- Lấy mode ưu tiên hiện tại
-        for _, mode in ipairs({"StoryBoss","BattleTower","InfTower","GlobalBoss"}) do
-            if State.combinePriority[mode] and CombineModeController.priority[mode] then
-                currentMode = mode
-                currentCd = CombineModeController.cooldown[mode] or 0
-                break
+        -- Kiểm tra CombineModeController priority và auto bật
+        if CombineModeController.running then
+            if CombineModeController.priority.GlobalBoss and State.autoEnabledGb then
+                currentMode = "Global Boss"
+                currentCd = CombineModeController.cooldown.GlobalBoss or 0
+            elseif CombineModeController.priority.StoryBoss and State.autoEnabledBoss then
+                currentMode = "Story Boss"
+                currentCd = CombineModeController.cooldown.StoryBoss or 0
+            elseif CombineModeController.priority.BattleTower and State.autoEnabledTower then
+                currentMode = "Battle Tower"
+                currentCd = CombineModeController.cooldown.BattleTower or 0
+            elseif CombineModeController.priority.InfTower and State.autoEnabledInf then
+                currentMode = "Infinite Tower"
+                currentCd = CombineModeController.cooldown.InfTower or 0
             end
         end
 
-        -- Update label
-        modeLabel:Set("Mode: "..currentMode)
+        runningModeLabel:Set("Mode: "..currentMode)
         if currentCd > 0 then
-            cdLabel:Set("Cooldown: "..formatTime(currentCd))
+            cooldownLabel:Set("Cooldown: "..formatTime(currentCd))
         else
-            cdLabel:Set("Cooldown: Ready!")
+            cooldownLabel:Set("Cooldown: Ready!")
         end
 
-        task.wait(0.2)
+        task.wait(0.5)
     end
 end)
 
