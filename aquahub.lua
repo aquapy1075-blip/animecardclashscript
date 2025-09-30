@@ -592,7 +592,7 @@ local InfState = {
 
 -- Hàm run auto
 function InfTowerController.runAuto()
-    if not State.autoEnabledInf then return end
+    if State.autoEnabledInf then return end
     State.autoEnabledInf = true
 
     task.spawn(function()
