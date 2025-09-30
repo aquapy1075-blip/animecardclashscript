@@ -1098,30 +1098,49 @@ combineTab:CreateToggle({
         end
     end
 })
---------- MULTIMODE STATUS ---------
-local combineDebugTab = Window:CreateTab("Combine Debug", 4483345998)
-combineDebugTab:CreateSection("Status")
+-------------------------------------------------
+-- Status Tab UI
+-------------------------------------------------
+local statusTab = Window:CreateTab("Status Tab", 4483345998)
 
--- Mode đang chạy
-local runningModeLabel = combineDebugTab:CreateLabel("Mode: None")
+-- Section hướng dẫn
+statusTab:CreateSection("Current Status")
 
--- Cooldown hiện tại
-local cooldownLabel = combineDebugTab:CreateLabel("Cooldown: 0h 0m")
+-- Input “giả” làm label cho Mode hiện tại
+local modeDisplay = statusTab:CreateInput({
+    Name = "Current Mode",
+    PlaceholderText = "Mode will show here",
+    Text = "",
+    Flag = "StatusModeDisplay",
+    Callback = function(value)
+        -- Không cần xử lý khi user gõ
+    end
+})
 
--- Function chuyển giây -> "xh ym"
+-- Input “giả” làm label cho Cooldown hiện tại
+local cooldownDisplay = statusTab:CreateInput({
+    Name = "Cooldown",
+    PlaceholderText = "Cooldown will show here",
+    Text = "",
+    Flag = "StatusCooldownDisplay",
+    Callback = function(value)
+        -- Không cần xử lý
+    end
+})
+
+-- Function format giây -> "xh ym"
 local function formatTime(sec)
     local h = math.floor(sec / 3600)
     local m = math.floor((sec % 3600) / 60)
     return string.format("%dh %dm", h, m)
 end
 
--- Cập nhật UI liên tục
+-- Cập nhật realtime Mode + Cooldown
 task.spawn(function()
     while true do
         local currentMode = "None"
         local currentCd = 0
 
-        -- Kiểm tra CombineModeController priority và auto bật
         if CombineModeController.running then
             if CombineModeController.priority.GlobalBoss and State.autoEnabledGb then
                 currentMode = "Global Boss"
@@ -1138,16 +1157,23 @@ task.spawn(function()
             end
         end
 
-        runningModeLabel:Set("Mode: "..currentMode)
-        if currentCd > 0 then
-            cooldownLabel:Set("Cooldown: "..formatTime(currentCd))
-        else
-            cooldownLabel:Set("Cooldown: Ready!")
+        -- Update UI Rayfield
+        if Rayfield.Flags.StatusModeDisplay then
+            Rayfield.Flags.StatusModeDisplay:Set(currentMode)
+        end
+
+        if Rayfield.Flags.StatusCooldownDisplay then
+            if currentCd > 0 then
+                Rayfield.Flags.StatusCooldownDisplay:Set("Cooldown: "..formatTime(currentCd))
+            else
+                Rayfield.Flags.StatusCooldownDisplay:Set("Cooldown: Ready!")
+            end
         end
 
         task.wait(0.5)
     end
 end)
+
 
 -- Script Control Tab --
 local scriptTab = Window:CreateTab("🔄 Script", 4483345998)
