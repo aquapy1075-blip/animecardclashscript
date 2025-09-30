@@ -101,9 +101,7 @@ local BossData = {
     },
     TeamOptions = {"slot_1","slot_2","slot_3","slot_4","slot_5","slot_6","slot_7","slot_8"}
 }
--------------------------------------------------
--- State
--------------------------------------------------
+
 -------------------------------------------------
 -- State
 -------------------------------------------------
@@ -152,7 +150,6 @@ State.globalBossTeamLowHP  = "slot_1"   -- team khi boss HP < 75m
 State.gbSwitchedHighHp = false
 State.autoEnabledGb = false
 State.hasTeleported = false
-
 --------------- Infinite Tower ------------
 State.InfinitieTeam = "slot_1"
 State.selectedInfMode = "base"
@@ -595,11 +592,12 @@ local InfState = {
 
 -- Hàm run auto
 function InfTowerController.runAuto()
+    if not State.autoEnabledInf then return end
     State.autoEnabledInf = true
 
     task.spawn(function()
         while State.autoEnabledInf do
-            if not InfState.isPaused and not Utils.isInBattlePopupPresent(PlayerGui) then
+            if not Utils.isInBattlePopupPresent(PlayerGui) then
                 local args = {State.selectedInfMode}
                 Net.setPartySlot:FireServer(State.InfinitieTeam)
                 pcall(function() Net.fightInfinite:FireServer(unpack(args)) end)
@@ -611,7 +609,7 @@ end
 
 -- Hàm pause Infinite nâng cao
 function InfTowerController.pause()
-    InfState.isPaused = true
+    State.autoEnabledInf = false
     Utils.notify("Inf Tower", "Pausing Infinite Tower...", 2)
 
     -- Set auto advance timer = 10 để dễ pause
@@ -629,7 +627,7 @@ end)
             pcall(function() Net.pauseInfinite:FireServer() end)
             task.wait(1)
         end
-
+        pcall(function() Net.pauseInfinite:FireServer() end)
         -- Reset auto advance timer = 1
      pcall(function()
     Net.netSetting:FireServer({key="infinite_tower_auto_advance_timer", value=1})
@@ -637,17 +635,10 @@ end)
         Utils.notify("Inf Tower", "Infinite Tower paused successfully", 2)
     end)
 end
--- Hàm resume Infinite
-function InfTowerController.resume()
-    InfState.isPaused = false
-    Utils.notify("Inf Tower", "Infinite Tower resumed: " .. State.selectedInfMode, 2)
-end
-
 
 -- Hàm stop auto hoàn toàn
 function InfTowerController.stopAuto()
     State.autoEnabledInf = false
-    InfState.isPaused = false
 end
 
 -------------------------------------------------
@@ -720,7 +711,6 @@ function CombineModeController.run()
             if combineState.priority.BattleTower and State.selectedTowerModes then
                 if combineState.cooldown.BattleTower <= 0 then
                     InfTowerController.pause()
-                    State.autoEnabledTower = true
                     TowerController.runAuto()
                     repeat task.wait(1) until not State.autoEnabledTower
                     combineState.cooldown.BattleTower = 24*3600
@@ -731,7 +721,6 @@ function CombineModeController.run()
             if combineState.priority.StoryBoss and State.selectedBosses then
                 if combineState.cooldown.StoryBoss <= 0 and not State.autoEnabledTower then
                     InfTowerController.pause()
-                    State.autoEnabledBoss = true
                     BossController.runAuto()
                     repeat task.wait(1) until not State.autoEnabledBoss
                     combineState.cooldown.StoryBoss = 6*3600
@@ -740,9 +729,9 @@ function CombineModeController.run()
 
             -- Global Boss
             if combineState.priority.GlobalBoss then
+                
                 if Utils.isBossSpawnTime() and not State.autoEnabledTower and not State.autoEnabledBoss then
                     InfTowerController.pause()
-                    State.autoEnabledGb = true
                     GlobalBossController.runAuto()
                     repeat task.wait(1) until not Utils.isBossSpawnTime()
                     State.autoEnabledGb = false
@@ -751,8 +740,8 @@ function CombineModeController.run()
 
             -- Infinite Tower
             if combineState.priority.InfTower then
-                if not State.autoEnabledTower and not State.autoEnabledBoss and not State.autoEnabledGb then
-                    InfTowerController.resume()
+                if not State.autoEnabledInf and not State.autoEnabledTower and not State.autoEnabledBoss and not State.autoEnabledGb then
+                    InfTowerController.runAuto()
                 end
             end
 
@@ -763,7 +752,9 @@ end
 
 function CombineModeController.stop()
     combineState.running = false
-    InfTowerController.resume()
+    state.autoEnabledGb = false
+    state.autoEnabledInf = false
+    
 end
 
 -- Hàm để UI set priority
@@ -1133,7 +1124,7 @@ scriptTab:CreateButton({
 
         pcall(function()
             local success, err = pcall(function()
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/test.lua"))()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/aquahub.lua"))()
             end)
             if not success then
                 warn("Error loading script:", err)
