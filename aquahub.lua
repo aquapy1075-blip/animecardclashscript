@@ -29,7 +29,9 @@ local Net = {
     pauseInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("pauseInfinite"),
     netSetting = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("setSetting")
 }
-
+function Net:setSetting(key, value)
+    self.netSetting:FireServer(key, value)
+end
 
 -------------------------------------------------
 -- Data
@@ -238,13 +240,17 @@ function Utils.isErrorPopupPresent(PlayerGui)
     return false
 end
 
-function Utils.isInBattlePopupPresent(PlayerGui)    pg = pg or PlayerGui
+function Utils.isInBattlePopupPresent(PlayerGui)    
     if not PlayerGui then return false end
-    return Utils.hasPopupContaining(pg, "hide battle")
-        or Utils.hasPopupContaining(pg, "show battle")
-        or Utils.hasPopupContaining(pg, "already in battle")
+    return Utils.hasPopupContaining(PlayerGui, "hide battle")
+        or Utils.hasPopupContaining(PlayerGui, "show battle")
+        or Utils.hasPopupContaining(PlayerGui, "already in battle")
 end
 
+function Utils.isInfPaused(PlayerGui)
+    if not PlayerGui then return false end
+      return Utils.hasPopupContaining(PlayerGui, "continue later")
+end
 function Utils.didBattleEndAsWinOrLoss(PlayerGui)
      if not PlayerGui then return false end
     return Utils.hasPopupContaining(PlayerGui, "victory")
@@ -269,6 +275,12 @@ function Utils.isTowerBattlePopupPresent(PlayerGui, TowerData)
     end
     return false
 end
+
+function Utils.ForfeitUntilExit()
+        pcall(function() Net.forfeitBattle:FireServer() end)
+        Utils.notify("INFO", "EXIT COMBAT SUCCESS", 2)
+end
+
 
 -------------------------------------------------
 -- Global Boss Controller
@@ -609,31 +621,25 @@ end
 
 -- Hàm pause Infinite nâng cao
 function InfTowerController.pause()
-    State.autoEnabledInf = false
-    Utils.notify("Inf Tower", "Pausing Infinite Tower...", 2)
-
-    -- Set auto advance timer = 10 để dễ pause
-    pcall(function()
-    Net.netSetting:FireServer({key="infinite_tower_auto_advance_timer", value=10})
-end)
-
-    -- Spam pause trong 45 giây
-    task.spawn(function()
-        local t0 = tick()
-        while tick() - t0 < 45 do
-             if not Utils.isInBattlePopupPresent(PlayerGui) then
-                 break  -- combat kết thúc → thoát vòng lặp sớm
-            end
-            pcall(function() Net.pauseInfinite:FireServer() end)
-            task.wait(1)
-        end
-       
-        -- Reset auto advance timer = 1
-     pcall(function()
-    Net.netSetting:FireServer({key="infinite_tower_auto_advance_timer", value=1})
-     end)
-        Utils.notify("Inf Tower", "Infinite Tower paused successfully", 2)
+       State.autoEnabledInf = false
+    pcall(function() 
+        Net.netSetting:FireServer("infinite_tower_auto_advance_timer", 9)  
     end)
+
+    local t0 = tick()
+        while tick() - t0 < 45 do
+           pcall(function() 
+            Net.pauseInfinite:FireServer() 
+        end)
+         if Utils.isInfPaused(PlayerGui) then break end
+        task.wait(1)
+    end
+    -- reset lại setting
+    pcall(function()  
+        Net.netSetting:FireServer("infinite_tower_auto_advance_timer", 1) 
+    end)
+
+    Utils.notify("Inf Tower", "Infinite Tower paused successfully", 2)
 end
 
 -- Hàm stop auto hoàn toàn
@@ -696,7 +702,7 @@ local function displayCooldowns()
                 print("Story Boss: Can fight now!")
             end
 
-            task.wait(60)
+            task.wait(5)
         end
     end)
 end
@@ -712,8 +718,10 @@ function CombineModeController.run()
             -- Battle Tower
             if combineState.priority.BattleTower and State.selectedTowerModes then
                 if combineState.cooldown.BattleTower <= 0 then
-                    State.autoEnabledTower = true
                     InfTowerController.pause()
+                   
+                    State.autoEnabledTower = true
+                    
                     TowerController.runAuto()
                     repeat task.wait(1) until not State.autoEnabledTower
                     combineState.cooldown.BattleTower = 24*3600
@@ -723,8 +731,8 @@ function CombineModeController.run()
             -- Story Boss
             if combineState.priority.StoryBoss and State.selectedBosses then
                 if combineState.cooldown.StoryBoss <= 0 and not State.autoEnabledTower then
-                    State.autoEnabledBoss = true
                     InfTowerController.pause()
+                    State.autoEnabledBoss = true  
                     BossController.runAuto()
                     repeat task.wait(1) until not State.autoEnabledBoss
                     combineState.cooldown.StoryBoss = 6*3600
@@ -735,8 +743,8 @@ function CombineModeController.run()
             if combineState.priority.GlobalBoss then
                 
                 if Utils.isBossSpawnTime() and not State.autoEnabledTower and not State.autoEnabledBoss then
-                    InfTowerController.pause()
-                    GlobalBossController.runAuto()
+                     InfTowerController.pause()
+                     lobalBossController.runAuto()
                     repeat task.wait(1) until not Utils.isBossSpawnTime()
                     State.autoEnabledGb = false
                 end
@@ -745,7 +753,7 @@ function CombineModeController.run()
             -- Infinite Tower
             if combineState.priority.InfTower then
                 if not State.autoEnabledInf and not State.autoEnabledTower and not State.autoEnabledBoss and not State.autoEnabledGb then
-                    InfTowerController.runAuto()
+                      InfTowerController.runAuto()
                 end
             end
 
@@ -1182,5 +1190,3 @@ scriptTab:CreateButton({
 pcall(function()
     Rayfield:LoadConfiguration()
 end)
-
-
