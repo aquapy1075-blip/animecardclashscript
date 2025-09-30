@@ -1099,7 +1099,7 @@ combineTab:CreateToggle({
     end
 })
 --------- MULTIMODE STATUS ---------
-ocal combineDebugTab = Window:CreateTab("Combine Debug", 4483345998)
+local combineDebugTab = Window:CreateTab("Combine Debug", 4483345998)
 combineDebugTab:CreateSection("Status")
 
 -- Mode đang chạy
