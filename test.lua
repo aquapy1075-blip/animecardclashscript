@@ -1098,6 +1098,47 @@ combineTab:CreateToggle({
         end
     end
 })
+--------- MULTIMODE STATUS ---------
+local combineTab = Window:CreateTab("Combine Debug", 4483345998)
+combineTab:CreateSection("Current Mode & Cooldown")
+
+-- Tạo label trống
+local modeLabel = combineTab:CreateLabel("Mode: None")
+local cdLabel = combineTab:CreateLabel("Cooldown: Ready!")
+
+-- Hàm chuyển giây -> xh ym
+local function formatTime(sec)
+    local h = math.floor(sec / 3600)
+    local m = math.floor((sec % 3600) / 60)
+    return string.format("%dh %dm", h, m)
+end
+
+-- Task cập nhật liên tục
+task.spawn(function()
+    while true do
+        local currentMode = "None"
+        local currentCd = 0
+
+        -- Lấy mode ưu tiên hiện tại
+        for _, mode in ipairs({"StoryBoss","BattleTower","InfTower","GlobalBoss"}) do
+            if State.combinePriority[mode] and CombineModeController.priority[mode] then
+                currentMode = mode
+                currentCd = CombineModeController.cooldown[mode] or 0
+                break
+            end
+        end
+
+        -- Update label
+        modeLabel:Set("Mode: "..currentMode)
+        if currentCd > 0 then
+            cdLabel:Set("Cooldown: "..formatTime(currentCd))
+        else
+            cdLabel:Set("Cooldown: Ready!")
+        end
+
+        task.wait(0.2)
+    end
+end)
 
 -- Script Control Tab --
 local scriptTab = Window:CreateTab("🔄 Script", 4483345998)
@@ -1128,7 +1169,7 @@ scriptTab:CreateButton({
 
         pcall(function()
             local success, err = pcall(function()
-                loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/aquahub.lua"))()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/test.lua"))()
             end)
             if not success then
                 warn("Error loading script:", err)
