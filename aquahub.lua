@@ -744,7 +744,7 @@ function CombineModeController.run()
                 
                 if Utils.isBossSpawnTime() and not State.autoEnabledTower and not State.autoEnabledBoss then
                      InfTowerController.pause()
-                     lobalBossController.runAuto()
+                     GlobalBossController.runAuto()
                     repeat task.wait(1) until not Utils.isBossSpawnTime()
                     State.autoEnabledGb = false
                 end
