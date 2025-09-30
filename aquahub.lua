@@ -1,4 +1,5 @@
 
+
 -- Anti AFK
 local vu = game:GetService("VirtualUser")
 game:GetService("Players").LocalPlayer.Idled:Connect(function()
@@ -16,7 +17,6 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- UI
 local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
 -- Net
 local Net = {
     fightStoryBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightStoryBoss"),
@@ -26,7 +26,8 @@ local Net = {
     fightInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightInfinite"),
     forfeitBattle = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("forfeitBattle"),
     claimInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("claimInfinite"),
-
+    pauseInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("pauseInfinite"),
+    netSetting = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("setSetting")
 }
 
 
@@ -75,7 +76,31 @@ local BossData = {
             TeamOptions = {"slot_1","slot_2","slot_3","slot_4","slot_5","slot_6","slot_7","slot_8"}
     }
 
+  local InfiniteData = {
+    Modes = {
+        "base", "nightmare", "potion", "ninja_village", "green_planet",
+        "shibuya_station", "titans_city", "dimensional_fortress",
+        "candy_island", "solo_city", "eminence_lookout",
+        "invaded_ninja_village", "necromancer_graveyard"
+    },
 
+    ModeNames = {
+        base = "Infinite",
+        nightmare = "HardCore",
+        potion = "Potion",
+        ninja_village = "Ninja Village",
+        green_planet = "Green Planet",
+        shibuya_station = "Shibuya Station",
+        titans_city = "Titans City",
+        dimensional_fortress = "Dimensional Fortress",
+        candy_island = "Candy Island",
+        solo_city = "Solo City",
+        eminence_lookout = "Eminence Lookout",
+        invaded_ninja_village = "Invaded Ninja Village",
+        necromancer_graveyard = "Necromancer Graveyard"
+    },
+    TeamOptions = {"slot_1","slot_2","slot_3","slot_4","slot_5","slot_6","slot_7","slot_8"}
+}
 
 -------------------------------------------------
 -- State
@@ -125,15 +150,29 @@ State.globalBossTeamLowHP  = "slot_1"   -- team khi boss HP < 75m
 State.gbSwitchedHighHp = false
 State.autoEnabledGb = false
 State.hasTeleported = false
+--------------- Infinite Tower ------------
+State.InfinitieTeam = "slot_1"
+State.selectedInfMode = "base"
+State.autoEnabledInf = false
 
-
-
+--------------- Combine Mode --------------
+-- State cho Combine Mode
+State.combineRunning = false  -- bật/tắt Combine Mode
+State.combinePriority = {      -- toggle chọn mode nào tham gia Combine
+    BattleTower = false,
+    StoryBoss  = false,
+    GlobalBoss = false,
+    InfTower   = false
+}
+State.combineInputCooldown = {  -- lưu giá trị người chơi nhập (xhxm) nếu cần hiển thị
+    BattleTower = "0",
+    StoryBoss  = "0"
+}
+-- Không cần countdown hiện tại nữa, controller tự quản lý cooldown
 
 -------------------------------------------------
 -- Utils
 -------------------------------------------------
-
-
 local Utils = {}
 
 function Utils.notify(title, content, duration)
@@ -170,7 +209,7 @@ function Utils.teleportToBoss()
 end
 
 
--- Boss check
+-- Popup check
 function Utils.hasPopupContaining(PlayerGui, keyword)
      if not PlayerGui then return false end
     if not keyword or keyword == "" then return false end
@@ -230,9 +269,11 @@ function Utils.isTowerBattlePopupPresent(PlayerGui, TowerData)
     end
     return false
 end
+
 -------------------------------------------------
 -- Global Boss Controller
 -------------------------------------------------
+
 local GlobalBossController = {}
 
 
@@ -254,8 +295,6 @@ local function getBossHP()
     return nil
 end
 
-
--- Run Auto Global Boss
 -- Run Auto Global Boss
 function GlobalBossController.runAuto()
     if State.autoEnabledGb then return end
@@ -275,7 +314,7 @@ function GlobalBossController.runAuto()
                 end
 
                 -- use whichever PlayerGui variable exists
-                local gui = playerGui or PlayerGui
+                local gui = PlayerGui
 
                 -- Nếu không đang popup combat → bắt đầu fight
                 if not Utils.isInBattlePopupPresent(gui) then
@@ -312,13 +351,9 @@ function GlobalBossController.stopAuto()
     State.autoEnabledGb = false
     State.hasTeleported = false
 end
-
-
-
 -------------------------------------------------
 -- Boss Controller
 -------------------------------------------------   
-
 local BossController = {}
 
 function BossController.fightBoss(id, mode, runId)
@@ -433,14 +468,9 @@ function BossController.stopAuto()
     State.alreadyFought = {}
 end
 
-
-
-
-
 -------------------------------------------------
 -- BATTLE TOWER CONTROLLER 
 -------------------------------------------------
-
 local TowerController = {}
 
 -- Mỗi wave đánh bao nhiêu floor
@@ -550,15 +580,202 @@ function TowerController.stopAuto()
     State.towerAlreadyFought = {}
 end
 
+-------------------------------------------------
+-- Infinitie Tower Control (gọn)
+-------------------------------------------------
+local InfTowerController = {}
+
+-- Internal state để quản lý pause/resume
+local InfState = {
+    isPaused = false,
+}
+
+-- Hàm run auto
+function InfTowerController.runAuto()
+    if not State.autoEnabledInf then return end
+    State.autoEnabledInf = true
+
+    task.spawn(function()
+        while State.autoEnabledInf do
+            if not Utils.isInBattlePopupPresent(PlayerGui) then
+                local args = {State.selectedInfMode}
+                Net.setPartySlot:FireServer(State.InfinitieTeam)
+                pcall(function() Net.fightInfinite:FireServer(unpack(args)) end)
+            end
+            task.wait(2)
+        end
+    end)
+end
+
+-- Hàm pause Infinite nâng cao
+function InfTowerController.pause()
+    State.autoEnabledInf = false
+    Utils.notify("Inf Tower", "Pausing Infinite Tower...", 2)
+
+    -- Set auto advance timer = 10 để dễ pause
+    pcall(function()
+    Net.netSetting:FireServer({key="infinite_tower_auto_advance_timer", value=10})
+end)
+
+    -- Spam pause trong 45 giây
+    task.spawn(function()
+        local t0 = tick()
+        while tick() - t0 < 45 do
+             if not Utils.isInBattlePopupPresent(PlayerGui) then
+                 break  -- combat kết thúc → thoát vòng lặp sớm
+            end
+            pcall(function() Net.pauseInfinite:FireServer() end)
+            task.wait(1)
+        end
+        pcall(function() Net.pauseInfinite:FireServer() end)
+        -- Reset auto advance timer = 1
+     pcall(function()
+    Net.netSetting:FireServer({key="infinite_tower_auto_advance_timer", value=1})
+     end)
+        Utils.notify("Inf Tower", "Infinite Tower paused successfully", 2)
+    end)
+end
+
+-- Hàm stop auto hoàn toàn
+function InfTowerController.stopAuto()
+    State.autoEnabledInf = false
+end
+
+-------------------------------------------------
+-- Combine Mode Controller
+-------------------------------------------------
+local CombineModeController = {}
+local combineState = {
+    running = false,
+    priority = {
+        BattleTower = false,
+        StoryBoss = false,
+        GlobalBoss = false,
+        InfTower = false
+    },
+    cooldown = {
+        BattleTower = 0,
+        StoryBoss = 0
+    }
+}
 
 
+-- Hàm convert input "xhxm" sang giây
+local function parseTimeInput(input)
+    if input == "0" then return 0 end
+    local h, m = input:match("(%d+)h(%d+)m")
+    if not h then h = input:match("(%d+)h") or 0 end
+    if not m then m = input:match("(%d+)m") or 0 end
+    return tonumber(h)*3600 + tonumber(m)*60
+end
+
+-- Hàm update cooldown
+local function updateCooldowns(dt)
+    for k,v in pairs(combineState.cooldown) do
+        if v > 0 then
+            combineState.cooldown[k] = math.max(0, v - dt)
+        end
+    end
+end
+-- Hàm hiển thị cooldown mỗi 5 giây
+local function displayCooldowns()
+    task.spawn(function()
+        while combineState.running do
+            local btCd = combineState.cooldown.BattleTower
+            local sbCd = combineState.cooldown.StoryBoss
+
+            if btCd > 0 then
+                print(string.format("Battle Tower cooldown: %dh %dm", math.floor(btCd/3600), math.floor((btCd%3600)/60)))
+            else
+                print("Battle Tower: Can fight now!")
+            end
+
+            if sbCd > 0 then
+                print(string.format("Story Boss cooldown: %dh %dm", math.floor(sbCd/3600), math.floor((sbCd%3600)/60)))
+            else
+                print("Story Boss: Can fight now!")
+            end
+
+            task.wait(60)
+        end
+    end)
+end
 
 
+function CombineModeController.run()
+    combineState.running = true
+    displayCooldowns()
+    task.spawn(function()
+        while combineState.running do
+            updateCooldowns(1) -- giảm cooldown mỗi giây
+            
+            -- Battle Tower
+            if combineState.priority.BattleTower and State.selectedTowerModes then
+                if combineState.cooldown.BattleTower <= 0 then
+                    InfTowerController.pause()
+                    TowerController.runAuto()
+                    repeat task.wait(1) until not State.autoEnabledTower
+                    combineState.cooldown.BattleTower = 24*3600
+                end
+            end
+
+            -- Story Boss
+            if combineState.priority.StoryBoss and State.selectedBosses then
+                if combineState.cooldown.StoryBoss <= 0 and not State.autoEnabledTower then
+                    InfTowerController.pause()
+                    BossController.runAuto()
+                    repeat task.wait(1) until not State.autoEnabledBoss
+                    combineState.cooldown.StoryBoss = 6*3600
+                end
+            end
+
+            -- Global Boss
+            if combineState.priority.GlobalBoss then
+                
+                if Utils.isBossSpawnTime() and not State.autoEnabledTower and not State.autoEnabledBoss then
+                    InfTowerController.pause()
+                    GlobalBossController.runAuto()
+                    repeat task.wait(1) until not Utils.isBossSpawnTime()
+                    State.autoEnabledGb = false
+                end
+            end
+
+            -- Infinite Tower
+            if combineState.priority.InfTower then
+                if not State.autoEnabledInf and not State.autoEnabledTower and not State.autoEnabledBoss and not State.autoEnabledGb then
+                    InfTowerController.runAuto()
+                end
+            end
+
+            task.wait(1)
+        end
+    end)
+end
+
+function CombineModeController.stop()
+    combineState.running = false
+    State.autoEnabledGb = false
+    State.autoEnabledInf = false
+    
+end
+
+-- Hàm để UI set priority
+function CombineModeController.setPriority(mode, value)
+    if combineState.priority[mode] ~= nil then
+        combineState.priority[mode] = value
+    end
+end
+
+-- Hàm để UI set cooldown từ input "xhxm"
+function CombineModeController.setCooldown(mode, input)
+    if combineState.cooldown[mode] ~= nil then
+        combineState.cooldown[mode] = parseTimeInput(input)
+    end
+end
 
 -------------------------------------------------
 -- UI
 -------------------------------------------------
-
 local Window = Rayfield:CreateWindow({
     Name = "Aqua Hub",
     LoadingTitle = "Anime Card Clash",
@@ -679,6 +896,48 @@ towerTab:CreateToggle({
     end
 })
 -------------------------------------------------
+-- Infinite Tower Tab
+-------------------------------------------------
+local InfiniteTab = Window:CreateTab("Infinite Tower", 4483362458)
+
+local modeOptions = {}
+for _, key in ipairs(InfiniteData.Modes) do
+    table.insert(modeOptions, InfiniteData.ModeNames[key] or key)
+end
+
+InfiniteTab:CreateSection("Infinite Mode")
+InfiniteTab:CreateDropdown({
+    Name = "Mode",
+    Options = modeOptions,
+    CurrentOption = {InfiniteData.ModeNames[State.selectedInfMode]},
+    Flag = "InfiniteModeDropdown",
+    Callback = function(option)
+        for k,v in pairs(InfiniteData.ModeNames) do
+            if v == option[1] then
+                State.selectedInfMode = k
+                break
+            end
+        end
+        Utils.notify("Inf Tower", "Mode selected: " .. InfiniteData.ModeNames[State.selectedInfMode], 2)
+    end
+})
+
+InfiniteTab:CreateToggle({
+    Name = "Auto Fight Infinite Tower",
+    CurrentValue = false,
+    Flag = "InfiniteAutoFight",
+    Callback = function(value)
+        State.autoEnabledInf = value
+        if State.autoEnabledInf then
+            print("Auto fight started for mode:", InfiniteData.ModeNames[State.selectedInfMode])
+            InfTowerController.runAuto()
+        else
+            InfTowerController.stopAuto()
+        end
+    end
+})
+
+-------------------------------------------------
 -- Global Boss Tab
 -------------------------------------------------
 local globalBossTab = Window:CreateTab("Global Boss", 4483362458)
@@ -734,6 +993,20 @@ for _, mode in ipairs(TowerData.Modes) do
         end
     })
 end
+teamTab:CreateSection("Select Team for Infinite Tower")
+
+teamTab:CreateDropdown({
+    Name = "Inf Team Slot",
+    Options = InfiniteData.TeamOptions,
+    CurrentOption = {State.InfinitieTeam or "slot_1"},
+    Flag = "InfiniteTeamDropdown",
+    Callback = function(option)
+        local selected = option[1] or "slot_1"
+        State.InfinitieTeam = tostring(selected)
+        print("Đã chọn team slot:", option)
+        Utils.notify("INF TOWER", " Set Inf Team: " .. selected, 2)
+    end
+}) 
  teamTab:CreateSection("Select Team for Global Boss") 
 
 teamTab:CreateDropdown({
@@ -760,24 +1033,88 @@ teamTab:CreateDropdown({
     end
 })
 
+local combineTab = Window:CreateTab("Combine Mode", 4483345998)
+-- Input cooldown cho Battle Tower
+combineTab:CreateSection("Enter Cooldown StoryBoss and Battle Tower") 
+combineTab:CreateInput({
+    Name = "Battle Tower Cooldown",
+    PlaceholderText = "Default:0",
+    Description = "",
+    Text = tostring(State.combineInputCooldown.BattleTower),
+    Flag = "CombineBTCooldown",
+    Callback = function(input)
+        State.combineInputCooldown.BattleTower = input
+        CombineModeController.setCooldown("BattleTower", input)
+    end
+})
+combineTab:CreateLabel("2h10m = 2h10m until next fight, 0 = can fight now")
+combineTab:CreateLabel("Auto set to 24h after fighting ")
+
+-- Input cooldown cho Story Boss
+combineTab:CreateInput({
+    Name = "Story Boss Cooldown",
+    PlaceholderText = "Default:0",
+    Description = "2h10m = 2 giờ 10 phút nữa sẽ đánh, 0 = can fight now, will reset after run",
+    Text = tostring(State.combineInputCooldown.StoryBoss),
+    Flag = "CombineSBCooldown",
+    Callback = function(input)
+        State.combineInputCooldown.StoryBoss = input
+        CombineModeController.setCooldown("StoryBoss", input)
+    end
+})
+combineTab:CreateLabel("2h10m = 2h10m until next fight, 0 = can fight now")
+combineTab:CreateLabel("Auto set to 6h after fighting ")
+
+
+-- Toggle chọn mode ưu tiên
+combineTab:CreateSection("Select Mode to add to MultiMode") 
+
+for _, mode in ipairs({"BattleTower", "StoryBoss", "GlobalBoss", "InfTower"}) do
+    local m = mode
+    combineTab:CreateToggle({
+        Name = m,
+        CurrentValue = State.combinePriority[m],
+        Flag = "Combine"..m,
+        Callback = function(value)
+            State.combinePriority[m] = value
+            CombineModeController.setPriority(m, value)
+        end
+    })
+end
+combineTab:CreateSection("Run MultiMode") 
+-- Toggle bật/tắt Combine Mode
+combineTab:CreateToggle({
+    Name = "Run Combine Mode",
+    CurrentValue = State.combineRunning,
+    Flag = "RunCombineMode",
+    Callback = function(value)
+        State.combineRunning = value
+        if value then
+            CombineModeController.run()
+        else
+            CombineModeController.stop()
+        end
+    end
+})
+
 -- Script Control Tab --
 local scriptTab = Window:CreateTab("🔄 Script", 4483345998)
 scriptTab:CreateSection("Script Control")
 
-      -- Reload Script
+-- Reload Script
 scriptTab:CreateButton({
     Name = "Reload Script",
     Callback = function()
         -- Boss reset
         if State then
             State.autoEnabledBoss = false
-            State.autoRunIdBoss += 1
+            State.autoRunIdBoss = State.autoRunIdBoss + 1
             State.alreadyFought = {}
         end
         -- Tower reset
         if State then
             State.autoEnabledTower = false
-            State.autoRunIdTower += 1
+            State.autoRunIdTower = State.autoRunIdTower + 1
             State.towerAlreadyFought = {}
         end
 
@@ -786,26 +1123,29 @@ scriptTab:CreateButton({
             pcall(function() Rayfield:Destroy() end)
         end
         _G.AquaHubLoaded = false
-    
-        -- Load script lại
-        loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/aquahub.lua"))()
+
+        pcall(function()
+            local success, err = pcall(function()
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/refs/heads/main/aquahub.lua"))()
+            end)
+            if not success then
+                warn("Error loading script:", err)
+            end
+        end)
     end
 })
 
--- Destroy Script
 scriptTab:CreateButton({
     Name = "❌ Destroy Script",
     Callback = function()
         -- Stop Boss auto
         if State then
             State.autoEnabledBoss = false
-            State.autoRunIdBoss += 1
+            State.autoRunIdBoss = State.autoRunIdBoss + 1
             State.alreadyFought = {}
-        end
-        -- Stop Tower auto
-        if State then
+            -- Stop Tower auto
             State.autoEnabledTower = false
-            State.autoRunIdTower += 1
+            State.autoRunIdTower = State.autoRunIdTower + 1
             State.towerAlreadyFought = {}
         end
 
@@ -830,13 +1170,15 @@ scriptTab:CreateButton({
             State.towerSelectedWaves = {}
             State.towerAlreadyFought = {}
         end
-          _G.AquaHubLoaded = false
+
+        _G.AquaHubLoaded = false
         print("✅ Script destroyed: UI removed and auto stopped.")
     end
 })
-
 
 -- Load config safely
 pcall(function()
     Rayfield:LoadConfiguration()
 end)
+
+
