@@ -631,7 +631,7 @@ function InfTowerController.pause()
            pcall(function() 
             Net.pauseInfinite:FireServer() 
         end)
-         if Utils.isInfPaused(PlayerGui) then break end
+         if Utils.isInfPaused(PlayerGui) or Utils.isInBattlePopupPresent(PlayerGui) then break end
         task.wait(1)
     end
     -- reset lại setting
