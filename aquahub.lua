@@ -712,6 +712,7 @@ function CombineModeController.run()
             -- Battle Tower
             if combineState.priority.BattleTower and State.selectedTowerModes then
                 if combineState.cooldown.BattleTower <= 0 then
+                    State.autoEnabledTower = true
                     InfTowerController.pause()
                     TowerController.runAuto()
                     repeat task.wait(1) until not State.autoEnabledTower
@@ -722,6 +723,7 @@ function CombineModeController.run()
             -- Story Boss
             if combineState.priority.StoryBoss and State.selectedBosses then
                 if combineState.cooldown.StoryBoss <= 0 and not State.autoEnabledTower then
+                    State.autoEnabledBoss = true
                     InfTowerController.pause()
                     BossController.runAuto()
                     repeat task.wait(1) until not State.autoEnabledBoss
