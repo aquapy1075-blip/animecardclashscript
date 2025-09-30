@@ -627,7 +627,7 @@ end)
             pcall(function() Net.pauseInfinite:FireServer() end)
             task.wait(1)
         end
-        pcall(function() Net.pauseInfinite:FireServer() end)
+       
         -- Reset auto advance timer = 1
      pcall(function()
     Net.netSetting:FireServer({key="infinite_tower_auto_advance_timer", value=1})
