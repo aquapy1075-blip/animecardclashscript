@@ -672,10 +672,11 @@ end
 local InfTowerController = {}
 -- Hàm run auto
 function InfTowerController.runAuto()
-    State.autoRunIdInf += 1
-    local runId = State.autoRunIdInf
     if State._infTaskRunning then return end
     State._infTaskRunning = true
+    State.autoRunIdInf += 1
+    local runId = State.autoRunIdInf
+    
 
     task.spawn(function()
         repeat
