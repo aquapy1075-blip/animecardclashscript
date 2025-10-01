@@ -814,7 +814,7 @@ function CombineModeController.stop()
     State.autoEnabledGb = false
     State.autoRunIdGb += 1
     State.autoEnabledInf = false
-    --State.autoRunIdInf += 1
+    State.autoRunIdInf += 1
     State.autoEnabledBoss = false
     State.autoRunIdBoss += 1
     State.autoEnabledTower = false
