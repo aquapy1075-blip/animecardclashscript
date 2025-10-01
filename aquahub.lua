@@ -674,18 +674,24 @@ local InfTowerController = {}
 function InfTowerController.runAuto()
     State.autoRunIdInf += 1
     local runId = State.autoRunIdInf
-     if State._infTaskRunning then return end
+    if State._infTaskRunning then return end
     State._infTaskRunning = true
+
     task.spawn(function()
-        while State.autoEnabledInf and runId == State.autoRunIdInf do
-            if State._infTaskRunning == false then break end
-            if not Utils.isInBattlePopupPresent(PlayerGui) then
+        repeat
+            if runId ~= State.autoRunIdInf or not State.autoEnabledInf then
+                break
+            end
+
+            if PlayerGui and not Utils.isInBattlePopupPresent(PlayerGui) then
                 local args = {State.selectedInfMode}
-                Net.setPartySlot:FireServer(State.InfinitieTeam)
+                pcall(function() Net.setPartySlot:FireServer(State.InfinitieTeam) end)
                 pcall(function() Net.fightInfinite:FireServer(unpack(args)) end)
             end
-            task.wait(2)
-        end
+
+            task.wait(2) -- nếu battle popup xuất hiện, vẫn wait 2s
+        until false
+
         State._infTaskRunning = false
     end)
 end
