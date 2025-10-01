@@ -311,12 +311,19 @@ function Utils.isInfPaused(PlayerGui)
     if not PlayerGui then return false end
       return Utils.hasPopupContaining(PlayerGui, "continue later")
 end
-function Utils.didBattleEndAsWinOrLoss(PlayerGui)
-     if not PlayerGui then return false end
-    return Utils.hasPopupContaining(PlayerGui, "victory")
-        or Utils.hasPopupContaining(PlayerGui, "defeat")
-        or Utils.isErrorPopupPresent(PlayerGui)
+function Utils.getBattleResult(PlayerGui)
+    if not PlayerGui then return "none" end
+    if Utils.hasPopupContaining(PlayerGui, "victory") then
+        return "victory"
+    elseif Utils.hasPopupContaining(PlayerGui, "defeat") then
+        return "defeat"
+    elseif Utils.isErrorPopupPresent(PlayerGui) then
+        return "error"
+    end
+    return "none"
 end
+
+
 -- Tower check
 function Utils.isTowerBattlePopupPresent(PlayerGui, TowerData)
     if not PlayerGui then return false end
@@ -429,60 +436,75 @@ local BossController = {}
 function BossController.fightBoss(id, mode, runId)
     if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then return end
 
-    -- set team cho boss
-    Net.setPartySlot:FireServer(State.bossTeams[id] or "slot_1")
-
     local name = BossData.Names[id] or ("Boss "..id)
-    Utils.notify("Story Boss", "⚔️ Fighting "..name.." | "..mode, 2)
-    print("Fighting Boss:", id, mode, "with team", State.bossTeams[id])
-    local ok, err = pcall(function()
-        Net.fightStoryBoss:FireServer(id, mode)
-    end)
-    if not ok then
-        Utils.notify("Error", tostring(err), 2)
-        State.alreadyFought[id] = State.alreadyFought[id] or {}
-        State.alreadyFought[id][mode] = true
-        return
+    local retries = 0
+    local maxRetries = 3
+
+    while State.autoEnabledBoss and runId == State.autoRunIdBoss and retries < maxRetries do
+        -- chọn team
+        Net.setPartySlot:FireServer(State.bossTeams[id] or "slot_1")
+        Utils.notify("Story Boss", "⚔️ Fighting "..name.." | "..mode, 2)
+
+        -- gọi fight
+        local ok, err = pcall(function()
+            Net.fightStoryBoss:FireServer(id, mode)
+        end)
+        if not ok then
+            Utils.notify("Error", tostring(err), 2)
+            break
+        end
+
+        -- chờ popup combat xuất hiện
+        local battleElapsed = 0
+        while not Utils.isInBattlePopupPresent(PlayerGui) and battleElapsed < 3 do
+            if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then return end
+            task.wait(1)
+            battleElapsed += 1
+        end
+
+        if not Utils.isInBattlePopupPresent(PlayerGui) then
+            Utils.notify("No Response", name.." | "..mode.." no response", 2)
+            break
+        end
+
+        -- đợi battle kết thúc (max 180s)
+        local elapsed = 0
+        while Utils.isInBattlePopupPresent(PlayerGui) and elapsed < 180 do
+            if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then return end
+            task.wait(1)
+            elapsed += 1
+        end
+
+        -- lấy kết quả
+        local result = Utils.getBattleResult(PlayerGui)
+
+        if result == "victory" then
+            Utils.notify("Finished", name.." | "..mode.." victory!", 2)
+            State.alreadyFought[id] = State.alreadyFought[id] or {}
+            State.alreadyFought[id][mode] = true
+            return -- thắng rồi thì thoát luôn
+
+        elseif result == "defeat" then
+            retries += 1
+            Utils.notify("Defeated", name.." | "..mode.." lost, retrying ("..retries.."/"..maxRetries..")", 2)
+            task.wait(2) -- delay trước khi thử lại
+            -- vòng while sẽ quay lại để retry
+
+        elseif result == "error" then
+            Utils.notify("Cooldown/Error", name.." | "..mode, 3)
+            break
+
+        else
+            Utils.notify("Skipped", name.." | "..mode.." skipped", 2)
+            break
+        end
     end
 
-    task.wait(0.5)
-
-    -- chờ popup battle xuất hiện
-    local battleElapsed = 0
-    while not Utils.isInBattlePopupPresent(PlayerGui) and battleElapsed < 3 do
-        if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then return end
-        task.wait(1)
-        battleElapsed += 1
-    end
-
-    -- nếu vẫn không thấy popup, thông báo no response
-    if not Utils.isInBattlePopupPresent(PlayerGui) then
-        Utils.notify("No Response", name.." | "..mode.." no response", 2)
-        State.alreadyFought[id] = State.alreadyFought[id] or {}
-        State.alreadyFought[id][mode] = true
-        return
-    end
-
-    -- đợi battle kết thúc
-    local elapsed = 0
-    while Utils.isInBattlePopupPresent(PlayerGui) and elapsed < 180 do
-        if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then return end
-        task.wait(1)
-        elapsed += 1
-    end
-
-    -- check kết quả
-    if Utils.didBattleEndAsWinOrLoss(PlayerGui) then
-        Utils.notify("Finished", name.." | "..mode.." done!", 2)
-    elseif Utils.isErrorPopupPresent(PlayerGui) then
-        Utils.notify("Cooldown/Error", name.." | "..mode, 3)
-    else
-        Utils.notify("Skipped", name.." | "..mode.." skipped", 2)
-    end
-
+    -- nếu hết retry hoặc fail thì đánh dấu done
     State.alreadyFought[id] = State.alreadyFought[id] or {}
     State.alreadyFought[id][mode] = true
 end
+
 
 
 function BossController.runAuto()
