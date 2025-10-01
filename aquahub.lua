@@ -678,6 +678,7 @@ function InfTowerController.runAuto()
     State._infTaskRunning = true
     task.spawn(function()
         while State.autoEnabledInf and runId == State.autoRunIdInf do
+            if State._infTaskRunning == false then break end
             if not Utils.isInBattlePopupPresent(PlayerGui) then
                 local args = {State.selectedInfMode}
                 Net.setPartySlot:FireServer(State.InfinitieTeam)
@@ -714,6 +715,7 @@ end
 
 -- Hàm stop auto hoàn toàn
 function InfTowerController.stopAuto()
+    State._infTaskRunning = false
     State.autoRunIdInf += 1
 end
 
@@ -803,13 +805,14 @@ end
 
 function CombineModeController.stop()
     State.autoEnabledGb = false
-    State.autoEnabledInf = false
     State.autoRunIdGb += 1
+    State.autoEnabledInf = false
     State.autoRunIdInf += 1
     State.autoEnabledBoss = false
     State.autoRunIdBoss += 1
     State.autoEnabledTower = false
     State.autoRunIdTower += 1
+    State._infTaskRunning = false
     State.autoRunIdCombine += 1    
 end
 
