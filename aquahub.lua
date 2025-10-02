@@ -864,8 +864,8 @@ for _, b in ipairs(BossData.List) do
 
     -- Input chọn mode (multi-mode)
     storyTab:CreateInput({
-        Name = label.." | difficulties (set all if dont type anything )",
-        PlaceholderText = "normal,medium",
+        Name = label.." | difficulties (set all mode if dont type anything )",
+        PlaceholderText = "",
         Flag = "BossModes_"..b.id,
         Callback = function(text)
             local modes = {}
