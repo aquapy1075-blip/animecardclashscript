@@ -43,13 +43,13 @@ end
 local function claimExploration(mode)
     local args = { mode }
     events:WaitForChild("claimExploration"):FireServer(unpack(args))
-    print(">> Claimed Exploration:", mode)
+   
 end
 
 local function startExploration(mode, cards)
     local args = { mode, cards }
     events:WaitForChild("startExploration"):FireServer(unpack(args))
-    print(">> Started Exploration:", mode, "with:", table.concat(cards, ", "))
+    
 end
 
 -------------------------------------------------
@@ -66,7 +66,7 @@ task.spawn(function()
                     pcall(function() claimExploration(mode) end)
                     task.wait(0.7)
                     pcall(function() startExploration(mode, cards) end)
-                    task.wait(1)
+                    task.wait(2)
                 else
                     print(">> Skip", mode, "(not enough cards)")
                 end
