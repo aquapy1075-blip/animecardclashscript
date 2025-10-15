@@ -67,8 +67,6 @@ task.spawn(function()
                     task.wait(0.7)
                     pcall(function() startExploration(mode, cards) end)
                     task.wait(2)
-                else
-                    print(">> Skip", mode, "(not enough cards)")
                 end
             end
 
