@@ -1,0 +1,174 @@
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+local HttpService = game:GetService("HttpService")
+
+-- ===== CONFIG =====
+local WEBHOOK_URL = getgenv().WebhookURL
+local BOT_NAME = "💠 GCC Arena Bot"
+local BOT_AVATAR = "https://cdn.discordapp.com/icons/1416789228825870428/a_718575158cb8c86bcb4fcf8d6d1e06d5.png"
+local EMBED_COLOR = 0x7A00FF -- 💜 Main embed color
+local EXTEND_COLOR = 0x00FFCC -- 💚 Extend alert embed
+local POLL_RETRY = 1
+local MAIN_THUMBNAIL = "https://i.imgur.com/Sz8YkEO.gif" -- Main embed thumbnail
+local EXTEND_THUMBNAIL = "https://i.imgur.com/HggEdsr.gif" -- Extend embed thumbnail
+-- ===================
+
+local totalLuckPath = LocalPlayer.PlayerGui.react.fountain.fountain
+	:GetChildren()[4]["3"]["2"]["2"]:GetChildren()[3]["2"]["3"]
+
+local entitiesParent = LocalPlayer.PlayerGui.react.fountain.fountain
+	:GetChildren()[4]["3"]["3"]["1"]
+
+-- ===== Utility =====
+local function safe(fn) local ok,res=pcall(fn) if ok then return res end end
+
+local function parseLuckPair(text)
+	if not text then return nil,nil end
+	local s = tostring(text)
+	local pair = s:match("([%+%-%d%.]+%s*/%s*%d+)")
+	if not pair then return s, tonumber(s:match("(%d+)")) end
+	local left = tonumber(pair:match("([%d%.]+)"))
+	return pair, left
+end
+
+local function parseExpireText(text)
+	if not text then return nil end
+	local h = tonumber(text:match("(%d+)h")) or 0
+	local m = tonumber(text:match("(%d+)m")) or 0
+	local s = tonumber(text:match("(%d+)s")) or 0
+	local total = h*3600 + m*60 + s
+	return { h=h,m=m,s=s,totalSeconds=total,unix=os.time()+total,discordCountdown=string.format("<t:%d:R>",os.time()+total) }
+end
+
+local function getPlayerName(entity)
+	local label = safe(function() return entity:GetChildren()[6]["2"] end)
+	if label and label:IsA("TextLabel") then
+		return label.Text ~= "" and label.Text or entity.Name
+	end
+	return entity.Name
+end
+
+-- === Webhook Helpers ===
+local function parseWebhookUrl(url)
+	if not url then return nil end
+	local id, token = url:match("discord.com/api/webhooks/([0-9]+)/([^/%s]+)")
+	if id and token then return id, token end
+	id, token = url:match("webhooks/([0-9]+)/([^%s]+)")
+	return id, token
+end
+
+local function postWebhookAndReturnId(url, payload)
+	local req = (http_request or request or syn.request)
+	if not req then return nil end
+	local res = req({Url=url,Method="POST",Headers={["Content-Type"]="application/json"},Body=HttpService:JSONEncode(payload)})
+	if not res or not res.Body then return nil end
+	local ok, body = pcall(function() return HttpService:JSONDecode(res.Body) end)
+	if not ok or not body or not body.id then return nil end
+	return tostring(body.id)
+end
+
+local function editWebhookMessage(webhookId, webhookToken, messageId, payload)
+	local req = (http_request or request or syn.request)
+	if not req then return false end
+	local url = ("https://discord.com/api/webhooks/%s/%s/messages/%s"):format(webhookId,webhookToken,messageId)
+	local res = req({Url=url,Method="PATCH",Headers={["Content-Type"]="application/json"},Body=HttpService:JSONEncode(payload)})
+	if not res then return false end
+	if res.StatusCode and (res.StatusCode>=200 and res.StatusCode<300) then return true end
+	return false
+end
+
+local function sendOrEditMain(embed)
+	local webhookId, webhookToken = parseWebhookUrl(WEBHOOK_URL)
+	if not webhookId or not webhookToken then return end
+	local storageKey = "LastMainEmbedMessageId_"..webhookToken
+	local existingId = getgenv()[storageKey]
+
+	local payload = {username=BOT_NAME,avatar_url=BOT_AVATAR,embeds={embed}}
+
+	if existingId then
+		local ok = editWebhookMessage(webhookId,webhookToken,existingId,payload)
+		if ok then return end
+	end
+
+	-- fallback: gửi mới nếu chưa có hoặc edit fail
+	local newId = postWebhookAndReturnId(WEBHOOK_URL,payload)
+	if newId then getgenv()[storageKey]=newId end
+end
+
+local function sendExtendAlert(playerName, newInfo, delta)
+	local embed = {
+		title = "⏫ Luck Fountain Extended!",
+		color = EXTEND_COLOR,
+		fields = {
+			{name=string.format("🍀 %s",playerName),value=string.format("🕒 +%d phút (%s)",math.floor(delta/60),newInfo.discordCountdown),inline=false}
+		},
+		timestamp=os.date("!%Y-%m-%dT%H:%M:%S.000Z"),
+		thumbnail={url=EXTEND_THUMBNAIL},
+		footer={text="Fountain Extended — GCC Tracker",icon_url=BOT_AVATAR}
+	}
+	local req = (http_request or request or syn.request)
+	if req then req({Url=WEBHOOK_URL,Method="POST",Headers={["Content-Type"]="application/json"},Body=HttpService:JSONEncode({username=BOT_NAME,avatar_url=BOT_AVATAR,embeds={embed}})}) end
+end
+-- ===================
+
+task.spawn(function()
+	-- chờ GUI load
+	while not (totalLuckPath and totalLuckPath.Parent) do
+		task.wait(POLL_RETRY)
+		totalLuckPath = safe(function() return LocalPlayer.PlayerGui.react.fountain.fountain:GetChildren()[4]["3"]["2"]["2"]:GetChildren()[3]["2"]["3"] end)
+	end
+	while not (entitiesParent and entitiesParent.Parent) do
+		task.wait(POLL_RETRY)
+		entitiesParent = safe(function() return LocalPlayer.PlayerGui.react.fountain.fountain:GetChildren()[4]["3"]["3"]["1"] end)
+	end
+
+	-- 🎲 Total Luck
+	local luckText = totalLuckPath.Text
+	local pair = parseLuckPair(luckText)
+	local luckDisplay = string.format(" **%s**", tostring(pair or luckText))
+
+	-- 👥 Player List
+	local playerFields = {}
+	local lastExpireTimes = {}
+
+	for _, entity in ipairs(entitiesParent:GetChildren()) do
+		local expireLabel = safe(function() return entity:GetChildren()[7]["3"] end)
+		if expireLabel and expireLabel:IsA("TextLabel") then
+			local info = parseExpireText(expireLabel.Text)
+			if info then
+				local name = getPlayerName(entity)
+				lastExpireTimes[name] = info.totalSeconds
+
+				table.insert(playerFields,{name=" 🎮 Player:  "..name,value="⏳ "..info.discordCountdown,inline=false})
+
+				-- Theo dõi tăng thời gian
+				expireLabel:GetPropertyChangedSignal("Text"):Connect(function()
+					local newInfo = parseExpireText(expireLabel.Text)
+					if newInfo and lastExpireTimes[name] then
+						local delta = newInfo.totalSeconds - lastExpireTimes[name]
+						if delta>60 then
+							sendExtendAlert(name,newInfo,delta)
+						end
+						lastExpireTimes[name]=newInfo.totalSeconds
+					end
+				end)
+			end
+		end
+	end
+
+	-- 🎮 Build main embed
+	local embed = {
+		title = "⚔️ **GCC Arena — Luck Fountain Status**",
+		description = string.format("🍀 **Total Luck:** %s", luckDisplay),
+		color = EMBED_COLOR,
+		fields = playerFields,
+		thumbnail={url=MAIN_THUMBNAIL},
+		footer={text="by GCC Arena Tracker",icon_url=BOT_AVATAR},
+		timestamp=os.date("!%Y-%m-%dT%H:%M:%S.000Z")
+	}
+
+	-- Gửi hoặc edit main embed
+	sendOrEditMain(embed)
+	print("[LuckWatcher] ✅ Sent/Edited main embed to Discord.")
+end)
