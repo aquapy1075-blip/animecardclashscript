@@ -163,7 +163,6 @@ task.spawn(function()
 		description = string.format("🍀 **Total Luck:** %s", luckDisplay),
 		color = EMBED_COLOR,
 		fields = playerFields,
-		thumbnail={url=MAIN_THUMBNAIL},
 		footer={text="by GCC Arena Tracker",icon_url=BOT_AVATAR},
 		timestamp=os.date("!%Y-%m-%dT%H:%M:%S.000Z")
 	}
