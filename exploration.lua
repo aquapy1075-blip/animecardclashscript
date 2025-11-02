@@ -8,7 +8,7 @@ pcall(function()
 end)
 
 -- Nếu config chưa có thì tạo mặc định
-if getgenv().AutoExploration == nil then getgenv().AutoExploration = false end
+if getgenv().AutoExploration == nil then getgenv().AutoExploration = true end
 if getgenv().ExplorationCards == nil then getgenv().ExplorationCards = {} end
 
 -------------------------------------------------
