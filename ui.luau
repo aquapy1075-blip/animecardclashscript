@@ -1613,61 +1613,54 @@ Parent=self
 end
 function ah:AddDivider()
 	local TweenService = game:GetService("TweenService")
-
-	-- parent trực tiếp vào Container thật (tránh nằm trong ô)
+	local context = V[self]
 	local container = T[self].Container
 
-	-- spacing trên
-	local topSpace = Instance.new("Frame")
-	topSpace.Name = "TopSpace"
-	topSpace.Size = UDim2.new(1, 0, 0, 4)
-	topSpace.BackgroundTransparency = 1
-	topSpace.BorderSizePixel = 0
-	topSpace.Parent = container
+	-- Frame chính (option trống nhưng vẫn giữ layout)
+	local frame = Instance.new("Frame")
+	frame.Name = "Divider"
+	frame.Size = UDim2.new(1, 0, 0, 10)
+	frame.BackgroundTransparency = 1
+	frame.BorderSizePixel = 0
+	frame.ZIndex = 5
+	frame.Parent = container
 
-	-- line chính giữa
+	-- Line chính giữa
 	local line = Instance.new("Frame")
-	line.Name = "Divider"
+	line.Name = "Line"
 	line.AnchorPoint = Vector2.new(0.5, 0.5)
-	line.Position = UDim2.new(0.5, 0, 0, 0)
-	line.Size = UDim2.new(1, -20, 0, 1) -- mảnh hơn chút
-	line.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
+	line.Position = UDim2.new(0.5, 0, 0.5, 0)
+	line.Size = UDim2.new(1, -20, 0, 1)
+	line.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
 	line.BackgroundTransparency = 1
 	line.BorderSizePixel = 0
-	line.ZIndex = 10
-	line.Parent = container
+	line.ZIndex = 6
+	line.Parent = frame
 
-	-- gradient mờ hai đầu (hiệu ứng giống Rayfield)
+	-- Gradient fade hai đầu (giống Rayfield, vẫn hợp theme Redz)
 	local gradient = Instance.new("UIGradient")
 	gradient.Transparency = NumberSequence.new{
 		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.15, 0.35),
-		NumberSequenceKeypoint.new(0.85, 0.35),
+		NumberSequenceKeypoint.new(0.2, 0.3),
+		NumberSequenceKeypoint.new(0.8, 0.3),
 		NumberSequenceKeypoint.new(1, 1)
 	}
 	gradient.Parent = line
 
-	-- hiệu ứng fade-in mượt
-	TweenService:Create(line, TweenInfo.new(0.6, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {
-		BackgroundTransparency = 0.85,
+	-- Tween hiệu ứng mượt khi load
+	TweenService:Create(line, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 0.8
 	}):Play()
 
-	-- spacing dưới
-	local bottomSpace = Instance.new("Frame")
-	bottomSpace.Name = "BottomSpace"
-	bottomSpace.Size = UDim2.new(1, 0, 0, 4)
-	bottomSpace.BackgroundTransparency = 1
-	bottomSpace.BorderSizePixel = 0
-	bottomSpace.Parent = container
-
-	-- object trả về (để tương thích hệ thống)
+	-- Trả về metatable chuẩn Redz
 	return setmetatable({
-		DESTROY_ELEMENT = line,
-		VISIBLE_ELEMENT = line,
+		DESTROY_ELEMENT = frame,
+		VISIBLE_ELEMENT = frame,
 		Kind = "Divider",
 		Parent = self
 	}, ai)
 end
+
 function ah:AddToggle(av)
 local aw,ax=an("Toggle",av)
 local ay=ao("Toggle",av[4]or av.Flag)
