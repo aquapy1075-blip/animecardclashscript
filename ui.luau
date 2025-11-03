@@ -1613,43 +1613,36 @@ Parent=self
 end
 function ah:AddDivider()
 	local TweenService = game:GetService("TweenService")
+	local container = T[self].Container  -- layout holder thực, không có box
 
-	-- Dùng am() để tạo phần tử như các element khác
-	local container, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 8))
-
-	-- Tìm Frame Option bên trong container (nơi chứa UIListLayout thực)
-	local optionFrame = container:FindFirstChildOfClass("Frame") or container
-
-	-- Tạo line chính giữa
 	local line = Instance.new("Frame")
-	line.Name = "DividerLine"
+	line.Name = "Divider"
 	line.AnchorPoint = Vector2.new(0.5, 0.5)
-	line.Position = UDim2.new(0.5, 0, 0.5, 0)
-	line.Size = UDim2.new(1, -10, 0, 1)
-	line.BackgroundColor3 = Color3.fromRGB(160, 160, 160)
+	line.Position = UDim2.new(0.5, 0, 0, 0)
+	line.Size = UDim2.new(1, -20, 0, 1)
+	line.BackgroundColor3 = Color3.fromRGB(200, 200, 200)
 	line.BackgroundTransparency = 1
 	line.BorderSizePixel = 0
 	line.ZIndex = 10
-	line.Parent = optionFrame
+	line.Parent = container
 
-	-- Gradient mờ hai đầu (Rayfield-style)
+	-- gradient mờ 2 đầu
 	local gradient = Instance.new("UIGradient")
 	gradient.Transparency = NumberSequence.new{
 		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.1, 0.35),
-		NumberSequenceKeypoint.new(0.9, 0.35),
+		NumberSequenceKeypoint.new(0.15, 0.3),
+		NumberSequenceKeypoint.new(0.85, 0.3),
 		NumberSequenceKeypoint.new(1, 1)
 	}
 	gradient.Parent = line
 
-	-- Fade-in mượt
 	TweenService:Create(line, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {
 		BackgroundTransparency = 0.85,
 	}):Play()
 
 	return setmetatable({
-		DESTROY_ELEMENT = container,
-		VISIBLE_ELEMENT = container,
+		DESTROY_ELEMENT = line,
+		VISIBLE_ELEMENT = line,
 		Kind = "Divider",
 		Parent = self
 	}, ai)
