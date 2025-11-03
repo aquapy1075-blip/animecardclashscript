@@ -1613,33 +1613,30 @@ Parent=self
 end
 function ah:AddDivider()
 	local TweenService = game:GetService("TweenService")
-	local aB = V[self]
+	local context = V[self]
 
-	-- tạo option qua hệ thống Redz (đúng layout)
-	local container, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 8))
+	-- tạo container hợp lệ bằng am()
+	local container, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 10))
 	container.Name = "DividerOption"
-
-	-- xoá text
-	if titleLabel then titleLabel.Text = "" end
-	if descLabel then descLabel.Text = "" end
-
-	-- clear nền để không có ô vuông
 	container.BackgroundTransparency = 1
 	container.BorderSizePixel = 0
 
-	-- line mảnh ở giữa
+	if titleLabel then titleLabel.Text = "" end
+	if descLabel then descLabel.Text = "" end
+
+	-- line chính giữa
 	local line = Instance.new("Frame")
 	line.Name = "DividerLine"
 	line.AnchorPoint = Vector2.new(0.5, 0.5)
 	line.Position = UDim2.new(0.5, 0, 0.5, 0)
 	line.Size = UDim2.new(1, -16, 0, 1)
-	line.BackgroundColor3 = Color3.fromRGB(130, 130, 130)
+	line.BackgroundColor3 = Color3.fromRGB(140, 140, 140)
 	line.BackgroundTransparency = 1
 	line.BorderSizePixel = 0
 	line.ZIndex = 9
 	line.Parent = container
 
-	-- hiệu ứng mờ hai đầu
+	-- hiệu ứng gradient fade 2 đầu
 	local gradient = Instance.new("UIGradient")
 	gradient.Transparency = NumberSequence.new{
 		NumberSequenceKeypoint.new(0, 1),
@@ -1649,7 +1646,7 @@ function ah:AddDivider()
 	}
 	gradient.Parent = line
 
-	-- tween hiện mượt
+	-- hiệu ứng xuất hiện
 	TweenService:Create(line, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		BackgroundTransparency = 0.8
 	}):Play()
