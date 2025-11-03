@@ -1614,23 +1614,25 @@ end
 function ah:AddDivider()
 	local TweenService = game:GetService("TweenService")
 
-	-- giữ nguyên cách của Redz để divider nằm đúng thứ tự
-	local aB = V[self]
-	local container = select(1, am(self, "", "", UDim2.new(1, 0, 0, 8)))
+	-- Dùng am() để tạo phần tử như các element khác
+	local container, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 8))
 
-	-- tạo line
+	-- Tìm Frame Option bên trong container (nơi chứa UIListLayout thực)
+	local optionFrame = container:FindFirstChildOfClass("Frame") or container
+
+	-- Tạo line chính giữa
 	local line = Instance.new("Frame")
-	line.Name = "Divider"
+	line.Name = "DividerLine"
+	line.AnchorPoint = Vector2.new(0.5, 0.5)
+	line.Position = UDim2.new(0.5, 0, 0.5, 0)
 	line.Size = UDim2.new(1, -10, 0, 1)
-	line.Position = UDim2.new(0, 5, 0.5, 0)
-	line.AnchorPoint = Vector2.new(0, 0.5)
 	line.BackgroundColor3 = Color3.fromRGB(160, 160, 160)
 	line.BackgroundTransparency = 1
 	line.BorderSizePixel = 0
-	line.ZIndex = 5
-	line.Parent = container
+	line.ZIndex = 10
+	line.Parent = optionFrame
 
-	-- gradient mờ hai đầu (giống Rayfield)
+	-- Gradient mờ hai đầu (Rayfield-style)
 	local gradient = Instance.new("UIGradient")
 	gradient.Transparency = NumberSequence.new{
 		NumberSequenceKeypoint.new(0, 1),
@@ -1640,21 +1642,10 @@ function ah:AddDivider()
 	}
 	gradient.Parent = line
 
-	-- tween hiệu ứng fade mượt
+	-- Fade-in mượt
 	TweenService:Create(line, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {
-		BackgroundTransparency = 0.85
+		BackgroundTransparency = 0.85,
 	}):Play()
-
-	-- thêm chút padding trên/dưới cho đẹp
-	local topSpace = Instance.new("Frame")
-	topSpace.Size = UDim2.new(1, 0, 0, 3)
-	topSpace.BackgroundTransparency = 1
-	topSpace.Parent = container
-
-	local bottomSpace = Instance.new("Frame")
-	bottomSpace.Size = UDim2.new(1, 0, 0, 3)
-	bottomSpace.BackgroundTransparency = 1
-	bottomSpace.Parent = container
 
 	return setmetatable({
 		DESTROY_ELEMENT = container,
@@ -1663,8 +1654,6 @@ function ah:AddDivider()
 		Parent = self
 	}, ai)
 end
-
-
 function ah:AddToggle(av)
 local aw,ax=an("Toggle",av)
 local ay=ao("Toggle",av[4]or av.Flag)
