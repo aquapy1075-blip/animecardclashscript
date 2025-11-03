@@ -1612,37 +1612,45 @@ Parent=self
 },ai)
 end
 function ah:AddDivider()
-	local aw = V[self] -- lấy context hiện tại của tab
-	local parent = T[self] and T[self].Container
-	if not parent then
-		warn("[Redz AddDivider] Failed to find container for divider")
+	local aw = V[self]
+	if not aw then
+		warn("[Redz AddDivider] Missing context (V[self])")
 		return
 	end
 
-	-- tạo line chính
+	-- ✅ container thực tế nơi các option khác được thêm vào
+	local parent = aw.OptionContainer or T[self].Container
+	if not parent then
+		warn("[Redz AddDivider] Could not find option container.")
+		return
+	end
+
+	-- top spacer (khoảng cách nhỏ)
+	local topSpacer = Instance.new("Frame")
+	topSpacer.Size = UDim2.new(1, 0, 0, 5)
+	topSpacer.BackgroundTransparency = 1
+	topSpacer.Parent = parent
+
+	-- divider line chính
 	local line = Instance.new("Frame")
 	line.Name = "Divider"
 	line.Size = UDim2.new(1, -10, 0, 1)
 	line.Position = UDim2.new(0, 5, 0, 0)
-	line.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-	line.BackgroundTransparency = 0.4
+	line.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+	line.BackgroundTransparency = 0.35
 	line.BorderSizePixel = 0
-	line.ZIndex = 2
+	line.ZIndex = 5
 	line.Parent = parent
 
-	-- thêm padding phía trên/dưới
-	local spacerTop = Instance.new("Frame")
-	spacerTop.Size = UDim2.new(1, 0, 0, 4)
-	spacerTop.BackgroundTransparency = 1
-	spacerTop.Parent = parent
-
-	local spacerBottom = Instance.new("Frame")
-	spacerBottom.Size = UDim2.new(1, 0, 0, 4)
-	spacerBottom.BackgroundTransparency = 1
-	spacerBottom.Parent = parent
+	-- bottom spacer
+	local bottomSpacer = Instance.new("Frame")
+	bottomSpacer.Size = UDim2.new(1, 0, 0, 5)
+	bottomSpacer.BackgroundTransparency = 1
+	bottomSpacer.Parent = parent
 
 	return line
 end
+
 function ah:AddToggle(av)
 local aw,ax=an("Toggle",av)
 local ay=ao("Toggle",av[4]or av.Flag)
