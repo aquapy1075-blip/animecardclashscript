@@ -1613,48 +1613,50 @@ Parent=self
 end
 function ah:AddDivider()
 	local TweenService = game:GetService("TweenService")
-	local container = T[self].Container
+	local aB = V[self]
 
-	-- Frame chính (nằm trong layout)
-	local frame = Instance.new("Frame")
-	frame.Name = "DividerOption"
-	frame.Size = UDim2.new(1, 0, 0, 10)
-	frame.BackgroundTransparency = 1
-	frame.BorderSizePixel = 0
-	frame.ZIndex = 5
-	frame.LayoutOrder = #container:GetChildren() + 1 -- ép xuống cuối
-	frame.Parent = container
+	-- tạo option qua hệ thống Redz (đúng layout)
+	local container, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 8))
+	container.Name = "DividerOption"
 
-	-- Line
+	-- xoá text
+	if titleLabel then titleLabel.Text = "" end
+	if descLabel then descLabel.Text = "" end
+
+	-- clear nền để không có ô vuông
+	container.BackgroundTransparency = 1
+	container.BorderSizePixel = 0
+
+	-- line mảnh ở giữa
 	local line = Instance.new("Frame")
-	line.Name = "Line"
+	line.Name = "DividerLine"
 	line.AnchorPoint = Vector2.new(0.5, 0.5)
 	line.Position = UDim2.new(0.5, 0, 0.5, 0)
-	line.Size = UDim2.new(1, -20, 0, 1)
-	line.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
+	line.Size = UDim2.new(1, -16, 0, 1)
+	line.BackgroundColor3 = Color3.fromRGB(130, 130, 130)
 	line.BackgroundTransparency = 1
 	line.BorderSizePixel = 0
-	line.ZIndex = 6
-	line.Parent = frame
+	line.ZIndex = 9
+	line.Parent = container
 
-	-- Gradient fade hai đầu
+	-- hiệu ứng mờ hai đầu
 	local gradient = Instance.new("UIGradient")
 	gradient.Transparency = NumberSequence.new{
 		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.15, 0.3),
-		NumberSequenceKeypoint.new(0.85, 0.3),
+		NumberSequenceKeypoint.new(0.15, 0.35),
+		NumberSequenceKeypoint.new(0.85, 0.35),
 		NumberSequenceKeypoint.new(1, 1)
 	}
 	gradient.Parent = line
 
-	-- Hiệu ứng fade mượt
-	TweenService:Create(line, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+	-- tween hiện mượt
+	TweenService:Create(line, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 		BackgroundTransparency = 0.8
 	}):Play()
 
 	return setmetatable({
-		DESTROY_ELEMENT = frame,
-		VISIBLE_ELEMENT = frame,
+		DESTROY_ELEMENT = container,
+		VISIBLE_ELEMENT = container,
 		Kind = "Divider",
 		Parent = self
 	}, ai)
