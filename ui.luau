@@ -1611,53 +1611,7 @@ Kind="Section",
 Parent=self
 },ai)
 end
-function ah:AddDivider()
-	local TweenService = game:GetService("TweenService")
-	local context = V[self]
 
-	-- tạo container hợp lệ bằng am()
-	local container, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 10))
-	container.Name = "DividerOption"
-	container.BackgroundTransparency = 1
-	container.BorderSizePixel = 0
-
-	if titleLabel then titleLabel.Text = "" end
-	if descLabel then descLabel.Text = "" end
-
-	-- line chính giữa
-	local line = Instance.new("Frame")
-	line.Name = "DividerLine"
-	line.AnchorPoint = Vector2.new(0.5, 0.5)
-	line.Position = UDim2.new(0.5, 0, 0.5, 0)
-	line.Size = UDim2.new(1, -16, 0, 1)
-	line.BackgroundColor3 = Color3.fromRGB(140, 140, 140)
-	line.BackgroundTransparency = 1
-	line.BorderSizePixel = 0
-	line.ZIndex = 9
-	line.Parent = container
-
-	-- hiệu ứng gradient fade 2 đầu
-	local gradient = Instance.new("UIGradient")
-	gradient.Transparency = NumberSequence.new{
-		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.15, 0.35),
-		NumberSequenceKeypoint.new(0.85, 0.35),
-		NumberSequenceKeypoint.new(1, 1)
-	}
-	gradient.Parent = line
-
-	-- hiệu ứng xuất hiện
-	TweenService:Create(line, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-		BackgroundTransparency = 0.8
-	}):Play()
-
-	return setmetatable({
-		DESTROY_ELEMENT = container,
-		VISIBLE_ELEMENT = container,
-		Kind = "Divider",
-		Parent = self
-	}, ai)
-end
 
 function ah:AddToggle(av)
 local aw,ax=an("Toggle",av)
@@ -2388,7 +2342,28 @@ ColorSequenceKeypoint.new(1,az:Lerp(Color3.new(1,1,1),0.2))
 }
 })
 end
+function aP:Set(selected)
+	if not selected then return end
+	if type(selected) == "table" then
+		-- Nếu là MultiSelect dropdown (Redz lưu key=bool)
+		if self.MultiSelect then
+			local newMap = {}
+			for _, opt in ipairs(selected) do
+				newMap[tostring(opt)] = true
+			end
+			self.CurrentOption = newMap
+		else
+			self.CurrentOption = { tostring(selected[1] or selected) }
+		end
+	else
+		self.CurrentOption = { tostring(selected) }
+	end
 
+	-- Gọi callback để update logic nếu có
+	if self.Callback then
+		self.Callback(self.CurrentOption)
+	end
+end
 return setmetatable({
 DESTROY_ELEMENT=aF,
 VISIBLE_ELEMENT=aF,
