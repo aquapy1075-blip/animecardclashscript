@@ -1614,45 +1614,31 @@ end
 function ah:AddDivider()
     local TweenService = game:GetService("TweenService")
 
-    -- Tạo container như các element khác
-    local context = V[self]
-    local container = T[self].Container
+    -- Gọi am() để tạo phần tử đúng layout
+    local frame, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 6))
 
-    -- Frame chính của divider (option holder rỗng)
-    local frame = Instance.new("Frame")
-    frame.Name = "Divider"
-    frame.BackgroundTransparency = 1
-    frame.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    frame.BorderSizePixel = 0
-    frame.Size = UDim2.new(1, -10, 0, 2)
-    frame.Position = UDim2.new(0, 5, 0, 0)
-    frame.ZIndex = 5
-    frame.Parent = container
-
-    -- “Line” thực tế ở giữa (màu hơi mờ)
+    -- Frame line chính giữa
     local line = Instance.new("Frame")
-    line.Name = "Line"
-    line.Size = UDim2.new(1, 0, 0, 1)
-    line.Position = UDim2.new(0, 0, 0.5, 0)
+    line.Name = "Divider"
+    line.Size = UDim2.new(1, -10, 0, 1)
+    line.Position = UDim2.new(0, 5, 0.5, 0)
     line.AnchorPoint = Vector2.new(0, 0.5)
     line.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
     line.BackgroundTransparency = 1
     line.BorderSizePixel = 0
-    line.ZIndex = 6
     line.Parent = frame
 
-    -- Tween giống Rayfield: từ trong suốt → mờ nhẹ
+    -- Hiệu ứng fade như Rayfield
     TweenService:Create(
         line,
-        TweenInfo.new(0.5, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out),
+        TweenInfo.new(0.5, Enum.EasingStyle.Exponential),
         { BackgroundTransparency = 0.85 }
     ):Play()
 
-    -- API điều khiển visibility giống Rayfield
+    -- API giống Rayfield
     local DividerValue = {}
-
-    function DividerValue:Set(value)
-        frame.Visible = value
+    function DividerValue:Set(v)
+        frame.Visible = v
     end
 
     return setmetatable({
