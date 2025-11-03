@@ -1612,42 +1612,51 @@ Parent=self
 },ai)
 end
 function ah:AddDivider()
-    local TweenService = game:GetService("TweenService")
+	local TweenService = game:GetService("TweenService")
 
-    -- Gọi am() để tạo phần tử đúng layout
-    local frame, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 6))
+	-- tạo container giống các element khác trong Redz
+	local frame = am(self, "", "", UDim2.new(1, 0, 0, 8))
 
-    -- Frame line chính giữa
-    local line = Instance.new("Frame")
-    line.Name = "Divider"
-    line.Size = UDim2.new(1, -10, 0, 1)
-    line.Position = UDim2.new(0, 5, 0.5, 0)
-    line.AnchorPoint = Vector2.new(0, 0.5)
-    line.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
-    line.BackgroundTransparency = 1
-    line.BorderSizePixel = 0
-    line.Parent = frame
+	-- tạo line chính giữa
+	local line = Instance.new("Frame")
+	line.Name = "DividerLine"
+	line.AnchorPoint = Vector2.new(0.5, 0.5)
+	line.Position = UDim2.new(0.5, 0, 0.5, 0)
+	line.Size = UDim2.new(1, -10, 0, 1)
+	line.BackgroundColor3 = Color3.fromRGB(160, 160, 160)
+	line.BackgroundTransparency = 1
+	line.BorderSizePixel = 0
+	line.ZIndex = 10
+	line.Parent = frame
 
-    -- Hiệu ứng fade như Rayfield
-    TweenService:Create(
-        line,
-        TweenInfo.new(0.5, Enum.EasingStyle.Exponential),
-        { BackgroundTransparency = 0.85 }
-    ):Play()
+	-- gradient mờ hai đầu, đậm ở giữa (giống Rayfield)
+	local gradient = Instance.new("UIGradient")
+	gradient.Transparency = NumberSequence.new{
+		NumberSequenceKeypoint.new(0, 1),
+		NumberSequenceKeypoint.new(0.1, 0.3),
+		NumberSequenceKeypoint.new(0.9, 0.3),
+		NumberSequenceKeypoint.new(1, 1)
+	}
+	gradient.Parent = line
 
-    -- API giống Rayfield
-    local DividerValue = {}
-    function DividerValue:Set(v)
-        frame.Visible = v
-    end
+	-- hiệu ứng fade-in mượt
+	TweenService:Create(line, TweenInfo.new(0.6, Enum.EasingStyle.Exponential), {
+		BackgroundTransparency = 0.85,
+	}):Play()
 
-    return setmetatable({
-        DESTROY_ELEMENT = frame,
-        VISIBLE_ELEMENT = frame,
-        DividerValue = DividerValue,
-        Kind = "Divider",
-        Parent = self
-    }, ai)
+	-- API để bật/tắt divider
+	local DividerValue = {}
+	function DividerValue:Set(value)
+		frame.Visible = value
+	end
+
+	return setmetatable({
+		DESTROY_ELEMENT = frame,
+		VISIBLE_ELEMENT = frame,
+		DividerValue = DividerValue,
+		Kind = "Divider",
+		Parent = self,
+	}, ai)
 end
 
 function ah:AddToggle(av)
