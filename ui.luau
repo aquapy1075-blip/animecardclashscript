@@ -2342,26 +2342,51 @@ ColorSequenceKeypoint.new(1,az:Lerp(Color3.new(1,1,1),0.2))
 }
 })
 end
-function aP:Set(selected)
-	if not selected then return end
-	if type(selected) == "table" then
-		-- Nếu là MultiSelect dropdown (Redz lưu key=bool)
-		if self.MultiSelect then
-			local newMap = {}
-			for _, opt in ipairs(selected) do
-				newMap[tostring(opt)] = true
+function aP:Set(newValue)
+	if not newValue then return end
+
+	local selected = {}
+
+	-- nếu là multi-select thì key=bool
+	if self.MultiSelect then
+		if type(newValue) == "table" then
+			for k, v in pairs(newValue) do
+				if type(k) == "string" then
+					selected[k] = v
+				else
+					selected[tostring(v)] = true
+				end
 			end
-			self.CurrentOption = newMap
-		else
-			self.CurrentOption = { tostring(selected[1] or selected) }
 		end
 	else
-		self.CurrentOption = { tostring(selected) }
+		-- single select thì chỉ lấy option đầu tiên
+		local first = (type(newValue) == "table" and newValue[1]) or newValue
+		selected = { [tostring(first)] = true }
 	end
 
-	-- Gọi callback để update logic nếu có
+	self.CurrentOption = selected
+
+	-- gọi lại callback nếu có
 	if self.Callback then
-		self.Callback(self.CurrentOption)
+		local ret = {}
+		for k, v in pairs(selected) do
+			if v then table.insert(ret, k) end
+		end
+		self.Callback(ret)
+	end
+
+	-- 🧠 update giao diện trực quan (tick lại)
+	if self.DROPDOWN_CONTAINER then
+		for _, child in ipairs(self.DROPDOWN_CONTAINER:GetChildren()) do
+			if child:IsA("Frame") and child:FindFirstChild("Option") then
+				local label = child.Option.Text
+				local checkmark = child:FindFirstChild("Checkmark")
+
+				if checkmark then
+					checkmark.Visible = selected[label] or false
+				end
+			end
+		end
 	end
 end
 return setmetatable({
