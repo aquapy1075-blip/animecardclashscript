@@ -1662,7 +1662,6 @@ function ah:AddDivider()
 	}, ai)
 end
 
-
 function ah:AddToggle(av)
 local aw,ax=an("Toggle",av)
 local ay=ao("Toggle",av[4]or av.Flag)
