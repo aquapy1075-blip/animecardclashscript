@@ -1613,49 +1613,51 @@ Parent=self
 end
 function ah:AddDivider()
 	local TweenService = game:GetService("TweenService")
-	local context = V[self]
-	local container = T[self].Container
 
-	-- Frame chính (option trống nhưng vẫn giữ layout)
-	local frame = Instance.new("Frame")
-	frame.Name = "Divider"
-	frame.Size = UDim2.new(1, 0, 0, 10)
-	frame.BackgroundTransparency = 1
-	frame.BorderSizePixel = 0
-	frame.ZIndex = 5
-	frame.Parent = container
+	-- Dùng am() để tạo đúng container theo hệ thống Redz
+	local container, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 6))
+	container.Name = "DividerOption"
 
-	-- Line chính giữa
+	-- Xóa các text mặc định (nếu có)
+	if titleLabel then titleLabel.Text = "" end
+	if descLabel then descLabel.Text = "" end
+
+	-- Tạo line chính giữa
 	local line = Instance.new("Frame")
-	line.Name = "Line"
+	line.Name = "DividerLine"
 	line.AnchorPoint = Vector2.new(0.5, 0.5)
 	line.Position = UDim2.new(0.5, 0, 0.5, 0)
-	line.Size = UDim2.new(1, -20, 0, 1)
-	line.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+	line.Size = UDim2.new(1, -16, 0, 1)
+	line.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
 	line.BackgroundTransparency = 1
 	line.BorderSizePixel = 0
-	line.ZIndex = 6
-	line.Parent = frame
+	line.ZIndex = 10
+	line.Parent = container
 
-	-- Gradient fade hai đầu (giống Rayfield, vẫn hợp theme Redz)
+	-- Gradient fade hai đầu (Rayfield style)
 	local gradient = Instance.new("UIGradient")
 	gradient.Transparency = NumberSequence.new{
 		NumberSequenceKeypoint.new(0, 1),
-		NumberSequenceKeypoint.new(0.2, 0.3),
-		NumberSequenceKeypoint.new(0.8, 0.3),
+		NumberSequenceKeypoint.new(0.15, 0.3),
+		NumberSequenceKeypoint.new(0.85, 0.3),
 		NumberSequenceKeypoint.new(1, 1)
 	}
 	gradient.Parent = line
 
-	-- Tween hiệu ứng mượt khi load
-	TweenService:Create(line, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-		BackgroundTransparency = 0.8
+	-- Tween mờ dần cho hiệu ứng mượt
+	TweenService:Create(line, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 0.8,
 	}):Play()
 
-	-- Trả về metatable chuẩn Redz
+	-- Đảm bảo layout spacing đồng bộ
+	container.Size = UDim2.new(1, 0, 0, 8)
+	container.BackgroundTransparency = 1
+	container.BorderSizePixel = 0
+
+	-- Trả về object Redz hợp lệ
 	return setmetatable({
-		DESTROY_ELEMENT = frame,
-		VISIBLE_ELEMENT = frame,
+		DESTROY_ELEMENT = container,
+		VISIBLE_ELEMENT = container,
 		Kind = "Divider",
 		Parent = self
 	}, ai)
