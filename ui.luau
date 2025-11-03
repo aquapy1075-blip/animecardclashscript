@@ -1611,44 +1611,40 @@ Kind="Section",
 Parent=self
 },ai)
 end
+
 function ah:AddDivider()
-	local aw = V[self]
-	if not aw then
-		warn("[Redz AddDivider] Missing context (V[self])")
-		return
-	end
+	-- Gọi am() để tạo container tương tự các element khác
+	local aB = V[self]  -- context của tab
+	local container, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 0))
 
-	-- ✅ container thực tế nơi các option khác được thêm vào
-	local parent = aw.OptionContainer or T[self].Container
-	if not parent then
-		warn("[Redz AddDivider] Could not find option container.")
-		return
-	end
-
-	-- top spacer (khoảng cách nhỏ)
-	local topSpacer = Instance.new("Frame")
-	topSpacer.Size = UDim2.new(1, 0, 0, 5)
-	topSpacer.BackgroundTransparency = 1
-	topSpacer.Parent = parent
-
-	-- divider line chính
+	-- Frame line (divider)
 	local line = Instance.new("Frame")
 	line.Name = "Divider"
 	line.Size = UDim2.new(1, -10, 0, 1)
 	line.Position = UDim2.new(0, 5, 0, 0)
-	line.BackgroundColor3 = Color3.fromRGB(120, 120, 120)
+	line.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
 	line.BackgroundTransparency = 0.35
 	line.BorderSizePixel = 0
 	line.ZIndex = 5
-	line.Parent = parent
+	line.Parent = container
 
-	-- bottom spacer
-	local bottomSpacer = Instance.new("Frame")
-	bottomSpacer.Size = UDim2.new(1, 0, 0, 5)
-	bottomSpacer.BackgroundTransparency = 1
-	bottomSpacer.Parent = parent
+	-- Spacing trên và dưới
+	local topSpace = Instance.new("Frame")
+	topSpace.Size = UDim2.new(1, 0, 0, 4)
+	topSpace.BackgroundTransparency = 1
+	topSpace.Parent = container
 
-	return line
+	local bottomSpace = Instance.new("Frame")
+	bottomSpace.Size = UDim2.new(1, 0, 0, 4)
+	bottomSpace.BackgroundTransparency = 1
+	bottomSpace.Parent = container
+
+	return setmetatable({
+		DESTROY_ELEMENT = container,
+		VISIBLE_ELEMENT = container,
+		Kind = "Divider",
+		Parent = self,
+	}, ai)
 end
 
 function ah:AddToggle(av)
