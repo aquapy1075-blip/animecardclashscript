@@ -1613,28 +1613,31 @@ Parent=self
 end
 function ah:AddDivider()
 	local TweenService = game:GetService("TweenService")
+	local container = T[self].Container
 
-	-- Dùng am() để tạo đúng container theo hệ thống Redz
-	local container, titleLabel, descLabel = am(self, "", "", UDim2.new(1, 0, 0, 6))
-	container.Name = "DividerOption"
+	-- Frame chính (nằm trong layout)
+	local frame = Instance.new("Frame")
+	frame.Name = "DividerOption"
+	frame.Size = UDim2.new(1, 0, 0, 10)
+	frame.BackgroundTransparency = 1
+	frame.BorderSizePixel = 0
+	frame.ZIndex = 5
+	frame.LayoutOrder = #container:GetChildren() + 1 -- ép xuống cuối
+	frame.Parent = container
 
-	-- Xóa các text mặc định (nếu có)
-	if titleLabel then titleLabel.Text = "" end
-	if descLabel then descLabel.Text = "" end
-
-	-- Tạo line chính giữa
+	-- Line
 	local line = Instance.new("Frame")
-	line.Name = "DividerLine"
+	line.Name = "Line"
 	line.AnchorPoint = Vector2.new(0.5, 0.5)
 	line.Position = UDim2.new(0.5, 0, 0.5, 0)
-	line.Size = UDim2.new(1, -16, 0, 1)
+	line.Size = UDim2.new(1, -20, 0, 1)
 	line.BackgroundColor3 = Color3.fromRGB(150, 150, 150)
 	line.BackgroundTransparency = 1
 	line.BorderSizePixel = 0
-	line.ZIndex = 10
-	line.Parent = container
+	line.ZIndex = 6
+	line.Parent = frame
 
-	-- Gradient fade hai đầu (Rayfield style)
+	-- Gradient fade hai đầu
 	local gradient = Instance.new("UIGradient")
 	gradient.Transparency = NumberSequence.new{
 		NumberSequenceKeypoint.new(0, 1),
@@ -1644,24 +1647,19 @@ function ah:AddDivider()
 	}
 	gradient.Parent = line
 
-	-- Tween mờ dần cho hiệu ứng mượt
-	TweenService:Create(line, TweenInfo.new(0.4, Enum.EasingStyle.Exponential, Enum.EasingDirection.Out), {
-		BackgroundTransparency = 0.8,
+	-- Hiệu ứng fade mượt
+	TweenService:Create(line, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+		BackgroundTransparency = 0.8
 	}):Play()
 
-	-- Đảm bảo layout spacing đồng bộ
-	container.Size = UDim2.new(1, 0, 0, 8)
-	container.BackgroundTransparency = 1
-	container.BorderSizePixel = 0
-
-	-- Trả về object Redz hợp lệ
 	return setmetatable({
-		DESTROY_ELEMENT = container,
-		VISIBLE_ELEMENT = container,
+		DESTROY_ELEMENT = frame,
+		VISIBLE_ELEMENT = frame,
 		Kind = "Divider",
 		Parent = self
 	}, ai)
 end
+
 
 function ah:AddToggle(av)
 local aw,ax=an("Toggle",av)
