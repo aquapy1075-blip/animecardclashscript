@@ -96,11 +96,15 @@ task.spawn(function()
 
     local function postCountdown(playerName, expireUnix)
         local remain=expireUnix-os.time()
+        local playerCount = #game:GetService("Players"):GetPlayers()
         local embed={
             title="⚔️ **GCC Arena — Luck Fountain Countdown**",
             description=string.format("🍀 Buff active: %s",playerName),
             color=EMBED_COLOR,
-            fields={{name="⏳Expire In",value=formatHMS(remain),inline=false}},
+             fields = {
+            { name = "⏳ Expire In", value = formatHMS(remain), inline = false },
+            { name = "👥 Player Count", value = tostring(playerCount), inline = true } -- 👈 Thêm dòng này
+        },
             footer={text="Update every "..REFRESH_SECONDS.."s (no PATCH)",icon_url=BOT_AVATAR},
             timestamp=os.date("!%Y-%m-%dT%H:%M:%S.000Z")
         }
