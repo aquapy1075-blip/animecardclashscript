@@ -59,6 +59,7 @@ local function formatHMS(sec)
 end
 
 local function sendExtendAlert(playerName, addedMinutes, newExpireUnix)
+    local playerCount = #game:GetService("Players"):GetPlayers()
     local embed={
         title="⏫ Luck Fountain Extended!",
         color=EXTEND_COLOR,
@@ -67,7 +68,14 @@ local function sendExtendAlert(playerName, addedMinutes, newExpireUnix)
             value=string.format("🕒 +%d minutes • expire in %s",
                 addedMinutes,
                 string.format("<t:%d:R>", newExpireUnix)),
-            inline=false}},
+            inline=false},
+        {
+        name = "👥 Current Players",
+        value = tostring(playerCount),
+        inline = true
+    }
+        
+        },
         timestamp=os.date("!%Y-%m-%dT%H:%M:%S.000Z")
     }
     local req=httpReq()
