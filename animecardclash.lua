@@ -1,10 +1,4 @@
-	--!nolint
-	Config = {
-		api = "0ed7837b-c1ed-42a2-af8f-2437b15a9957",
-		service = "aquahub",
-		provider = "aquaprovider",
-	}
-    local Version = "1.6.61"
+local Version = "1.6.61"
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/" .. Version .. "/main.lua"))()
 
 
@@ -1813,7 +1807,7 @@ end
 
 	local function clickModeButton(mode)
 		local button = safeGet(function()
-			return react.ranked.ranked:GetChildren()[5]["3"]["2"]["2"][mode]
+				return react.ranked.ranked:GetChildren()[5]["3"]["2"]["2"].mode.mode
 		end)
 		if button then
 			safeClick(button)
@@ -1874,14 +1868,14 @@ end
 	end
 	local function getStatus(opp)
 		return safeGet(function()
-			return opp["8"]["1"]["4"].Text
+			return opp["8"]["8"]["1"]["4"].Text
 		end) or ""
 	end
 
 	local function waitUntilDone(opp)
 		if not State.showRanked then
 			local label = safeGet(function()
-				return opp["8"]["1"]["3"]
+				return opp["8"]["8"]["1"]["4"]
 			end)
 			if not (label and label:IsA("TextLabel")) then
 				return
