@@ -3235,7 +3235,7 @@ end
 						repeat
 							task.wait(1)
 						until not State.autoEnabledBoss
-						Utils.setCooldown("BattleTower", secondsToNextMidnightEST())
+						Utils.setCooldown("StoryBoss", secondsToNextMidnightEST())
 					end
 				end
 				if not State.autoEnabledCombine or runId ~= State.autoRunIdCombine then
@@ -3331,7 +3331,7 @@ end
 		Acrylic = true,
 		SideBarWidth = 200,
 		HideSearchBar = false,
-		ScrollBarEnabled = true,
+		ScrollBarEnabled = false,
 		User = {
 			Enabled = false,
 			Anonymous = false,
@@ -3547,6 +3547,7 @@ end
 			Values = StorylineData.TeamOptions,
 			Value = State.storylineTeams[mapKey] or "slot_1",
 			Flag = "StorylineTeam_" .. mapKey,
+			SearchBarEnabled = true,
 			Callback = function(option)
 				State.storylineTeams[mapKey] = option
 			end,
@@ -3638,6 +3639,7 @@ end
 			Values = BossData.TeamOptions,
 			Value = State.bossTeams[b.id],
 			Flag = "Team_" .. b.id,
+			SearchBarEnabled = true,
 			Callback = function(option)
 				-- ép kiểu về string để tránh lỗi concatenate
 				State.bossTeams[b.id] = option
@@ -3763,6 +3765,7 @@ end
 			Values = TowerData.TeamOptions,
 			Value = State.towerTeams[mode],
 			Flag = "TowerTeam_" .. mode,
+			SearchBarEnabled = true,
 			Callback = function(option)
 				State.towerTeams[mode] = option
 				Utils.notify("Team Changed", label .. " → " .. option, 2)
@@ -3850,6 +3853,7 @@ end
 		Title = "Infinite Team",
 		Values = InfiniteData.TeamOptions,
 		Value = State.InfinitieTeam or "slot_1",
+		SearchBarEnabled = true,
 		Flag = "InfiniteTeamDropdown",
 		Callback = function(selected)
 			State.InfinitieTeam = selected
@@ -3895,6 +3899,7 @@ end
 		Title = "Choose team to swap",
 		Values = InfiniteData.TeamOptions,
 		Value = State.teamSwap or "slot_1",
+		SearchBarEnabled = true,
 		Flag = "InfTeamSwap",
 		Callback = function(option)
 			State.teamSwap = option
