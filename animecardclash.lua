@@ -1,4 +1,10 @@
-local Version = "1.6.61"
+	--!nolint
+	Config = {
+		api = "0ed7837b-c1ed-42a2-af8f-2437b15a9957",
+		service = "aquahub",
+		provider = "aquaprovider",
+	}
+    local Version = "1.6.61"
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/" .. Version .. "/main.lua"))()
 
 
@@ -31,6 +37,7 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 
 	-- Net
 	local Net = {
+		buyraiditem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("craft"),
 		fightStoryBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightStoryBoss"),
 		fightRaidMinion = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightRaidMinion"),
 		fightRaidBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightRaidBoss"),
@@ -332,6 +339,18 @@ empire_of_light = {
 		["Eternal Dragon"] = { id = 388, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_eternal_dragon" },
 
 	}
+	local RaidItem = {
+		["legendary_book"] = { shop = "raid_general", id = 9, amount = 10, display_name = "Legendary Book"},
+		["epic_book"] = { shop = "raid_general", id = 8, amount = 10, display_name = "Epic Book"},
+		["rare_book"] = { shop = "raid_general", id = 7,  amount = 10, display_name = "Rare Book"},
+		["uncommon_book"] = { shop = "raid_general", id = 6,  amount = 10, display_name = "Uncommon Book"},
+		["common_book"] = { shop = "raid_general", id = 5, amount = 10, display_name = "Common Book"},
+		["gold_eternal_dragon"] = {shop = "raid_eternal_dragon", id = 1, amount = 20, display_name = "Gold Eternal Dragon"},
+		["gold_shadow_dragon"] = {shop = "raid_shadow_dragon", id = 1, amount = 10, display_name = "Gold Shadow Dragon"},
+		["gold_creator_of_flames"] = {shop = "raid_creator_of_flames", id = 1, amount = 5, display_name = "Gold Creator Of Flames"},
+		["gold_sword_deity"] = {shop = "raid_sword_deity", id = 1, amount = 7, display_name = "Gold Sword Deity"},
+		["gold_cifer"] = {shop = "raid_cifer", id = 1, amount = 5, display_name = "Gold Cifer"}	
+	}
 	local MoonCycleData = {
 		{ Name = "full_moon", DisplayName = "Full Moon" },
 		{ Name = "snow_moon", DisplayName = "Snow Moon" },
@@ -522,6 +541,8 @@ end
 	--------------- Raid Boss ----------------
 	State.selectedRaidBoss = State.selectedRaidBoss or "Creator of Flames"
 	State.selectedRaidMode = State.selectedRaidMode or "easy"
+	State.selectedRaidItem = State.selectedRaidItem or {}
+	State.autoItemRaid = State.autoItemRaid or false
 	----------------   Rank   ----------------
 	State.autoRanked = State.autoRanked or false
 	State.autoRunIdRank = 0
@@ -2073,7 +2094,24 @@ end
 	function Ranked.stopAuto()
 		State.autoRunIdRank += 1
 	end
-
+    -------------------------------------------------
+	-- Raid Shop
+	------------------------------------------------
+    function autoraiditem()
+        while State.autoItemRaid do 
+		     for _,i in pairs(State.selectedRaidItem) do 
+				   local item = RaidItem[i]
+				   local args = {item.shop, item.id, 1} 
+				   for j = 1, item.amount do 
+				       Net.buyraiditem:FireServer(unpack(args))
+				       task.wait(0.075)
+				   end
+				   task.wait(0.5)
+			 end
+			 print("Bought All Daily Raid Item!!")
+			 task.wait(1800)
+		end
+	end
 	-------------------------------------------------
 	-- Raid Boss Controller
 	------------------------------------------------
@@ -4477,6 +4515,36 @@ end
 		Title = " Raid Shop",
 		Box = false,
 		Opened = true,
+	})
+	local values = {}
+    local DisplayToKey = {}
+
+   for key, item in pairs(RaidItem) do
+    local display = item.display_name
+    table.insert(values, display)
+    DisplayToKey[display] = key
+end
+	raidShop:Dropdown({
+		Title = "Select Item To Auto Buy",
+		Values = values,
+		Multi = true,
+		Flag = "RaidDailyItem",
+		Callback = function(option)
+		   State.selectedRaidItem = {}
+           for _, display in ipairs(option) do
+               local key = DisplayToKey[display]
+               table.insert(State.selectedRaidItem, key)
+           end
+		end,
+	})
+	raidShop:Toggle({
+		Title = "Auto Buy Raid Item",
+		Value = State.autoItemRaid or false,
+		Flag = "AutoRaidItemDailyToggle",
+		Callback = function(value)
+		      State.autoItemRaid = value
+			  if value == true then autoraiditem() end
+		end,
 	})
 
 	-------------------------------------------------
