@@ -1828,7 +1828,11 @@ end
 
 	local function clickModeButton(mode)
 		local button = safeGet(function()
-				return react.ranked.ranked:GetChildren()[5]["3"]["2"]["2"].mode.mode
+				if mode == "scaled" then return react.ranked.ranked:GetChildren()[5]["3"]["2"]["2"].scaled.scaled
+		        else
+				    return react.ranked.ranked:GetChildren()[5]["3"]["2"]["2"].any.any
+				end
+			
 		end)
 		if button then
 			safeClick(button)
