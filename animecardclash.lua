@@ -1,7 +1,4 @@
-
-    local Version = "1.6.61"
-local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/" .. Version .. "/main.lua"))()
-
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 
 	-- Anti AFK
 	local vu = game:GetService("VirtualUser")
