@@ -70,37 +70,48 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 	-- Data
 	-------------------------------------------------
 
-	local BossData = {
-		Names = {
-			[357] = "Naruto",
-			[353] = "Frieza",
-			[390] = "Sukuna",
-			[325] = "Titan",
-			[343] = "Muzan",
-			[318] = "Big Mom",
-			[477] = "Sungjinwoo",
-			[295] = "Cid",
-			[336] = "Celestial Sovereign",
-			[371] = "Dead King",
-		    [381] = "Ichigo",
-			[311] = "Yhwach"
-		},
-		List = {
-			{ id = 357, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 353, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 390, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 325, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 343, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 318, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 477, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 295, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 336, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 371, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 381, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-			{ id = 311, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		},
-		TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
-	}
+local BossData = {
+    Names = {
+        [355] = "Naruto",
+        [351] = "Frieza",
+        [388] = "Sukuna",
+        [323] = "Titan",
+        [341] = "Muzan",
+        [316] = "Big Mom",
+        [475] = "Sungjinwoo",
+        [293] = "Cid",
+        [334] = "Celestial Sovereign",
+        [369] = "Dead King",
+        [379] = "Ichigo",
+        [309] = "Yhwach"
+    },
+
+    List = {
+        { id = 355, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 351, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 388, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 323, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 341, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 316, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 475, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 293, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 334, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 369, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 379, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+        { id = 309, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    },
+
+    TeamOptions = {
+        "slot_1",
+        "slot_2",
+        "slot_3",
+        "slot_4",
+        "slot_5",
+        "slot_6",
+        "slot_7",
+        "slot_8"
+    },
+}
 	local TowerData = {
 		Modes = {
 			"battle_tower",
@@ -110,7 +121,12 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 			"inferno_depths",
 			"lunar_eclipse",
 			"light_fairy",
-			"xmas_snowy_entrance"
+			"xmas_snowy_entrance",
+			"xmas_chilling_hall",
+			"xmas_frozen_depths",
+		    "xmas_subzero_cove",
+			"xmas_absolute_zero"
+			
 		},
 		ModeNames = {
 			battle_tower = "Battle Tower",
@@ -120,8 +136,11 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 			inferno_depths = "Inferno Depths Tower",
 			lunar_eclipse = "Lunar Eclipse Tower",
 			light_fairy = "Light Fairy Tower",
-			xmas_snowy_entrance = "Part 1: Snowy Entrance"
-
+			xmas_snowy_entrance = "Part 1: Snowy Entrance",
+		    xmas_chilling_hall = "Part 2: Chilling Hall",
+			xmas_frozen_depths = "Part 3: Frozen Depths",
+			xmas_subzero_cove = "Part 4: Sub-Zero Cove",
+			xmas_absolute_zero = "Part 5: Absolute Zero"
 		},
 		Waves = {
 			battle_tower = {},
@@ -132,6 +151,10 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 			lunar_eclipse = {},
 			light_fairy = {},
 			xmas_snowy_entrance = {},
+			xmas_chilling_hall = {},
+			xmas_frozen_depths = {},
+			xmas_subzero_cove = {},
+			xmas_absolute_zero = {}
 		},
 		TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
 	}
@@ -146,7 +169,13 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 		table.insert(TowerData.Waves.inferno_depths, tostring(i))
 		table.insert(TowerData.Waves.lunar_eclipse, tostring(i))
 		table.insert(TowerData.Waves.light_fairy, tostring(i))
-		if i <= 10 then table.insert(TowerData.Waves.xmas_snowy_entrance, tostring(i)) end
+		if i <= 10 then
+			 table.insert(TowerData.Waves.xmas_snowy_entrance, tostring(i)) 
+		     table.insert(TowerData.Waves.xmas_chilling_hall,  tostring(i))	
+			 table.insert(TowerData.Waves.xmas_frozen_depths,  tostring(i))	
+			 table.insert(TowerData.Waves.xmas_subzero_cove,  tostring(i))	
+			 table.insert(TowerData.Waves.xmas_absolute_zero,  tostring(i))	
+	    end
 	end
 
 	local StorylineData = {
@@ -169,107 +198,114 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 		TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
 
 		-- Story mobs per map (the data you sent)
-		Mobs = {
-			 ninja_village = {
-        { id = 358, name = "unstoppable_fist" },
-        { id = 362, name = "copy_ninja" },
-        { id = 361, name = "awakened_dark_avenger" },
-        { id = 360, name = "awakened_promised_child" },
-        { id = 359, name = "six_paths_of_pain" },
-        { id = 357, name = "bijuu_beast" },
+	Mobs = {
+    ninja_village = {
+        { id = 356, name = "unstoppable_fist" },
+        { id = 360, name = "copy_ninja" },
+        { id = 359, name = "awakened_dark_avenger" },
+        { id = 358, name = "awakened_promised_child" },
+        { id = 357, name = "six_paths_of_pain" },
+        { id = 355, name = "bijuu_beast" },
     },
-		 green_planet = {
-        { id = 350, name = "ultimate_warrior" },
-        { id = 354, name = "body_switcher" },
-        { id = 351, name = "namekian_sage" },
-        { id = 349, name = "awakened_prideful_prince" },
-        { id = 352, name = "awakened_earth_strongest" },
-        { id = 353, name = "awakened_galactic_tyrant" },
-    },
-			   shibuya_station = {
-        { id = 391, name = "cursed_doll" },
-        { id = 394, name = "awakened_shadow_summoner" },
-        { id = 393, name = "cursed_fist" },
-        { id = 389, name = "rika_blessing" },
-        { id = 392, name = "limitless_master" },
-        { id = 390, name = "king_of_curses" },
-    },
-		 titans_city = {
-        { id = 326, name = "survey_commander" },
-        { id = 328, name = "blade_warrior" },
-        { id = 330, name = "armored_giant" },
-        { id = 329, name = "beast_giant" },
-        { id = 327, name = "blade_captain" },
-        { id = 325, name = "combat_giant" },
-    },
-		dimensional_fortress = {
-        { id = 341, name = "thunder_demon" },
-        { id = 344, name = "childish_demon" },
-        { id = 346, name = "compass_demon" },
-        { id = 345, name = "awakened_frost_demon" },
-        { id = 342, name = "awaken_six_eye_slayer" },
-        { id = 343, name = "awaken_pale_demon_lord" },
-    },
-candy_island = {
-        { id = 322, name = "genie_commander" },
-        { id = 319, name = "candy_master" },
-        { id = 317, name = "biscuit_warrior" },
-        { id = 321, name = "juice_queen" },
-        { id = 320, name = "mochi_emperor" },
-        { id = 318	, name = "soul_queen" },
-    },
-solo_city = {
-        { id = 475, name = "light_saintess" },
-        { id = 478, name = "the_goliath" },
-        { id = 473, name = "shadow_bear" },
-        { id = 476, name = "shadow_commander" },
-        { id = 474, name = "shadow_ant" },
-        { id = 477, name = "awakened_shadow_monarch" },
-    },
-			
-eminence_lookout = {
-    { id = 300, name = "eminence_accountant" },
-    { id = 299, name = "eminence_scout" },
-    { id = 297, name = "eminence_cat" },
-    { id = 296, name = "eminence_strategist" },
-    { id = 298, name = "eminence_commander" },
-    { id = 295, name = "lord_of_eminence" },
-},
 
-invaded_ninja_village = {
-    { id = 338, name = "celestial_warrior" },
-    { id = 334, name = "mother_of_creation" },
-    { id = 335, name = "celestial_fisherman" },
-    { id = 333, name = "celestial_destroyer" },
-    { id = 337, name = "awakened_impure_ghost" },
-    { id = 336, name = "celestial_sovereign" },
-},
+    green_planet = {
+        { id = 348, name = "ultimate_warrior" },
+        { id = 352, name = "body_switcher" },
+        { id = 349, name = "namekian_sage" },
+        { id = 347, name = "awakened_prideful_prince" },
+        { id = 350, name = "awakened_earth_strongest" },
+        { id = 351, name = "awakened_galactic_tyrant" },
+    },
 
-necromancer_graveyard = {
-    { id = 368, name = "beast_tamer" },
-    { id = 370, name = "servant_of_the_undead" },
-    { id = 372, name = "undead_demon" },
-    { id = 367, name = "undead_commander" },
-    { id = 369, name = "blood_valkyrie" },
-    { id = 371, name = "undead_king" },
-},
+    shibuya_station = {
+        { id = 389, name = "cursed_doll" },
+        { id = 392, name = "awakened_shadow_summoner" },
+        { id = 391, name = "cursed_fist" },
+        { id = 387, name = "rika_blessing" },
+        { id = 390, name = "limitless_master" },
+        { id = 388, name = "king_of_curses" },
+    },
 
-soul_kings_castle = {
-    { id = 378, name = "Hornet Shinigami" },
-    { id = 382, name = "Shinigami Strategist" },
-    { id = 383, name = "Shinigami Illusionist" },
-    { id = 380, name = "Fate Weaver Shinigami" },
-    { id = 379, name = "Shinigami Monk" },
-    { id = 381, name = "Substitute Shinigami" },
-},
-empire_of_light = {
-	{ id = 314, name = "The Visionary" },
-	{ id = 310, name = "The Antithesis" },
-    { id = 312, name = "The X-Axis" },
-    { id = 313, name = "The Miracle" },
-    { id = 309, name = "The Balance" },
-    { id = 311, name = "Quincy King" },
-}
+    titans_city = {
+        { id = 324, name = "survey_commander" },
+        { id = 326, name = "blade_warrior" },
+        { id = 328, name = "armored_giant" },
+        { id = 327, name = "beast_giant" },
+        { id = 325, name = "blade_captain" },
+        { id = 323, name = "combat_giant" },
+    },
+
+    dimensional_fortress = {
+        { id = 339, name = "thunder_demon" },
+        { id = 342, name = "childish_demon" },
+        { id = 344, name = "compass_demon" },
+        { id = 343, name = "awakened_frost_demon" },
+        { id = 340, name = "awaken_six_eye_slayer" },
+        { id = 341, name = "awaken_pale_demon_lord" },
+    },
+
+    candy_island = {
+        { id = 320, name = "genie_commander" },
+        { id = 317, name = "candy_master" },
+        { id = 315, name = "biscuit_warrior" },
+        { id = 319, name = "juice_queen" },
+        { id = 318, name = "mochi_emperor" },
+        { id = 316, name = "soul_queen" },
+    },
+
+    solo_city = {
+        { id = 473, name = "light_saintess" },
+        { id = 476, name = "the_goliath" },
+        { id = 471, name = "shadow_bear" },
+        { id = 474, name = "shadow_commander" },
+        { id = 472, name = "shadow_ant" },
+        { id = 475, name = "awakened_shadow_monarch" },
+    },
+
+    eminence_lookout = {
+        { id = 298, name = "eminence_accountant" },
+        { id = 297, name = "eminence_scout" },
+        { id = 295, name = "eminence_cat" },
+        { id = 294, name = "eminence_strategist" },
+        { id = 296, name = "eminence_commander" },
+        { id = 293, name = "lord_of_eminence" },
+    },
+
+    invaded_ninja_village = {
+        { id = 336, name = "celestial_warrior" },
+        { id = 332, name = "mother_of_creation" },
+        { id = 333, name = "celestial_fisherman" },
+        { id = 331, name = "celestial_destroyer" },
+        { id = 335, name = "awakened_impure_ghost" },
+        { id = 334, name = "celestial_sovereign" },
+    },
+
+    necromancer_graveyard = {
+        { id = 366, name = "beast_tamer" },
+        { id = 368, name = "servant_of_the_undead" },
+        { id = 370, name = "undead_demon" },
+        { id = 365, name = "undead_commander" },
+        { id = 367, name = "blood_valkyrie" },
+        { id = 369, name = "undead_king" },
+    },
+
+    soul_kings_castle = {
+        { id = 376, name = "Hornet Shinigami" },
+        { id = 380, name = "Shinigami Strategist" },
+        { id = 381, name = "Shinigami Illusionist" },
+        { id = 378, name = "Fate Weaver Shinigami" },
+        { id = 377, name = "Shinigami Monk" },
+        { id = 379, name = "Substitute Shinigami" },
+    },
+
+    empire_of_light = {
+        { id = 312, name = "The Visionary" },
+        { id = 308, name = "The Antithesis" },
+        { id = 310, name = "The X-Axis" },
+        { id = 311, name = "The Miracle" },
+        { id = 307, name = "The Balance" },
+        { id = 309, name = "Quincy King" },
+    }
 		},
 	}
 
@@ -329,11 +365,11 @@ empire_of_light = {
 		TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
 	}
 	local RaidData = {
-        ["Cifer"] = { id = 375, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_cifer"},
-		["Creator of Flames"] = { id = 397, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_creator_of_flames" },
-		["Sword Deity"] = { id = 306, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_sword_deity" },
-		["Shadow Dragon"] = { id = 303, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_shadow_dragon" },
-		["Eternal Dragon"] = { id = 386, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_eternal_dragon" },
+        ["Cifer"] = { id = 373, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_cifer"},
+		["Creator of Flames"] = { id = 395, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_creator_of_flames" },
+		["Sword Deity"] = { id = 304, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_sword_deity" },
+		["Shadow Dragon"] = { id = 301, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_shadow_dragon" },
+		["Eternal Dragon"] = { id = 384, modes = {"easy","medium","hard","extreme"}, teleportName = "raid_eternal_dragon" },
 
 	}
 	local RaidItem = {
