@@ -110,6 +110,7 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 			"inferno_depths",
 			"lunar_eclipse",
 			"light_fairy",
+			"xmas_snowy_entrance"
 		},
 		ModeNames = {
 			battle_tower = "Battle Tower",
@@ -119,6 +120,8 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 			inferno_depths = "Inferno Depths Tower",
 			lunar_eclipse = "Lunar Eclipse Tower",
 			light_fairy = "Light Fairy Tower",
+			xmas_snowy_entrance = "Part 1: Snowy Entrance"
+
 		},
 		Waves = {
 			battle_tower = {},
@@ -128,6 +131,7 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 			inferno_depths = {},
 			lunar_eclipse = {},
 			light_fairy = {},
+			xmas_snowy_entrance = {},
 		},
 		TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
 	}
@@ -142,6 +146,7 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 		table.insert(TowerData.Waves.inferno_depths, tostring(i))
 		table.insert(TowerData.Waves.lunar_eclipse, tostring(i))
 		table.insert(TowerData.Waves.light_fairy, tostring(i))
+		if i <= 10 then table.insert(TowerData.Waves.xmas_snowy_entrance, tostring(i))
 	end
 
 	local StorylineData = {
