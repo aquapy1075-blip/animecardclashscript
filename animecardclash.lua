@@ -146,7 +146,7 @@ local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/rel
 		table.insert(TowerData.Waves.inferno_depths, tostring(i))
 		table.insert(TowerData.Waves.lunar_eclipse, tostring(i))
 		table.insert(TowerData.Waves.light_fairy, tostring(i))
-		if i <= 10 then table.insert(TowerData.Waves.xmas_snowy_entrance, tostring(i))
+		if i <= 10 then table.insert(TowerData.Waves.xmas_snowy_entrance, tostring(i)) end
 	end
 
 	local StorylineData = {
