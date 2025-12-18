@@ -829,7 +829,9 @@
 			end
 			return false
 		end
-
+        function Utils.isInRankedCombat() 
+            return Utils.hasPopupContaining(PlayerGui, "Please wait another ranked")
+		end
 		function Utils.isInBattlePopupPresent()
 			local ok1, hideBtn = pcall(function()
 				return react["1"]["5"]["5"]["3"]
@@ -2001,8 +2003,13 @@
 							print(("🎯 Attacking opponent %d (%s)"):format(id, s))
 
 							local mode = State.modeRanked == "scaled" and "scaled" or "any"
-							Net.fightEvent:FireServer(mode, id)
-
+							while State.autoRanked do
+								Net.fightEvent:FireServer(mode, id)
+								task.wait(0.5)
+								if not Utils.hasPopupContaining(PlayerGui, "Please wait") then 
+								     break
+								end
+							end
 							waitUntilDone(opp)
 
 							-- Mở lại tab sau battle
@@ -2110,7 +2117,7 @@
 							task.wait(0.6)
 							newFolder = getOpponentsFolder()
 							attempts += 1
-						until (newFolder and #newFolder:GetChildren() > 0) or attempts >= 10
+						until (newFolder and #newFolder:GetChildren() > 0) or attempts >= 100
 
 						if not newFolder then
 							print("⚠️ Failed to load new ranked folder after refresh.")
