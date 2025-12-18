@@ -2005,10 +2005,11 @@
 							local mode = State.modeRanked == "scaled" and "scaled" or "any"
 							while State.autoRanked do
 								Net.fightEvent:FireServer(mode, id)
-								task.wait(0.5)
+								task.wait(0.75)
 								if not Utils.hasPopupContaining(PlayerGui, "Please wait") then 
 								     break
 								end
+								task.wait(3)
 							end
 							waitUntilDone(opp)
 
