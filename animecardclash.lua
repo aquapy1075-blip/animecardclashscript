@@ -4715,8 +4715,9 @@ local rankitem = {}
 local name_to_id = {}
 
 for id, item in pairs(RankItem) do
-    table.insert(rankitem, item.display_name)
-    name_to_id[item.display_name] = id
+	 local display = item.display_name
+    table.insert(rankitem, display)
+    name_to_id[display] = id
 end
 rankedshop:Dropdown({
 	Title = "Select Item To Auto Buy",
@@ -4727,9 +4728,7 @@ rankedshop:Dropdown({
 		State.selectedRankedItem = {}
 		for _, display in ipairs(option) do
 			local id = name_to_id[display]
-			if id then
 				table.insert(State.selectedRankedItem, id)
-			end
 		end
 	end,
 })
