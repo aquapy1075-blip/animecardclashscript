@@ -1889,7 +1889,7 @@ function autorankitem()
 			local item = RankItem[i]
 			for j = 1, item.amount do
 				if not State.autoItemRank then return end
-		        print(item.id)
+		        print(i)
 				local args = {i}
 				Net.buyrankitem:FireServer(unpack(args))
 				task.wait(0.075)
