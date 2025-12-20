@@ -398,20 +398,20 @@ local RaidItem = {
 }
 
 local RankItem = {
-	{ id = "item:trait_reroll", display_name = "Trait Reroll", amount = 500 },
-	{ id = "item:exploration_speedup_30_min", display_name = "Exploration Speedup 30m", amount = 30 },
-	{ id = "item:exploration_speedup_1_hour", display_name = "Exploration Speedup 1h", amount = 30 },
-	{ id = "item:exploration_speedup_3_hour", display_name = "Exploration Speedup 3h", amount = 5 },
-	{ id = "item:exploration_speedup_8_hour", display_name = "Exploration Speedup 8h", amount = 3 },
-	{ id = "item:exploration_speedup_12_hour", display_name = "Exploration Speedup 12h", amount = 2 },
-	{ id = "item:exploration_speedup_24_hour", display_name = "Exploration Speedup 24h", amount = 1 },
-	{ id = "item:exploration_speedup_3_day", display_name = "Exploration Speedup 3d", amount = 1 },
-	{ id = "item:common_book", display_name = "Common Book", amount = 2000 },
-	{ id = "item:uncommon_book", display_name = "Uncommon Book", amount = 1500 },
-	{ id = "item:rare_book", display_name = "Rare Book", amount = 1000 },
-	{ id = "item:epic_book", display_name = "Epic Book", amount = 500 },
-	{ id = "item:legendary_book", display_name = "Legendary Book", amount = 250 },
-	{ id = "item:mythical_book", display_name = "Mythical Book", amount = 100 },
+    ["item:trait_reroll"] = { display_name = "Trait Reroll", amount = 500 },
+    ["item:exploration_speedup_30_min"] = { display_name = "Exploration Speedup 30m", amount = 30 },
+    ["item:exploration_speedup_1_hour"] = { display_name = "Exploration Speedup 1h", amount = 30 },
+    ["item:exploration_speedup_3_hour"] = { display_name = "Exploration Speedup 3h", amount = 5 },
+    ["item:exploration_speedup_8_hour"] = { display_name = "Exploration Speedup 8h", amount = 3 },
+    ["item:exploration_speedup_12_hour"] = { display_name = "Exploration Speedup 12h", amount = 2 },
+    ["item:exploration_speedup_24_hour"] = { display_name = "Exploration Speedup 24h", amount = 1 },
+    ["item:exploration_speedup_3_day"] = { display_name = "Exploration Speedup 3d", amount = 1 },
+    ["item:common_book"] = { display_name = "Common Book", amount = 2000 },
+    ["item:uncommon_book"] = { display_name = "Uncommon Book", amount = 1500 },
+    ["item:rare_book"] = { display_name = "Rare Book", amount = 1000 },
+    ["item:epic_book"] = { display_name = "Epic Book", amount = 500 },
+    ["item:legendary_book"] = { display_name = "Legendary Book", amount = 250 },
+    ["item:mythical_book"] = { display_name = "Mythical Book", amount = 100 },
 }
 local MoonCycleData = {
 	{ Name = "full_moon", DisplayName = "Full Moon" },
@@ -1879,39 +1879,26 @@ end
 -------------------------------------------------
 -- Rank Shop
 -------------------------------------------------
-local RankItemById = {}
-
-for _, item in ipairs(RankItem) do
-	RankItemById[item.id] = item
-end
-local function BuyRankItem(item)
-	for j = 1, item.amount do
-		if not State.autoItemRank then
-			return
-		end
-		Net.buyrankitem:FireServer(item.id) -- 1 là amount per call, chỉnh nếu cần
-		task.wait(0.075)
-	end
-	task.wait(0.5)
-end
 function autorankitem()
 	while State.autoItemRank do
-		if not State.selectedRankItem or #State.selectedRankItem == 0 then
-			break
-		end
-		for _, id in ipairs(State.selectedRankItem) do
+		for _, i in pairs(State.selectedRankItem) do
 			if not State.autoItemRank then
 				return
 			end
-			local item = RankItemById[id]
-			if item then
-				BuyRankItem(item)
+			local item = RankItem[i]
+			for j = 1, item.amount do
+				if not State.autoItemRank then return end
+				local args = { item.id}
+				Net.buyrankitem:FireServer(unpack(args))
+				task.wait(0.075)
 			end
+		    task.wait(0.5)
 		end
 
 		task.wait(3600)
 	end
 end
+
 
 -------------------------------------------------
 -- Rank Controller
@@ -4722,12 +4709,12 @@ local rankedshop = RankedTab:Section({
 	Box = false,
 	Opened = true,
 })
-local rankitem = {} -- list đưa vào Dropdown (display)
-local name_to_id = {} -- map display_name -> id
+local rankitem = {}
+local name_to_id = {}
 
-for _, item in ipairs(RankItem) do
-	table.insert(rankitem, item.display_name)
-	name_to_id[item.display_name] = item.id
+for id, item in pairs(RankItem) do
+    table.insert(rankitem, item.display_name)
+    name_to_id[item.display_name] = id
 end
 rankedshop:Dropdown({
 	Title = "Select Item To Auto Buy",
