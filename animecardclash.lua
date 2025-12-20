@@ -4711,25 +4711,26 @@ local rankedshop = RankedTab:Section({
 	Box = false,
 	Opened = true,
 })
-local rankitem = {}
+local rankitems = {}
 local name_to_id = {}
 
 for id, item in pairs(RankItem) do
 	 local display = item.display_name
-    table.insert(rankitem, display)
+    table.insert(rankitems, display)
     name_to_id[display] = id
 end
 rankedshop:Dropdown({
 	Title = "Select Item To Auto Buy",
-	Values = rankitem,
+	Values = rankitems,
 	Multi = true,
 	Flag = "SelectedRankedItem",
 	Callback = function(option)
-		State.selectedRankedItem = {}
+		State.selectedRankItem = {}
 		for _, display in ipairs(option) do
 			local id = name_to_id[display]
-				table.insert(State.selectedRankedItem, id)
+				table.insert(State.selectedRankItem, id)
 		end
+
 	end,
 })
 rankedshop:Toggle({
