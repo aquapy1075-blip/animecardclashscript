@@ -700,6 +700,8 @@ local function AutoStartDungeonLoop()
     task.spawn(function()
         while State.autoStartDungeon do
             if not IsDungeonLobbyPresent() then
+                Utils.notify("Auto Dungeon", "Starting a new dungeon in 10 seconds...", 2)
+                task.wait(10)
                 local args = { "dungeon_christmas" }
                 Net.startdungeon:FireServer(unpack(args))
                 Utils.notify("Auto Dungeon", "Started a new dungeon!", 2)
