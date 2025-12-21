@@ -29,9 +29,10 @@ local UIS = game:GetService("UserInputService")
 
 -- Net
 local Net = {
+	teleportmap = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("teleport"),
 	startdungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonStart"),
 	fightenemydungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonFightEnemy"),
-	votedungoen = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonVoteModifier"),
+	votedungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonVoteModifier"),
 	buyraiditem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("craft"),
 	buyrankitem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("buyRankedShopItem"),
 	fightStoryBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightStoryBoss"),
@@ -761,6 +762,7 @@ State.autoStartDungeon = State.autoStartDungeon or false
 State.autoClearDungeon = State.autoClearDungeon or false
 State.autoVoteDungeon = State.autoVoteDungeon or false
 State.autoRunIdDungeon = State.autoRunIdDungeon or 0
+State.leaveDungeonFloor = State.leaveDungeonFloor or 100
 
 -------------------------------------------------
 -- Utils
@@ -1087,22 +1089,37 @@ local function FindDungeonLobby()
     return nil
 end
 
+local function GetDungeonFloor()
+    local success, text = pcall(function() return react.hud.dungeon["2"]["2"].Text end)
+    return success and tonumber(text:match("%d+$")) or 0
+end
+
 function AutoClearDungeon()
 	State.autoRunIdDungeon = State.autoRunIdDungeon + 1
 	local runId = State.autoRunIdDungeon
-
+    task.spawn(function()
+	      while State.autoClearDungeon and runId == State.autoRunIdDungeon do 
+                 Net.votedungeon:FireServer(0)
+				 local floor = GetDungeonFloor()
+				 if floor >= State.leaveDungeonFloor then
+					 Net.teleportmap:FireServer("lobby")
+				 end
+				 task.wait(2)
+		  end
+	
+	end)
 	task.spawn(function()
 		while State.autoClearDungeon and runId == State.autoRunIdDungeon do
-			Utils.teleport()
 			local dungeonfolder = FindDungeonLobby()
 			if dungeonfolder then
+				local detect = dungeonfolder.ChildAdded:Connect(function(child)
+				  if not child.Name:match("^completion_portal") then return end
+			      local portalCFrame = child.WorldPivot
+				  Utils.teleport(portalCFrame)
+				end)
 				for _, mob in ipairs(dungeonfolder:GetChildren()) do
 					if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
 						break
-					end
-                    if string.match(mob.Name, "^completion_portal")  then
-						local portalCFrame = mob.WorldPivot
-						Utils.teleport(portalCFrame)
 					end
 					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
 							local serverId = mob:GetAttribute("serverEntityId")
@@ -1113,14 +1130,13 @@ function AutoClearDungeon()
 								
 								-- Đợi popup combat xuất hiện
 								local waited = 0
-								local ping = Utils.getPing()
-								local timeout = 5 + math.clamp(ping / 200, 0, 10)
+								local timeout = 1.5
 								while not Utils.isInBattlePopupPresent() and waited < timeout do
 									if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
 										break
 									end
-									task.wait(0.5)
-									waited = waited + 0.5
+									task.wait(0.1)
+									waited = waited + 0.1
 								end
 
 								while Utils.isInBattlePopupPresent() do
@@ -1129,14 +1145,13 @@ function AutoClearDungeon()
 									end
 									task.wait(0.5)
 								end
-
-								task.wait(0.5)
+								task.wait(0.25)
 							end
-						
 					end
 				end
+				detect:Disconnect()
 			end
-			task.wait(1)
+			task.wait(0.25)
 		end
 	end)
 end
