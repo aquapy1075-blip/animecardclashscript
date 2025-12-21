@@ -1099,10 +1099,8 @@ function AutoClearDungeon()
 	
     task.spawn(function()
         while State.autoClearDungeon and runId == State.autoRunIdDungeon do
-            Utils.teleport()
             local dungeonfolder = FindDungeonLobby()
             if dungeonfolder then
-                -- CHECK PORTAL TRƯỚC
                 local portal = dungeonfolder:FindFirstChild(function(child)
                     return string.match(child.Name, "^completion_portal")
                 end)
