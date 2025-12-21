@@ -1106,7 +1106,8 @@ function AutoClearDungeon()
                 end)
                 
                 if portal then
-                    local portalCFrame = (portal:IsA("Model") and portal:GetPivot() or portal.CFrame)
+                    print("Found completion portal, teleporting...")
+                    local portalCFrame = portal:GetPivot()
                     if portalCFrame then
                         Utils.teleport(portalCFrame)
                         task.wait(2)
