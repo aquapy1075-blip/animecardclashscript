@@ -1080,85 +1080,6 @@ local function AutoStartDungeonLoop()
     end)
 end
 
-local CachedDungeonLobby = nil
-
-
-local function FindDungeonLobby()
-    if CachedDungeonLobby and CachedDungeonLobby.Parent then
-        return CachedDungeonLobby
-    end
-
-    for _, obj in ipairs(workspace:GetChildren()) do
-        if obj.Name:match("^Dungeon Lobby %d+$") then
-            CachedDungeonLobby = obj
-            return obj
-        end
-    end
-
-    return nil
-end
-
-local function WaitForPortalFast(timeout)
-    local dungeon = FindDungeonLobby()
-    if not dungeon then return nil end
-
-    -- check ngay lập tức
-    for _, obj in ipairs(dungeon:GetChildren()) do
-        if obj.Name:match("^completion_portal") then
-            return obj
-        end
-    end
-
-    local found = nil
-    local conn
-
-    conn = dungeon.ChildAdded:Connect(function(child)
-        if child.Name:match("^completion_portal") then
-            found = child
-        end
-    end)
-
-    local start = os.clock()
-    while not found and os.clock() - start < timeout do
-        task.wait(0.05)
-    end
-
-    if conn then conn:Disconnect() end
-    return found
-end
-
-
-local function ClearCurrentFloor(runId)
-    local dungeonfolder = FindDungeonLobby()
-    if not dungeonfolder then return end
-
-    for _, mob in ipairs(dungeonfolder:GetChildren()) do
-        if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
-            return
-        end
-
-        if not mob.Name:match("^floor") and not mob.Name:match("^completion_portal") then
-        local serverId = mob:GetAttribute("serverEntityId")
-        if serverId then
-            Net.fightenemydungeon:FireServer(serverId)
-
-            -- giữ nguyên combat check của bạn
-            local waited = 0
-            local timeout = 6
-            while not Utils.isInBattlePopupPresent() and waited < timeout do
-                task.wait(0.2)
-                waited += 0.2
-            end
-
-            while Utils.isInBattlePopupPresent() do
-                task.wait(0.2)
-            end
-        end
-	   end
-    end
-end
-
-
 
 function AutoClearDungeon()
     State.autoRunIdDungeon += 1
@@ -1168,17 +1089,10 @@ function AutoClearDungeon()
         while State.autoClearDungeon and runId == State.autoRunIdDungeon do
 
             -- 1. clear hết mob hiện tại
-            ClearCurrentFloor(runId)
+         
 
             if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
                 break
-            end
-
-            -- 2. đợi portal (gần như instant)
-            local portal = WaitForPortalFast(10)
-            if portal then
-                local position = portal:GetPivot()
-				Utils.teleport(position)
             end
 
             task.wait(0.3)
