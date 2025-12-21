@@ -82,7 +82,7 @@ Names = {
     [332] = "Titan",
     [350] = "Muzan",
     [325] = "Big Mom",
-    [469] = "Sungjinwoo",
+    [493] = "Sungjinwoo",
     [302] = "Cid",
     [343] = "Celestial Sovereign",
     [387] = "Dead King",
@@ -98,7 +98,7 @@ List = {
     { id = 332, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
     { id = 350, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
     { id = 325, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 469, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 493, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
     { id = 302, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
     { id = 343, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
     { id = 387, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
@@ -260,12 +260,12 @@ candy_island = {
 },
 
 solo_city = {
-    { id = 467, name = "light_saintess" },
-    { id = 470, name = "the_goliath" },
-    { id = 465, name = "shadow_bear" },
-    { id = 468, name = "shadow_commander" },
-    { id = 466, name = "shadow_ant" },
-    { id = 469, name = "awakened_shadow_monarch" },
+    { id = 491, name = "light_saintess" },
+    { id = 494, name = "the_goliath" },
+    { id = 489, name = "shadow_bear" },
+    { id = 492, name = "shadow_commander" },
+    { id = 490, name = "shadow_ant" },
+    { id = 493, name = "awakened_shadow_monarch" },
 },
 
 eminence_lookout = {
@@ -1114,12 +1114,18 @@ function AutoClearDungeon()
 			if dungeonfolder then
 				local detectportal = dungeonfolder.ChildAdded:Connect(function(child)
 				  if not child.Name:match("^completion_portal") then return end
+				  task.wait(1)
 			      local portalCFrame = child.WorldPivot
 				  Utils.teleport(portalCFrame)
 				end)
 				for _, mob in ipairs(dungeonfolder:GetChildren()) do
 					if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
 						break
+					end
+					if string.match(mob.Name, "^completion_portal") then
+						task.wait(1.5)
+						local portalCFrame = mob.WorldPivot
+						Utils.teleport(portalCFrame)
 					end
 					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
 							local serverId = mob:GetAttribute("serverEntityId")
