@@ -31,7 +31,7 @@ local UIS = game:GetService("UserInputService")
 local Net = {
 	startdungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonStart"),
 	fightenemydungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonFightEnemy"),
-	votedungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonVoteModifier"),
+	votedungoen = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonVoteModifier"),
 	buyraiditem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("craft"),
 	buyrankitem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("buyRankedShopItem"),
 	fightStoryBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightStoryBoss"),
@@ -1073,7 +1073,7 @@ local function AutoStartDungeonLoop()
                 Net.startdungeon:FireServer(unpack(args))
                 Utils.notify("Auto Dungeon", "Started a new dungeon!", 2)
             end
-            task.wait(2)
+            task.wait(0.25)
         end
     end)
 end
@@ -1088,46 +1088,22 @@ local function FindDungeonLobby()
 end
 
 function AutoClearDungeon()
-    State.autoRunIdDungeon = State.autoRunIdDungeon + 1
-    local runId = State.autoRunIdDungeon
-    task.spawn(function()
-	   while State.autoClearDungeon and runId == State.autoRunIdDungeon do
-			  Net.votedungeon:FireServer(0)
-			  task.wait(1)
-		end
-	end)
-	
-    task.spawn(function()
-        while State.autoClearDungeon and runId == State.autoRunIdDungeon do
-            local dungeonfolder = FindDungeonLobby()
-            if dungeonfolder then
-                local portal = dungeonfolder:FindFirstChild(function(child)
-                    return string.match(child.Name, "^completion_portal")
-                end)
-                
-                if portal then
-                    print("Found completion portal, teleporting...")
-                    local portalCFrame = portal:GetPivot()
-                    if portalCFrame then
-                        Utils.teleport(portalCFrame)
-                        task.wait(2)
-                        
-                        -- 🔄 FIND LẠI DUNGEON LOBBY MỚI sau tele!
-                        dungeonfolder = FindDungeonLobby()
-                        if not dungeonfolder then
-                            print("No dungeon lobby after portal tele")
-                            task.wait(1)
-                            continue
-                        end
-                    end
-                end
-                
-                -- ĐÁNH MOB trong dungeon lobby mới
-                for _, mob in ipairs(dungeonfolder:GetChildren()) do
+	State.autoRunIdDungeon = State.autoRunIdDungeon + 1
+	local runId = State.autoRunIdDungeon
+
+	task.spawn(function()
+		while State.autoClearDungeon and runId == State.autoRunIdDungeon do
+			Utils.teleport()
+			local dungeonfolder = FindDungeonLobby()
+			if dungeonfolder then
+				for _, mob in ipairs(dungeonfolder:GetChildren()) do
 					if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
 						break
 					end
-                    
+                    if string.match(mob.Name, "^completion_portal")  then
+						local portalCFrame = mob.WorldPivot
+						Utils.teleport(portalCFrame)
+					end
 					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
 							local serverId = mob:GetAttribute("serverEntityId")
 							if serverId then
@@ -1158,12 +1134,11 @@ function AutoClearDungeon()
 							end
 						
 					end
-				
-                end
-            end
-            task.wait(1)
-        end
-    end)
+				end
+			end
+			task.wait(1)
+		end
+	end)
 end
 
 
