@@ -1075,7 +1075,7 @@ local function AutoStartDungeonLoop()
                 Net.startdungeon:FireServer(unpack(args))
                 Utils.notify("Auto Dungeon", "Started a new dungeon!", 2)
             end
-            task.wait(0.25)
+            task.wait(2)
         end
     end)
 end
@@ -1112,7 +1112,7 @@ function AutoClearDungeon()
 		while State.autoClearDungeon and runId == State.autoRunIdDungeon do
 			local dungeonfolder = FindDungeonLobby()
 			if dungeonfolder then
-				local detect = dungeonfolder.ChildAdded:Connect(function(child)
+				local detectportal = dungeonfolder.ChildAdded:Connect(function(child)
 				  if not child.Name:match("^completion_portal") then return end
 			      local portalCFrame = child.WorldPivot
 				  Utils.teleport(portalCFrame)
@@ -1149,7 +1149,7 @@ function AutoClearDungeon()
 							end
 					end
 				end
-				detect:Disconnect()
+				detectportal:Disconnect()
 			end
 			task.wait(0.25)
 		end
@@ -3880,6 +3880,17 @@ Dungeon:Toggle({
 		if v then
 			AutoClearDungeon()
 		end
+	end,
+})
+Dungeon:Input({
+	Title = "Dungeon Leave Floor",
+	Desc = "Default: 100",
+	Value = State.leaveDungeonFloor or "100",
+	Type = "Input",
+	Placeholder = "Enter floor to leave dungeon",		
+	Flag = "DungeonLeaveFloor",
+	Callback = function(text)
+			State.leaveDungeonFloor = tonumber(text) or 100
 	end,
 })
 local Pack = Window:Section({
