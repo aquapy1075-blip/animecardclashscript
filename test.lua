@@ -1152,10 +1152,7 @@ local function ClearCurrentFloor(runId)
             return
         end
 
-        if mob.Name:match("^floor") or mob.Name:match("^completion_portal") then
-            continue
-        end
-
+        if not mob.Name:match("^floor") and not mob.Name:match("^completion_portal") then
         local serverId = mob:GetAttribute("serverEntityId")
         if serverId then
             Net.fightenemydungeon:FireServer(serverId)
@@ -1172,13 +1169,11 @@ local function ClearCurrentFloor(runId)
                 task.wait(0.2)
             end
         end
+	   end
     end
 end
 
-local function GetCurrentFloor()
-    local success, text = pcall(function() return react.hud.dungeon["2"]["2"].Text end)
-    return success and tonumber(text:match("%d+$")) or 0
-end
+
 
 function AutoClearDungeon()
     State.autoRunIdDungeon += 1
@@ -1195,7 +1190,7 @@ function AutoClearDungeon()
             end
 
             -- 2. đợi portal (gần như instant)
-            local portal = WaitForPortalFast(6)
+            local portal = WaitForPortalFast(10)
             if portal then
                 Utils.teleport(portal:GetPivot())
             end
