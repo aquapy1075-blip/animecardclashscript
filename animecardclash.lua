@@ -25,10 +25,12 @@ local USE_SCRIPTED_CAMERA = true
 local savedCamera = {}
 local TeleportService = game:GetService("TeleportService")
 local CoreGui = game:GetService("CoreGui")
+local EncodingService = game:GetService("EncodingService")
 local UIS = game:GetService("UserInputService")
 
 -- Net
 local Net = {
+	depositOrnament = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("depositOrnament"),
 	teleportmap = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("teleport"),
 	startdungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonStart"),
 	fightenemydungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonFightEnemy"),
@@ -763,6 +765,11 @@ State.autoClearDungeon = State.autoClearDungeon or false
 State.autoVoteDungeon = State.autoVoteDungeon or false
 State.autoRunIdDungeon = State.autoRunIdDungeon or 0
 State.leaveDungeonFloor = State.leaveDungeonFloor or 100
+State.teamDungeon = State.teamDungeon or "slot_1"
+State.swapTeamDungeon = State.swapTeamDungeon or "slot_1"
+State.swapFloorDungeon = State.swapFloorDungeon or 100
+State.autoSwapTeamDungeon = State.autoSwapTeamDungeon or false
+State.autoDepositOrnament = State.autoDepositOrnament or false
 
 -------------------------------------------------
 -- Utils
@@ -1101,10 +1108,17 @@ function AutoClearDungeon()
 	      while State.autoClearDungeon and runId == State.autoRunIdDungeon do 
                  Net.votedungeon:FireServer(0)
 				 local floor = GetDungeonFloor()
-				 if floor >= State.leaveDungeonFloor then
+				 if State.autoSwapTeamDungeon and floor and floor >= State.swapFloorDungeon then
+					 local args = { State.swapTeamDungeon }
+					 Net.setPartySlot:FireServer(unpack(args))
+				 else 
+					 local args = { State.teamDungeon }
+					 Net.setPartySlot:FireServer(unpack(args))
+				 end
+				 if floor and floor >= State.leaveDungeonFloor then
 					 Net.teleportmap:FireServer("lobby")
 				 end
-				 task.wait(2)
+				 task.wait(2.5)
 		  end
 	
 	end)
@@ -1162,7 +1176,22 @@ function AutoClearDungeon()
 	end)
 end
 
-
+function AutoDepositOrnament()
+    task.spawn(function()
+	        while State.autoDepositOrnament do 
+                   for _, ornament in ipairs({"red","blue","green","yellow","pink"}) do
+	                   local args = { ornament }
+					   for i = 1,10 do
+	                        Net.depositOrnament:FireServer(unpack(args))
+					        task.wait(0.05)
+					   end
+	                   task.wait(0.1)
+				   end
+                   task.wait(300)
+			end
+	
+	end)
+end
 
 -------------------------------------------------
 -- Item
@@ -3861,11 +3890,85 @@ local Event = Window:Section({
 	Icon = "lucide:calendar", -- optional
 	Opened = false,
 })
-
+local Ornament = Event:Tab({
+	Title = "Ornament",
+	Icon = "lucide:gift", -- optional
+})
+Ornament:Toggle({
+	Title = "Auto Deposit Ornament",
+	Value = State.autoDepositOrnament or false,
+	Flag = "AutoOrnament",
+	Callback = function(v)
+		State.autoDepositOrnament = v
+		if v then
+			AutoDepositOrnament()
+		end
+	end,
+})
 local Dungeon = Event:Tab({
 	Title = "Dungeon",
 	Icon = "lucide:door-open", -- optional
 })
+
+local DungeonSetting = Dungeon:Section({
+	Title = "Dungeon Setting",
+	Box = true,
+	TextTransparency = 0.05,
+	TextXAlignment = "Left",
+	TextSize = 15, -- Default Size
+	Opened = true,
+})
+DungeonSetting:Dropdown({
+	Title = "Dungeon Team",
+	Values = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
+	Value = State.teamDungeon or "slot_1",
+	Flag = "DungeonTeam",
+	SearchBarEnabled = true,
+	Callback = function(option)
+		State.teamDungeon = option
+	end,
+})
+DungeonSetting:Dropdown({
+	Title = "Dungeon Team Swap",
+	Values = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
+	Value = State.swapTeamDungeon or "slot_1",
+	Flag = "DungeonSwapTeam",
+	SearchBarEnabled = true,		
+	Callback = function(option)
+			State.swapTeamDungeon = option
+	end,
+})
+DungeonSetting:Input({
+	Title = "Dungeon Swap Team Floor",
+	Desc = "Default: 1",
+	Value = State.swapFloorDungeon or "50",
+	Type = "Input",
+	Placeholder = "Enter floor to swap team dungeon",		
+	Flag = "DungeonSwapTeamFloor",
+	Callback = function(text)
+			State.swapFloorDungeon = tonumber(text) or 50
+	end,
+})
+DungeonSetting:Toggle({
+	Title = "Enable Swap Team",
+	Value = State.autoSwapTeamDungeon or false,
+	Flag = "EnableSwapDungeonTeam",
+	Callback = function(v)
+			State.autoSwapTeamDungeon = v
+	end,
+})
+DungeonSetting:Input({
+	Title = "Dungeon Leave Floor",
+	Desc = "Default: 100",
+	Value = State.leaveDungeonFloor or "100",
+	Type = "Input",
+	Placeholder = "Enter floor to leave dungeon",		
+	Flag = "DungeonLeaveFloor",
+	Callback = function(text)
+			State.leaveDungeonFloor = tonumber(text) or 100
+	end,
+})
+
 Dungeon:Toggle({
 	Title = "Auto Start Dungeon",
 	Value = State.autoStartDungeon or false,
@@ -3888,17 +3991,7 @@ Dungeon:Toggle({
 		end
 	end,
 })
-Dungeon:Input({
-	Title = "Dungeon Leave Floor",
-	Desc = "Default: 100",
-	Value = State.leaveDungeonFloor or "100",
-	Type = "Input",
-	Placeholder = "Enter floor to leave dungeon",		
-	Flag = "DungeonLeaveFloor",
-	Callback = function(text)
-			State.leaveDungeonFloor = tonumber(text) or 100
-	end,
-})
+
 local Pack = Window:Section({
 	Title = "Farm",
 	Icon = "lucide:slack",
@@ -5565,9 +5658,7 @@ PerformanceTab:Toggle({
 					ClearNilInstances = false,
 				},
 			}
-			loadstring(
-				game:HttpGet("https://raw.githubusercontent.com/CasperFlyModz/discord.gg-rips/main/FPSBooster.lua")
-			)()
+			loadstring(game:HttpGet("https://raw.githubusercontent.com/CasperFlyModz/discord.gg-rips/main/FPSBooster.lua"))()
 		end
 	end,
 })
