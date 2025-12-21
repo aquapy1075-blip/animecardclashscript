@@ -1073,7 +1073,7 @@ local function AutoStartDungeonLoop()
                 Net.startdungeon:FireServer(unpack(args))
                 Utils.notify("Auto Dungeon", "Started a new dungeon!", 2)
             end
-            task.wait(0.25)
+            task.wait(2)
         end
     end)
 end
@@ -1100,10 +1100,7 @@ function AutoClearDungeon()
 					if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
 						break
 					end
-                    if string.match(mob.Name, "^completion_portal")  then
-						local portalCFrame = mob:GetPivot()
-						Utils.teleport(portalCFrame)
-					end
+                   
 					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
 							local serverId = mob:GetAttribute("serverEntityId")
 							if serverId then
