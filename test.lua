@@ -1082,21 +1082,6 @@ end
 
 local CachedDungeonLobby = nil
 
-workspace.ChildRemoved:Connect(function(child)
-    if child == CachedDungeonLobby then
-        CachedDungeonLobby = nil
-    end
-end)
-
-workspace.ChildAdded:Connect(function(child)
-    if not child.Name:match("^Dungeon Lobby %d+$") then return end
-		task.wait()
-		if child.Parent == workspace then
-        CachedDungeonLobby = child
-		
-    end
-end)
-
 
 local function FindDungeonLobby()
     if CachedDungeonLobby and CachedDungeonLobby.Parent then
