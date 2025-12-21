@@ -1024,6 +1024,8 @@ local locations = {
 	["Potions"] = CFrame.new(58, 7, -156),
 	["Towers"] = CFrame.new(402, 12, -445),
 	["Raid_Shop"] = CFrame.new(421, 21, -28),
+    ["Dungeon_Shop"] = CFrame.new(345, 6, 840),
+    ["Dungeon_Tree"] = CFrame.new(210, 7, 613),
 }
 
 local humanoidRoot = character:WaitForChild("HumanoidRootPart")
