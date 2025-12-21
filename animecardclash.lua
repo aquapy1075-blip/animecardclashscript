@@ -1101,7 +1101,7 @@ function AutoClearDungeon()
 						break
 					end
                     if string.match(mob.Name, "^completion_portal")  then
-						local portalCFrame = mob.WorldPivot
+						local portalCFrame = mob:GetPivot()
 						Utils.teleport(portalCFrame)
 					end
 					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
