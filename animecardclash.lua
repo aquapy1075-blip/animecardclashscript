@@ -40,31 +40,24 @@ local Net = {
 	fightStoryBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightStoryBoss"),
 	fightRaidMinion = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightRaidMinion"),
 	fightRaidBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightRaidBoss"),
-	setPartySlot = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-		:WaitForChild("setDefaultPartySlot"),
-	removePartyPosition = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-		:WaitForChild("removePartyPosition"),
+	setPartySlot = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("setDefaultPartySlot"),
+	removePartyPosition = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("removePartyPosition"),
 	addCardToParty = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("addCardToParty"),
-	fightBattleTowerWave = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-		:WaitForChild("fightBattleTowerWave"),
+	fightBattleTowerWave = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightBattleTowerWave"),
 	fightGlobalBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightGlobalBoss"),
 	fightInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightInfinite"),
 	forfeitBattle = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("forfeitBattle"),
 	claimInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("claimInfinite"),
 	pauseInfinite = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("pauseInfinite"),
 	netSetting = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("setSetting"),
-	activateAllLuckIndex = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-		:WaitForChild("activateAllLuckIndex"),
-	activeCardIndex = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-		:WaitForChild("claimCardIndexRewards"),
+	activateAllLuckIndex = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("activateAllLuckIndex"),
+	activeCardIndex = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("claimCardIndexRewards"),
 	mergeCard = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("mergeCard"),
-	fightGlobalBossZone = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-		:WaitForChild("fightGlobalBossZone"),
+	fightGlobalBossZone = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightGlobalBossZone"),
 	claimEvent = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("claimDailyQuest"),
 	useItem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("useItem"),
 	redeemEvent = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("redeemCode"),
-	upgradePoint = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-		:WaitForChild("allocateUpgradePoint"),
+	upgradePoint = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("allocateUpgradePoint"),
 	fightPlayer = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightPlayer"),
 	fightEvent = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightRankedOpponent"),
 	refreshEvent = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("refreshRanked"),
@@ -77,529 +70,234 @@ local Net = {
 -------------------------------------------------
 
 local BossData = {
-Names = {
-    [364] = "Naruto",
-    [360] = "Frieza",
-    [397] = "Sukuna",
-    [332] = "Titan",
-    [350] = "Muzan",
-    [325] = "Big Mom",
-    [493] = "Sungjinwoo",
-    [302] = "Cid",
-    [343] = "Celestial Sovereign",
-    [387] = "Dead King",
-    [398] = "Ichigo",
-    [318] = "Yhwach",
-    [381] = "Monster 8",
-},
-
-List = {
-    { id = 364, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 360, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 397, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 332, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 350, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 325, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 493, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 302, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 343, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 387, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 398, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 318, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 381, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-},
-
-	TeamOptions = {
-		"slot_1",
-		"slot_2",
-		"slot_3",
-		"slot_4",
-		"slot_5",
-		"slot_6",
-		"slot_7",
-		"slot_8",
+	Names = {
+		[364] = "Naruto", [360] = "Frieza", [397] = "Sukuna", [332] = "Titan", [350] = "Muzan",
+		[325] = "Big Mom", [493] = "Sungjinwoo", [302] = "Cid", [343] = "Celestial Sovereign",
+		[387] = "Dead King", [398] = "Ichigo", [318] = "Yhwach", [381] = "Monster 8",
 	},
+	List = {
+		{ id = 364, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 360, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 397, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 332, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 350, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 325, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 493, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 302, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 343, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 387, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 398, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 318, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 381, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+	},
+	TeamOptions = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
 }
+
+-- Tower Data
 local TowerData = {
 	Modes = {
-		"battle_tower",
-		"watery_depths",
-		"frozen_landscape",
-		"stone_citadel",
-		"inferno_depths",
-		"lunar_eclipse",
-		"light_fairy",
-		"xmas_snowy_entrance",
-		"xmas_chilling_hall",
-		"xmas_frozen_depths",
-		"xmas_subzero_cove",
-		"xmas_absolute_zero",
+		"battle_tower", "watery_depths", "frozen_landscape", "stone_citadel",
+		"inferno_depths", "lunar_eclipse", "light_fairy", "xmas_snowy_entrance",
+		"xmas_chilling_hall", "xmas_frozen_depths", "xmas_subzero_cove", "xmas_absolute_zero"
 	},
 	ModeNames = {
-		battle_tower = "Battle Tower",
-		watery_depths = "Watery Depths Tower",
-		frozen_landscape = "Frozen Landscape Tower",
-		stone_citadel = "Stone Citadel Tower",
-		inferno_depths = "Inferno Depths Tower",
-		lunar_eclipse = "Lunar Eclipse Tower",
-		light_fairy = "Light Fairy Tower",
-		xmas_snowy_entrance = "Part 1: Snowy Entrance",
-		xmas_chilling_hall = "Part 2: Chilling Hall",
-		xmas_frozen_depths = "Part 3: Frozen Depths",
-		xmas_subzero_cove = "Part 4: Sub-Zero Cove",
-		xmas_absolute_zero = "Part 5: Absolute Zero",
+		battle_tower = "Battle Tower", watery_depths = "Watery Depths Tower",
+		frozen_landscape = "Frozen Landscape Tower", stone_citadel = "Stone Citadel Tower",
+		inferno_depths = "Inferno Depths Tower", lunar_eclipse = "Lunar Eclipse Tower",
+		light_fairy = "Light Fairy Tower", xmas_snowy_entrance = "Part 1: Snowy Entrance",
+		xmas_chilling_hall = "Part 2: Chilling Hall", xmas_frozen_depths = "Part 3: Frozen Depths",
+		xmas_subzero_cove = "Part 4: Sub-Zero Cove", xmas_absolute_zero = "Part 5: Absolute Zero"
 	},
-	Waves = {
-		battle_tower = {},
-		watery_depths = {},
-		frozen_landscape = {},
-		stone_citadel = {},
-		inferno_depths = {},
-		lunar_eclipse = {},
-		light_fairy = {},
-		xmas_snowy_entrance = {},
-		xmas_chilling_hall = {},
-		xmas_frozen_depths = {},
-		xmas_subzero_cove = {},
-		xmas_absolute_zero = {},
-	},
-	TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
+	Waves = {},
+	TeamOptions = BossData.TeamOptions
 }
 
-for i = 1, 50 do
-	table.insert(TowerData.Waves.battle_tower, tostring(i))
-end
-for i = 1, 25 do
-	table.insert(TowerData.Waves.watery_depths, tostring(i))
-	table.insert(TowerData.Waves.frozen_landscape, tostring(i))
-	table.insert(TowerData.Waves.stone_citadel, tostring(i))
-	table.insert(TowerData.Waves.inferno_depths, tostring(i))
-	table.insert(TowerData.Waves.lunar_eclipse, tostring(i))
-	table.insert(TowerData.Waves.light_fairy, tostring(i))
-	if i <= 10 then
-		table.insert(TowerData.Waves.xmas_snowy_entrance, tostring(i))
-		table.insert(TowerData.Waves.xmas_chilling_hall, tostring(i))
-		table.insert(TowerData.Waves.xmas_frozen_depths, tostring(i))
-		table.insert(TowerData.Waves.xmas_subzero_cove, tostring(i))
-		table.insert(TowerData.Waves.xmas_absolute_zero, tostring(i))
+-- Generate waves
+for _, mode in ipairs(TowerData.Modes) do
+	TowerData.Waves[mode] = {}
+	local maxWave = (mode == "battle_tower" and 50) or (mode:find("xmas") and 10) or 25
+	for i = 1, maxWave do
+		table.insert(TowerData.Waves[mode], tostring(i))
 	end
 end
 
 local StorylineData = {
-	Maps = {
-		"ninja_village",
-		"green_planet",
-		"shibuya_station",
-		"titans_city",
-		"dimensional_fortress",
-		"candy_island",
-		"solo_city",
-		"eminence_lookout",
-		"invaded_ninja_village",
-		"necromancer_graveyard",
-		"soul_kings_castle",
-		"empire_of_light",
-		"defense_force_base",
-	},
-
-	ModeOptions = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" },
-	TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
-
-	-- Story mobs per map (the data you sent)
+	Maps = {"ninja_village", "green_planet", "shibuya_station", "titans_city", "dimensional_fortress",
+		"candy_island", "solo_city", "eminence_lookout", "invaded_ninja_village", "necromancer_graveyard",
+		"soul_kings_castle", "empire_of_light", "defense_force_base"},
+	ModeOptions = {"normal", "medium", "hard", "extreme", "nightmare", "celestial"},
+	TeamOptions = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
 	Mobs = {
 		ninja_village = {
-    { id = 365, name = "unstoppable_fist" },
-    { id = 369, name = "copy_ninja" },
-    { id = 368, name = "awakened_dark_avenger" },
-    { id = 367, name = "awakened_promised_child" },
-    { id = 366, name = "six_paths_of_pain" },
-    { id = 364, name = "bijuu_beast" },
-},
-
-green_planet = {
-    { id = 357, name = "ultimate_warrior" },
-    { id = 361, name = "body_switcher" },
-    { id = 358, name = "namekian_sage" },
-    { id = 356, name = "awakened_prideful_prince" },
-    { id = 359, name = "awakened_earth_strongest" },
-    { id = 360, name = "awakened_galactic_tyrant" },
-},
-
-shibuya_station = {
-    { id = 398, name = "cursed_doll" },
-    { id = 401, name = "awakened_shadow_summoner" },
-    { id = 400, name = "cursed_fist" },
-    { id = 396, name = "rika_blessing" },
-    { id = 399, name = "limitless_master" },
-    { id = 397, name = "king_of_curses" },
-},
-
-titans_city = {
-    { id = 333, name = "survey_commander" },
-    { id = 335, name = "blade_warrior" },
-    { id = 337, name = "armored_giant" },
-    { id = 336, name = "beast_giant" },
-    { id = 334, name = "blade_captain" },
-    { id = 332, name = "combat_giant" },
-},
-
-dimensional_fortress = {
-    { id = 348, name = "thunder_demon" },
-    { id = 351, name = "childish_demon" },
-    { id = 353, name = "compass_demon" },
-    { id = 352, name = "awakened_frost_demon" },
-    { id = 349, name = "awaken_six_eye_slayer" },
-    { id = 350, name = "awaken_pale_demon_lord" },
-},
-
-candy_island = {
-    { id = 329, name = "genie_commander" },
-    { id = 326, name = "candy_master" },
-    { id = 324, name = "biscuit_warrior" },
-    { id = 328, name = "juice_queen" },
-    { id = 327, name = "mochi_emperor" },
-    { id = 325, name = "soul_queen" },
-},
-
-solo_city = {
-    { id = 491, name = "light_saintess" },
-    { id = 494, name = "the_goliath" },
-    { id = 489, name = "shadow_bear" },
-    { id = 492, name = "shadow_commander" },
-    { id = 490, name = "shadow_ant" },
-    { id = 493, name = "awakened_shadow_monarch" },
-},
-
-eminence_lookout = {
-    { id = 307, name = "eminence_accountant" },
-    { id = 306, name = "eminence_scout" },
-    { id = 304, name = "eminence_cat" },
-    { id = 303, name = "eminence_strategist" },
-    { id = 305, name = "eminence_commander" },
-    { id = 302, name = "lord_of_eminence" },
-},
-
-invaded_ninja_village = {
-    { id = 345, name = "celestial_warrior" },
-    { id = 341, name = "mother_of_creation" },
-    { id = 342, name = "celestial_fisherman" },
-    { id = 340, name = "celestial_destroyer" },
-    { id = 344, name = "awakened_impure_ghost" },
-    { id = 343, name = "celestial_sovereign" },
-},
-
-necromancer_graveyard = {
-    { id = 384, name = "beast_tamer" },
-    { id = 386, name = "servant_of_the_undead" },
-    { id = 388, name = "undead_demon" },
-    { id = 383, name = "undead_commander" },
-    { id = 385, name = "blood_valkyrie" },
-    { id = 387, name = "undead_king" },
-},
-
-soul_kings_castle = {
-    { id = 395, name = "Hornet Shinigami" },
-    { id = 399, name = "Shinigami Strategist" },
-    { id = 400, name = "Shinigami Illusionist" },
-    { id = 397, name = "Fate Weaver Shinigami" },
-    { id = 396, name = "Shinigami Monk" },
-    { id = 398, name = "Substitute Shinigami" },
-},
-
-empire_of_light = {
-    { id = 321, name = "The Visionary" },
-    { id = 317, name = "The Antithesis" },
-    { id = 319, name = "The X-Axis" },
-    { id = 320, name = "The Miracle" },
-    { id = 316, name = "The Balance" },
-    { id = 318, name = "Quincy King" },
-},
-defense_force_base = {
-	{ id = 373, name = "frostbite_sodier" },
-	{ id = 376, name = "eightfold_slayer" },
-	{ id = 378, name = "gun_blade_hunter" },
-	{ id = 374, name = "defense_force_captain" },
-	{ id = 377, name = "defense_force_heiress" },
-	{ id = 375, name = "monster_10" },
-	{ id = 372, name = "humanitys_weapon"},
-	},
-  }
+			{id = 365, name = "unstoppable_fist"}, {id = 369, name = "copy_ninja"}, {id = 368, name = "awakened_dark_avenger"},
+			{id = 367, name = "awakened_promised_child"}, {id = 366, name = "six_paths_of_pain"}, {id = 364, name = "bijuu_beast"}
+		},
+		green_planet = {
+			{id = 357, name = "ultimate_warrior"}, {id = 361, name = "body_switcher"}, {id = 358, name = "namekian_sage"},
+			{id = 356, name = "awakened_prideful_prince"}, {id = 359, name = "awakened_earth_strongest"}, {id = 360, name = "awakened_galactic_tyrant"}
+		},
+		shibuya_station = {
+			{id = 398, name = "cursed_doll"}, {id = 401, name = "awakened_shadow_summoner"}, {id = 400, name = "cursed_fist"},
+			{id = 396, name = "rika_blessing"}, {id = 399, name = "limitless_master"}, {id = 397, name = "king_of_curses"}
+		},
+		titans_city = {
+			{id = 333, name = "survey_commander"}, {id = 335, name = "blade_warrior"}, {id = 337, name = "armored_giant"},
+			{id = 336, name = "beast_giant"}, {id = 334, name = "blade_captain"}, {id = 332, name = "combat_giant"}
+		},
+		dimensional_fortress = {
+			{id = 348, name = "thunder_demon"}, {id = 351, name = "childish_demon"}, {id = 353, name = "compass_demon"},
+			{id = 352, name = "awakened_frost_demon"}, {id = 349, name = "awaken_six_eye_slayer"}, {id = 350, name = "awaken_pale_demon_lord"}
+		},
+		candy_island = {
+			{id = 329, name = "genie_commander"}, {id = 326, name = "candy_master"}, {id = 324, name = "biscuit_warrior"},
+			{id = 328, name = "juice_queen"}, {id = 327, name = "mochi_emperor"}, {id = 325, name = "soul_queen"}
+		},
+		solo_city = {
+			{id = 491, name = "light_saintess"}, {id = 494, name = "the_goliath"}, {id = 489, name = "shadow_bear"},
+			{id = 492, name = "shadow_commander"}, {id = 490, name = "shadow_ant"}, {id = 493, name = "awakened_shadow_monarch"}
+		},
+		eminence_lookout = {
+			{id = 307, name = "eminence_accountant"}, {id = 306, name = "eminence_scout"}, {id = 304, name = "eminence_cat"},
+			{id = 303, name = "eminence_strategist"}, {id = 305, name = "eminence_commander"}, {id = 302, name = "lord_of_eminence"}
+		},
+		invaded_ninja_village = {
+			{id = 345, name = "celestial_warrior"}, {id = 341, name = "mother_of_creation"}, {id = 342, name = "celestial_fisherman"},
+			{id = 340, name = "celestial_destroyer"}, {id = 344, name = "awakened_impure_ghost"}, {id = 343, name = "celestial_sovereign"}
+		},
+		necromancer_graveyard = {
+			{id = 384, name = "beast_tamer"}, {id = 386, name = "servant_of_the_undead"}, {id = 388, name = "undead_demon"},
+			{id = 383, name = "undead_commander"}, {id = 385, name = "blood_valkyrie"}, {id = 387, name = "undead_king"}
+		},
+		soul_kings_castle = {
+			{id = 395, name = "Hornet Shinigami"}, {id = 399, name = "Shinigami Strategist"}, {id = 400, name = "Shinigami Illusionist"},
+			{id = 397, name = "Fate Weaver Shinigami"}, {id = 396, name = "Shinigami Monk"}, {id = 398, name = "Substitute Shinigami"}
+		},
+		empire_of_light = {
+			{id = 321, name = "The Visionary"}, {id = 317, name = "The Antithesis"}, {id = 319, name = "The X-Axis"},
+			{id = 320, name = "The Miracle"}, {id = 316, name = "The Balance"}, {id = 318, name = "Quincy King"}
+		},
+		defense_force_base = {
+			{id = 373, name = "frostbite_sodier"}, {id = 376, name = "eightfold_slayer"}, {id = 378, name = "gun_blade_hunter"},
+			{id = 374, name = "defense_force_captain"}, {id = 377, name = "defense_force_heiress"}, {id = 375, name = "monster_10"},
+			{id = 372, name = "humanitys_weapon"}
+		}
+	}
 }
 
 local GlobalBossData = {
 	Position = CFrame.new(1019, 9, -245),
-	SpawnUTCWindows = { { 18, 20 }, { 21, 23 }, { 0, 2 }, { 3, 5 }, { 6, 8 }, { 9, 11 }, { 12, 14 }, { 15, 17 } },
+	SpawnUTCWindows = {{18, 20}, {21, 23}, {0, 2}, {3, 5}, {6, 8}, {9, 11}, {12, 14}, {15, 17}},
 	DurationHours = 2,
-	TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
+	TeamOptions = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
 }
 
 local InfiniteData = {
-	Modes = {
-		"base",
-		"nightmare",
-		"potion",
-		"ninja_village",
-		"green_planet",
-		"shibuya_station",
-		"titans_city",
-		"dimensional_fortress",
-		"candy_island",
-		"solo_city",
-		"eminence_lookout",
-		"invaded_ninja_village",
-		"necromancer_graveyard",
-		"soul_king_castle",
-		"empire_of_light",
-		"defense_force_base",
-	},
-
+	Modes = {"base", "nightmare", "potion", "ninja_village", "green_planet", "shibuya_station", "titans_city",
+		"dimensional_fortress", "candy_island", "solo_city", "eminence_lookout", "invaded_ninja_village",
+		"necromancer_graveyard", "soul_king_castle", "empire_of_light", "defense_force_base"},
 	ModeNames = {
-		base = "Infinite",
-		nightmare = "HardCore",
-		potion = "Potion",
-		ninja_village = "Ninja Village",
-		green_planet = "Green Planet",
-		shibuya_station = "Shibuya Station",
-		titans_city = "Titans City",
-		dimensional_fortress = "Dimensional Fortress",
-		candy_island = "Candy Island",
-		solo_city = "Solo City",
-		eminence_lookout = "Eminence Lookout",
-		invaded_ninja_village = "Invaded Ninja Village",
-		necromancer_graveyard = "Necromancer Graveyard",
-		soul_king_castle = "Soul King's Castle",
-		empire_of_light = "Empire of Light",
-		defense_force_base = "Defense Force Base",
+		base = "Infinite", nightmare = "HardCore", potion = "Potion", ninja_village = "Ninja Village",
+		green_planet = "Green Planet", shibuya_station = "Shibuya Station", titans_city = "Titans City",
+		dimensional_fortress = "Dimensional Fortress", candy_island = "Candy Island", solo_city = "Solo City",
+		eminence_lookout = "Eminence Lookout", invaded_ninja_village = "Invaded Ninja Village",
+		necromancer_graveyard = "Necromancer Graveyard", soul_king_castle = "Soul King's Castle",
+		empire_of_light = "Empire of Light", defense_force_base = "Defense Force Base",
 	},
-	TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
+	TeamOptions = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
 }
+
 local CursedZoneData = {
 	ColorGrades = {
-		["0 0.278431 0.650980 1.000000 0 1 0.278431 0.650980 1.000000 0"] = 4, -- xanh dương nhạt (yếu)
-		["0 0.345098 0.133333 0.552941 0 1 0.345098 0.133333 0.552941 0"] = 3, -- tím xanh
-		["0 0.000000 0.000000 0.000000 0 1.000000 0.000000 0.000000 0.000000 0"] = 2, -- đen
-		["0 0.552941 0.000000 0.431373 0 1 0.552941 0.000000 0.431373 0"] = 1, -- xanh tím
-		["0 0.552941 0.000000 0.00784314 0 1 0.552941 0.000000 0.00784314 0"] = "special", -- máu
+		["0 0.278431 0.650980 1.000000 0 1 0.278431 0.650980 1.000000 0"] = 4,
+		["0 0.345098 0.133333 0.552941 0 1 0.345098 0.133333 0.552941 0"] = 3,
+		["0 0.000000 0.000000 0.000000 0 1.000000 0.000000 0.000000 0.000000 0"] = 2,
+		["0 0.552941 0.000000 0.431373 0 1 0.552941 0.000000 0.431373 0"] = 1,
+		["0 0.552941 0.000000 0.00784314 0 1 0.552941 0.000000 0.00784314 0"] = "special",
 	},
-	TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
+	TeamOptions = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
 }
+
 local RaidData = {
-	["Monster 9"] = { id = 313, modes = { "easy", "medium", "hard", "extreme" }, teleportName = "raid_monster_9" },
-	["Cifer"] = { id = 382, modes = { "easy", "medium", "hard", "extreme" }, teleportName = "raid_cifer" },
-	["Creator of Flames"] = {
-		id = 404,
-		modes = { "easy", "medium", "hard", "extreme" },
-		teleportName = "raid_creator_of_flames",
-	},
-	["Sword Deity"] = { id = 313, modes = { "easy", "medium", "hard", "extreme" }, teleportName = "raid_sword_deity" },
-	["Shadow Dragon"] = { id = 310, modes = { "easy", "medium", "hard", "extreme" }, teleportName = "raid_shadow_dragon" },
-	["Eternal Dragon"] = { id = 393, modes = { "easy", "medium", "hard", "extreme" }, teleportName = "raid_eternal_dragon" },
+	["Monster 9"] = {id = 313, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_monster_9"},
+	["Cifer"] = {id = 382, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_cifer"},
+	["Creator of Flames"] = {id = 404, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_creator_of_flames"},
+	["Sword Deity"] = {id = 313, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_sword_deity"},
+	["Shadow Dragon"] = {id = 310, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_shadow_dragon"},
+	["Eternal Dragon"] = {id = 393, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_eternal_dragon"},
 }
+
 local RaidItem = {
-	["legendary_book"] = { shop = "raid_general", id = 9, amount = 10, display_name = "Legendary Book" },
-	["epic_book"] = { shop = "raid_general", id = 8, amount = 10, display_name = "Epic Book" },
-	["rare_book"] = { shop = "raid_general", id = 7, amount = 10, display_name = "Rare Book" },
-	["uncommon_book"] = { shop = "raid_general", id = 6, amount = 10, display_name = "Uncommon Book" },
-	["common_book"] = { shop = "raid_general", id = 5, amount = 10, display_name = "Common Book" },
-	["gold_eternal_dragon"] = {
-		shop = "raid_eternal_dragon",
-		id = 1,
-		amount = 20,
-		display_name = "Gold Eternal Dragon",
-	},
-	["gold_shadow_dragon"] = { shop = "raid_shadow_dragon", id = 1, amount = 10, display_name = "Gold Shadow Dragon" },
-	["gold_creator_of_flames"] = {
-		shop = "raid_creator_of_flames",
-		id = 1,
-		amount = 5,
-		display_name = "Gold Creator Of Flames",
-	},
-	["gold_sword_deity"] = { shop = "raid_sword_deity", id = 1, amount = 7, display_name = "Gold Sword Deity" },
-	["gold_cifer"] = { shop = "raid_cifer", id = 1, amount = 5, display_name = "Gold Cifer" },
+	legendary_book = {shop = "raid_general", id = 9, amount = 10, display_name = "Legendary Book"},
+	epic_book = {shop = "raid_general", id = 8, amount = 10, display_name = "Epic Book"},
+	rare_book = {shop = "raid_general", id = 7, amount = 10, display_name = "Rare Book"},
+	uncommon_book = {shop = "raid_general", id = 6, amount = 10, display_name = "Uncommon Book"},
+	common_book = {shop = "raid_general", id = 5, amount = 10, display_name = "Common Book"},
+	gold_eternal_dragon = {shop = "raid_eternal_dragon", id = 1, amount = 20, display_name = "Gold Eternal Dragon"},
+	gold_shadow_dragon = {shop = "raid_shadow_dragon", id = 1, amount = 10, display_name = "Gold Shadow Dragon"},
+	gold_creator_of_flames = {shop = "raid_creator_of_flames", id = 1, amount = 5, display_name = "Gold Creator Of Flames"},
+	gold_sword_deity = {shop = "raid_sword_deity", id = 1, amount = 7, display_name = "Gold Sword Deity"},
+	gold_cifer = {shop = "raid_cifer", id = 1, amount = 5, display_name = "Gold Cifer"},
 }
 
 local RankItem = {
-    ["item:trait_reroll"] = { display_name = "Trait Reroll", amount = 500 },
-    ["item:exploration_speedup_30_min"] = { display_name = "Exploration Speedup 30m", amount = 30 },
-    ["item:exploration_speedup_1_hour"] = { display_name = "Exploration Speedup 1h", amount = 30 },
-    ["item:exploration_speedup_3_hour"] = { display_name = "Exploration Speedup 3h", amount = 5 },
-    ["item:exploration_speedup_8_hour"] = { display_name = "Exploration Speedup 8h", amount = 3 },
-    ["item:exploration_speedup_12_hour"] = { display_name = "Exploration Speedup 12h", amount = 2 },
-    ["item:exploration_speedup_24_hour"] = { display_name = "Exploration Speedup 24h", amount = 1 },
-    ["item:exploration_speedup_3_day"] = { display_name = "Exploration Speedup 3d", amount = 1 },
-    ["item:common_book"] = { display_name = "Common Book", amount = 2000 },
-    ["item:uncommon_book"] = { display_name = "Uncommon Book", amount = 1500 },
-    ["item:rare_book"] = { display_name = "Rare Book", amount = 1000 },
-    ["item:epic_book"] = { display_name = "Epic Book", amount = 500 },
-    ["item:legendary_book"] = { display_name = "Legendary Book", amount = 250 },
-    ["item:mythical_book"] = { display_name = "Mythical Book", amount = 100 },
+	["item:trait_reroll"] = {display_name = "Trait Reroll", amount = 500},
+	["item:exploration_speedup_30_min"] = {display_name = "Exploration Speedup 30m", amount = 30},
+	["item:exploration_speedup_1_hour"] = {display_name = "Exploration Speedup 1h", amount = 30},
+	["item:exploration_speedup_3_hour"] = {display_name = "Exploration Speedup 3h", amount = 5},
+	["item:exploration_speedup_8_hour"] = {display_name = "Exploration Speedup 8h", amount = 3},
+	["item:exploration_speedup_12_hour"] = {display_name = "Exploration Speedup 12h", amount = 2},
+	["item:exploration_speedup_24_hour"] = {display_name = "Exploration Speedup 24h", amount = 1},
+	["item:exploration_speedup_3_day"] = {display_name = "Exploration Speedup 3d", amount = 1},
+	["item:common_book"] = {display_name = "Common Book", amount = 2000},
+	["item:uncommon_book"] = {display_name = "Uncommon Book", amount = 1500},
+	["item:rare_book"] = {display_name = "Rare Book", amount = 1000},
+	["item:epic_book"] = {display_name = "Epic Book", amount = 500},
+	["item:legendary_book"] = {display_name = "Legendary Book", amount = 250},
+	["item:mythical_book"] = {display_name = "Mythical Book", amount = 100},
 }
+
 local MoonCycleData = {
-	{ Name = "full_moon", DisplayName = "Full Moon" },
-	{ Name = "snow_moon", DisplayName = "Snow Moon" },
-	{ Name = "harvest_moon", DisplayName = "Harvest Moon" },
-	{ Name = "blood_moon", DisplayName = "Blood Moon" },
-	{ Name = "wolf_moon", DisplayName = "Wolf Moon" },
-	{ Name = "blue_moon", DisplayName = "Blue Moon" },
-	{ Name = "eclipse_moon", DisplayName = "Eclipse Moon" },
-	{ Name = "monarch_moon", DisplayName = "Monarch Moon" },
-	{ Name = "tsukuyomi_moon", DisplayName = "Tsukuyomi Moon" },
-	{ Name = "inferno_moon", DisplayName = "Inferno Moon" },
-	{ Name = "abyss_moon", DisplayName = "Abyss Moon" },
-	{ Name = "spirit_moon", DisplayName = "Spirit Moon" },
+	{Name = "full_moon", DisplayName = "Full Moon"}, {Name = "snow_moon", DisplayName = "Snow Moon"},
+	{Name = "harvest_moon", DisplayName = "Harvest Moon"}, {Name = "blood_moon", DisplayName = "Blood Moon"},
+	{Name = "wolf_moon", DisplayName = "Wolf Moon"}, {Name = "blue_moon", DisplayName = "Blue Moon"},
+	{Name = "eclipse_moon", DisplayName = "Eclipse Moon"}, {Name = "monarch_moon", DisplayName = "Monarch Moon"},
+	{Name = "tsukuyomi_moon", DisplayName = "Tsukuyomi Moon"}, {Name = "inferno_moon", DisplayName = "Inferno Moon"},
+	{Name = "abyss_moon", DisplayName = "Abyss Moon"}, {Name = "spirit_moon", DisplayName = "Spirit Moon"},
 }
 
 local ExplorationData = {
-	Modes = {
-		"easy",
-		"medium",
-		"hard",
-		"extreme",
-		"nightmare",
-		"celestial",
-		"mythical",
-		"transcendent",
-		"eternal",
-		"abyss",
-	},
+	Modes = {"easy", "medium", "hard", "extreme", "nightmare", "celestial", "mythical", "transcendent", "eternal", "abyss"},
 }
 
 local UpgradeData = {
-	Name = {
-		"luck",
-		"cooldown_reduction",
-		"potion_duration",
-		"border_chance",
-		"boss_chance",
-	},
-	displayName = {
-		"Luck",
-		"Roll Speed",
-		"Potion Duration",
-		"Border Chance",
-		"Boss Chance",
-	},
+	Name = {"luck", "cooldown_reduction", "potion_duration", "border_chance", "boss_chance"},
+	displayName = {"Luck", "Roll Speed", "Potion Duration", "Border Chance", "Boss Chance"},
 }
 
 local CodesData = {
-	"MERRYCHRISTMAS1",
-	"MERRYCHRISTMAS2",
-	"MERRYCHRISTMAS3",
-	"SPECIALCODE4",
-    "RANKEDUPDATE1",
-    "RANKEDUPDATE2",
-    "RANKEDUPDATE3",
-    "SPECIALCODE",
-    "HALLOWEEN3",
-    "HALLOWEEN2",
-    "HALLOWEEN1",
-    "imdoingmybest1",
-    "imdoingmybest2",
-    "imdoingmybest3",
-    "ICECOLD",
-    "40KPLAYERS",
-    "UPDATE4NOW1",
-    "UPDATE4NOW2",
-    "UPDATE4NOW3",
-    "SPECIALCODE2",
-    "UPDATE4NOW4",
-    "UPDATE4NOW5",
-    "UPDATE4NOW6",
-    "SPECIALCODE3",
-    "UPDATE4QOL1",
-    "UPDATE4QOL2",
-    "UPDATE4QOL3",
-    "SERVERLUCK3",
-    "SERVERLUCK2",
-    "SERVERLUCK1",
-    "PRERANKEDUPDATE1",
-    "PRERANKEDUPDATE2",
-    "PRERANKEDUPDATE3",
-    "THANKYOU-67da508e",
-    "THANKYOU-5e3b8484",
-    "THANKYOU-a90775fb",
-    "CURSERAIDUPDATE1",
-    "CURSERAIDUPDATE2",
-    "CURSERAIDUPDATE3",
-    "MINIUPDATE3NOW2",
-    "MINIUPDATE3NOW",
-    "MINIUPDATE3",
-    "SORRY1",
-    "SORRY2",
-    "SORRY3",
-    "UPDATE3",
-    "UPDATE3NOW",
-    "UPDATE3NOW2",
-    "WELOVECODES1",
-    "WELOVECODES2",
-    "BUGFIXES1",
-    "BUGFIXES2",
-    "100MILLION3",
-    "100MILLION2",
-    "100MILLION1",
-    "PATCH1",
-    "PATCH2",
-    "GLOBALBOSS4",
-    "GLOBALBOSS3",
-    "GLOBALBOSS2",
-    "GLOBALBOSS1",
-    "NEWHOTFIX12",
-    "NEWHOTFIX11",
-    "NEWHOTFIX10",
-    "NEWHOTFIX9",
-    "NEWHOTFIX7",
-    "NEWHOTFIX8",
-    "NEWHOTFIX6",
-    "NEWHOTFIX5",
-    "NEWHOTFIX3",
-    "NEWHOTFIX4",
-    "NEWHOTFIX2",
-    "NEWHOTFIX1",
-    "WELCOMETOACC",
-    "ACCREWRITE",
-    "NEWCODES",
-    "BUGFIX3",
-    "LUCKBOOST",
-    "UPDATESOON",
-    "BUGFIX",
-    "BUGFIX2",
-    "EMINENCEUPDATE",
-    "HOTFIX10",
-    "BUGFIXNOTUPDATE",
-    "HOTFIX9",
-    "HOTFIX8",
-    "HOTFIX7",
-    "THEUPDATE",
-    "NOTTHEUPDATE",
-    "HOTFIX6",
-    "100KLIKES",
-    "HOTFIX5",
-    "HOTFIX4",
-    "HOTFIX3",
-    "HOTFIX2",
-    "HOTFIX1",
-    "10MILLION",
-    "5MILLIONVISITS",
-    "3MILLIONVISITS",
-    "STPATRICKSDAY2025",
-    "1MILLIONVISITS",
-    "500KVISITS",
-    "100KVISITS",
-    "SORRYFORSHUTDOWN",
-    "YAYCODES",
-    "CHRISTMASTOWER1",
-    "CHRISTMASTOWER2",
-    "CHRISTMASTOWER3",
+	"MERRYCHRISTMAS1", "MERRYCHRISTMAS2", "MERRYCHRISTMAS3", "SPECIALCODE4", "RANKEDUPDATE1", "RANKEDUPDATE2",
+	"RANKEDUPDATE3", "SPECIALCODE", "HALLOWEEN3", "HALLOWEEN2", "HALLOWEEN1", "imdoingmybest1", "imdoingmybest2",
+	"imdoingmybest3", "ICECOLD", "40KPLAYERS", "UPDATE4NOW1", "UPDATE4NOW2", "UPDATE4NOW3", "SPECIALCODE2",
+	"UPDATE4NOW4", "UPDATE4NOW5", "UPDATE4NOW6", "SPECIALCODE3", "UPDATE4QOL1", "UPDATE4QOL2", "UPDATE4QOL3",
+	"SERVERLUCK3", "SERVERLUCK2", "SERVERLUCK1", "PRERANKEDUPDATE1", "PRERANKEDUPDATE2", "PRERANKEDUPDATE3",
+	"THANKYOU-67da508e", "THANKYOU-5e3b8484", "THANKYOU-a90775fb", "CURSERAIDUPDATE1", "CURSERAIDUPDATE2",
+	"CURSERAIDUPDATE3", "MINIUPDATE3NOW2", "MINIUPDATE3NOW", "MINIUPDATE3", "SORRY1", "SORRY2", "SORRY3",
+	"UPDATE3", "UPDATE3NOW", "UPDATE3NOW2", "WELOVECODES1", "WELOVECODES2", "BUGFIXES1", "BUGFIXES2",
+	"100MILLION3", "100MILLION2", "100MILLION1", "PATCH1", "PATCH2", "GLOBALBOSS4", "GLOBALBOSS3", "GLOBALBOSS2",
+	"GLOBALBOSS1", "NEWHOTFIX12", "NEWHOTFIX11", "NEWHOTFIX10", "NEWHOTFIX9", "NEWHOTFIX7", "NEWHOTFIX8",
+	"NEWHOTFIX6", "NEWHOTFIX5", "NEWHOTFIX3", "NEWHOTFIX4", "NEWHOTFIX2", "NEWHOTFIX1", "WELCOMETOACC",
+	"ACCREWRITE", "NEWCODES", "BUGFIX3", "LUCKBOOST", "UPDATESOON", "BUGFIX", "BUGFIX2", "EMINENCEUPDATE",
+	"HOTFIX10", "BUGFIXNOTUPDATE", "HOTFIX9", "HOTFIX8", "HOTFIX7", "THEUPDATE", "NOTTHEUPDATE", "HOTFIX6",
+	"100KLIKES", "HOTFIX5", "HOTFIX4", "HOTFIX3", "HOTFIX2", "HOTFIX1", "10MILLION", "5MILLIONVISITS",
+	"3MILLIONVISITS", "STPATRICKSDAY2025", "1MILLIONVISITS", "500KVISITS", "100KVISITS", "SORRYFORSHUTDOWN",
+	"YAYCODES", "CHRISTMASTOWER1", "CHRISTMASTOWER2", "CHRISTMASTOWER3",
 }
 
 local LevelData = {
-	Book = { "common_book", "uncommon_book", "rare_book", "epic_book", "legendary_book" },
+	Book = {"common_book", "uncommon_book", "rare_book", "epic_book", "legendary_book"},
 	BookName = {
-		commmon_book = "Common Book",
-		uncommon_book = "Uncommon Book",
-		rare_book = "Rare Book",
-		epic_book = "Epic Book",
-		legendary_book = "Legendary Book",
+		commmon_book = "Common Book", uncommon_book = "Uncommon Book", rare_book = "Rare Book",
+		epic_book = "Epic Book", legendary_book = "Legendary Book",
 	},
 }
 -------------------------------------------------
@@ -608,99 +306,88 @@ local LevelData = {
 local State = {}
 
 -- Auto control riêng
-State.autoEnabledBoss = false
-State.autoRunIdBoss = 0
-State.autoEnabledTower = false
-State.autoRunIdTower = 0
-State.autoEnabledGb = false
-State.autoRunIdGb = 0
-State.autoEnabledInf = false
-State.autoRunIdInf = 0
-State.autoEnabledCombine = false
-State.autoRunIdCombine = 0
-State.autoEnabledMinion = false
-State.autoRunIdMinion = 0
-State.autoEnabledRaid = false
-State.autoRunIdRaid = 0
+State.autoEnabledBoss, State.autoRunIdBoss = false, 0
+State.autoEnabledTower, State.autoRunIdTower = false, 0
+State.autoEnabledGb, State.autoRunIdGb = false, 0
+State.autoEnabledInf, State.autoRunIdInf = false, 0
+State.autoEnabledCombine, State.autoRunIdCombine = false, 0
+State.autoEnabledMinion, State.autoRunIdMinion = false, 0
+State.autoEnabledRaid, State.autoRunIdRaid = false, 0
 State.autoEnabledExploration = false
-State.autoEnabledExploration = 0
-State.autoEnabledQuest = false
-State.autoRunIdQuest = 0
+State.autoEnabledQuest, State.autoRunIdQuest = false, 0
 
 local folderName = "CooldownFolder"
 local playerName = LocalPlayer.Name
-
 local ConfigPath = string.format("%s/%s_cooldown.json", folderName, playerName)
-if not isfolder(folderName) then
-	makefolder(folderName)
-end
+if not isfolder(folderName) then makefolder(folderName) end
 
 local function secondsToNextMidnightEST()
 	local nowUTC = os.time()
 	local offset = 5 * 3600 -- EST = UTC - 5h
-	local estNow = nowUTC - offset -- thời gian hiện tại theo EST (timestamp)
+	local estNow = nowUTC - offset
 	local daysSinceEpoch_est = math.floor(estNow / 86400)
 	local nextMidnightEst_utc = (daysSinceEpoch_est + 1) * 86400 + offset
 	return nextMidnightEst_utc - nowUTC
 end
-local ok, data = pcall(function()
-	return HttpService:JSONDecode(readfile(ConfigPath))
-end)
-local conf = (ok and data and data.cooldownExpire)
-	or { BattleTower = os.time() + secondsToNextMidnightEST(), StoryBoss = os.time() + secondsToNextMidnightEST() }
 
+local ok, data = pcall(function() return HttpService:JSONDecode(readfile(ConfigPath)) end)
+local conf = (ok and data and data.cooldownExpire) or {
+	BattleTower = os.time() + secondsToNextMidnightEST(),
+	StoryBoss = os.time() + secondsToNextMidnightEST()
+}
 State.cooldownExpire = conf
------------- Quest --------------
+
+-- Quest
 State.questTeam = State.questTeam or "slot_8"
 State.healCard = State.healCard or "undead_king:gold"
 State.freezeCard = State.freezeCard or "soul_queen:basic"
--------- Storyline State --------
+
+-- Storyline State
 State.storylineEnabled = State.storylineEnabled or false
 State.storylineSelectedMaps = State.storylineSelectedMaps or {}
 State.storylineTeams = State.storylineTeams or {}
 State.storylineSelectedMode = State.storylineSelectedMode or {}
 State.storylineRunId = State.storylineRunId or 0
-------------- Boss--------------
 
-State.selectedBosses = {} -- toggle chọn boss trong UI
-State.bossTeams = {} -- team slot cho từng boss
-State.alreadyFought = {} -- boss đã đánh xong, table { [bossId] = {mode1=true, mode2=true} }
-State.bossSelectedModes = {} -- multi-mode chọn trong UI, table { [bossId] = {"normal","medium"} }
+-- Boss
+State.selectedBosses = {}
+State.bossTeams = {}
+State.alreadyFought = {}
+State.bossSelectedModes = {}
 State.bossRetry = State.bossRetry or 3
 
 for id in pairs(BossData.Names) do
 	State.selectedBosses[id] = false
 	State.bossTeams[id] = "slot_1"
 	State.alreadyFought[id] = {}
-	State.bossSelectedModes[id] = {} -- chưa chọn mode nào
+	State.bossSelectedModes[id] = {}
 end
 
--------------- Battle Tower-------------
-State.selectedTowerModes = {} -- toggle chọn mode trong UI
-State.towerTeams = {} -- team slot cho từng mode
-State.towerAlreadyFought = {} -- wave đã đánh xong, table { [mode] = {wave1=true, wave2=true} }
-State.towerSelectedWaves = {} -- multi-wave chọn trong UI, table { [mode] = {1,2,3} }
+-- Battle Tower
+State.selectedTowerModes = {}
+State.towerTeams = {}
+State.towerAlreadyFought = {}
+State.towerSelectedWaves = {}
 State.BtRetry = State.BtRetry or 3
 
 for _, mode in ipairs(TowerData.Modes) do
 	State.selectedTowerModes[mode] = false
 	State.towerTeams[mode] = "slot_1"
-	State.towerAlreadyFought[mode] = {} -- chưa đánh wave nào
-	State.towerSelectedWaves[mode] = {} -- chưa chọn wave nào
+	State.towerAlreadyFought[mode] = {}
+	State.towerSelectedWaves[mode] = {}
 end
 
---------------- Global Boss ---------------
-State.globalBossTeamHighHP = "slot_1" -- team khi boss HP ≥ 75m
-State.globalBossTeamLowHP = "slot_1" -- team khi boss HP < 75m
+-- Global Boss
+State.globalBossTeamHighHP = "slot_1"
+State.globalBossTeamLowHP = "slot_1"
 State.gbCheckedHighHp = false
 State.hasTeleported = false
-State.cursedGradeEnabled = State.cursedGradeEnabled
-	or { [1] = false, [2] = false, [3] = false, [4] = false, ["special"] = false }
-State.cursedTeams = State.cursedTeams
-	or { special = "slot_1", [1] = "slot_1", [2] = "slot_1", [3] = "slot_1", [4] = "slot_1" }
+State.cursedGradeEnabled = State.cursedGradeEnabled or {[1] = false, [2] = false, [3] = false, [4] = false, special = false}
+State.cursedTeams = State.cursedTeams or {special = "slot_1", [1] = "slot_1", [2] = "slot_1", [3] = "slot_1", [4] = "slot_1"}
 State.autoEnabledCursed = State.autoEnabledCursed or false
 State.autoRunIdCursed = 0
---------------- Infinite Tower ------------
+
+-- Infinite Tower
 State.InfinitieTeam = "slot_1"
 State.selectedInfMode = "base"
 State.enabledSwapTeam = false
@@ -708,12 +395,14 @@ State.enabledResetInf = false
 State.teamSwap = "slot_1"
 State.floorSwap = 100
 State.floorRestart = 100
---------------- Raid Boss ----------------
+
+-- Raid Boss
 State.selectedRaidBoss = State.selectedRaidBoss or "Creator of Flames"
 State.selectedRaidMode = State.selectedRaidMode or "easy"
 State.selectedRaidItem = State.selectedRaidItem or {}
 State.autoItemRaid = State.autoItemRaid or false
-----------------   Rank   ----------------
+
+-- Rank
 State.autoRanked = State.autoRanked or false
 State.autoRunIdRank = 0
 State.modeRanked = State.modeRanked or "scale"
@@ -721,19 +410,14 @@ State.showRanked = State.showRanked or false
 State.selectedRankItem = State.selectedRankItem or {}
 State.autoItemRank = State.autoItemRank or false
 
--------------- Exploration ---------------
+-- Exploration
 State.explorationCards = State.explorationCards or {}
 
---------------- Combine Mode --------------
-State.combineRunning = false -- bật/tắt Combine Mode
-State.combinePriority = { -- toggle chọn mode nào tham gia Combine
-	BattleTower = false,
-	StoryBoss = false,
-	GlobalBoss = false,
-	InfTower = false,
-}
+-- Combine Mode
+State.combineRunning = false
+State.combinePriority = {BattleTower = false, StoryBoss = false, GlobalBoss = false, InfTower = false}
 
---------------------- Player -----------------
+-- Player
 State.autoDismissEnabled = State.autoDismissEnabled or false
 State.autoEnabledLadder = State.autoEnabledLadder or false
 State.claimDailyQuest = State.claimDailyQuest or false
@@ -746,10 +430,10 @@ State.autoPrestige = State.autoPrestige or false
 State.autoUpgrade = State.autoUpgrade or false
 State.selectedStat = State.selectedStat or "Luck"
 State.levelcard = State.levelcard or ""
-State.selectBook = State.selectBook or { "common" }
+State.selectBook = State.selectBook or {"common"}
 State.autoBook = State.autoBook or false
 
-------------------- Misc -----------------
+-- Misc
 State.discordWebhookURL = State.discordWebhookURL or ""
 State.sendWebhookBattle = State.sendWebhookBattle or false
 State.sendWebhookCd = State.sendWebhookCd or false
@@ -759,7 +443,7 @@ State.enableRejoin = State.enableRejoin or false
 State.boostfpsv1 = State.boostfpsv1 or false
 State.boostfpsv2 = State.boostfpsv2 or false
 
------------------- Events -------------------
+-- Events
 State.autoStartDungeon = State.autoStartDungeon or false
 State.autoClearDungeon = State.autoClearDungeon or false
 State.autoVoteDungeon = State.autoVoteDungeon or false
@@ -771,18 +455,14 @@ State.swapFloorDungeon = State.swapFloorDungeon or 100
 State.autoSwapTeamDungeon = State.autoSwapTeamDungeon or false
 State.autoDepositOrnament = State.autoDepositOrnament or false
 
+
 -------------------------------------------------
 -- Utils
 -------------------------------------------------
 local Utils = {}
 
 function Utils.notify(title, content, duration)
-	WindUI:Notify({
-		Title = title,
-		Content = content,
-		Duration = duration, -- 3 seconds
-		Icon = "bird",
-	})
+	WindUI:Notify({Title = title, Content = content, Duration = duration, Icon = "bird"})
 end
 
 function Utils.sendDiscordMessage(content)
@@ -799,8 +479,8 @@ function Utils.sendDiscordMessage(content)
 			req({
 				Url = State.discordWebhookURL,
 				Method = "POST",
-				Headers = { ["Content-Type"] = "application/json" },
-				Body = content, -- <== gửi trực tiếp, không bọc {content = content} nữa
+				Headers = {["Content-Type"] = "application/json"},
+				Body = content,
 			})
 		end)
 	else
@@ -809,11 +489,7 @@ function Utils.sendDiscordMessage(content)
 		end)
 	end
 
-	if not ok then
-		warn("❌ Webhook send failed:", err)
-	else
-		print("✅ Webhook sent")
-	end
+	if not ok then warn("❌ Webhook send failed:", err) else print("✅ Webhook sent") end
 end
 
 function Utils.pressE()
@@ -833,12 +509,10 @@ end
 -- Cooldown functions
 function Utils.setCooldown(mode, seconds)
 	State.cooldownExpire[mode] = os.time() + seconds
-	local success, conf = pcall(function()
-		return HttpService:JSONDecode(readfile(ConfigPath))
-	end)
-	conf = success and conf or { cooldownExpire = {} }
+	local success, conf = pcall(function() return HttpService:JSONDecode(readfile(ConfigPath)) end)
+	conf = success and conf or {cooldownExpire = {}}
 	conf.cooldownExpire[mode] = State.cooldownExpire[mode]
-	writefile(ConfigPath, HttpService:JSONEncode({ cooldownExpire = State.cooldownExpire }))
+	writefile(ConfigPath, HttpService:JSONEncode({cooldownExpire = State.cooldownExpire}))
 end
 
 function Utils.getCooldown(mode)
@@ -857,75 +531,50 @@ function Utils.cooldownText(mode)
 	local h = math.floor(remain / 3600)
 	local m = math.floor((remain % 3600) / 60)
 	local s = math.floor(remain % 60)
-	if remain <= 0 then
-		return "Ready!"
-	elseif h > 0 then
-		return string.format("%dh %dm %ds", h, m, s)
-	elseif m > 0 then
-		return string.format("%dm %ds", m, s)
-	else
-		return string.format("%ds", s)
-	end
+	if remain <= 0 then return "Ready!"
+	elseif h > 0 then return string.format("%dh %dm %ds", h, m, s)
+	elseif m > 0 then return string.format("%dm %ds", m, s)
+	else return string.format("%ds", s) end
 end
 
 function Utils.parseTimeInput(input)
-	if type(input) ~= "string" then
-		return 0
-	end
+	if type(input) ~= "string" then return 0 end
+	input = input:lower():gsub("%s+", "")
+	if input == "" or input == "0" then return 0 end
 
-	-- Chuẩn hóa chuỗi nhập
-	input = input:lower():gsub("%s+", "") -- xóa khoảng trắng
-
-	if input == "" or input == "0" then
-		return 0
-	end
-
-	-- Lấy giờ / phút / giây (cho phép thiếu)
 	local h = tonumber(input:match("(%d+)h")) or 0
 	local m = tonumber(input:match("(%d+)m")) or 0
 	local s = tonumber(input:match("(%d+)s")) or 0
 
-	-- Nếu có số nhưng không có hậu tố h/m/s (ví dụ: "30")
 	if h == 0 and m == 0 and s == 0 then
 		local onlynum = tonumber(input:match("(%d+)"))
-		if onlynum then
-			s = onlynum -- mặc định tính là giây
-		else
-			return -1 -- không có số hợp lệ
-		end
+		if onlynum then s = onlynum else return -1 end
 	end
 
 	return h * 3600 + m * 60 + s
 end
+
 function Utils.formatSeconds(sec)
 	sec = math.max(0, math.floor(sec))
 	local h = math.floor(sec / 3600)
 	local m = math.floor((sec % 3600) / 60)
 	local s = sec % 60
-	if h > 0 then
-		return string.format("%dh %dm %ds", h, m, s)
-	elseif m > 0 then
-		return string.format("%dm %ds", m, s)
-	else
-		return string.format("%ds", s)
-	end
+	if h > 0 then return string.format("%dh %dm %ds", h, m, s)
+	elseif m > 0 then return string.format("%dm %ds", m, s)
+	else return string.format("%ds", s) end
 end
--- Global Boss Check --
+
+-- Global Boss Check
 function Utils.isBossSpawnTime()
-	local now = os.date("!*t") -- giờ UTC
+	local now = os.date("!*t")
 	local hour = now.hour
 
 	for _, window in ipairs(GlobalBossData.SpawnUTCWindows) do
 		local startH, endH = table.unpack(window)
 		if startH <= endH then
-			if hour >= startH and hour < endH then
-				return true
-			end
+			if hour >= startH and hour < endH then return true end
 		else
-			-- qua 0h
-			if hour >= startH or hour < endH then
-				return true
-			end
+			if hour >= startH or hour < endH then return true end
 		end
 	end
 	return false
@@ -951,27 +600,22 @@ function RedeemAllCodes()
 	for _, code in ipairs(CodesData) do
 		Net.redeemEvent:FireServer(code)
 		print("[DEBUG] Redeemed code:", code)
-		task.wait(0.5) -- chờ 0.1s giữa các code
+		task.wait(0.5)
 	end
 	print("[DEBUG] Finished redeeming all codes")
 end
+
 function Utils.log(msg)
 	print(("[%s] %s"):format(os.date("%H:%M:%S"), msg))
 end
+
 -- Popup check
 function Utils.hasPopupContaining(PlayerGui, keyword)
-	if not PlayerGui then
-		return false
-	end
-	if not keyword or keyword == "" then
-		return false
-	end
+	if not PlayerGui or not keyword or keyword == "" then return false end
 	local kw = keyword:lower()
 	for _, gui in ipairs(PlayerGui:GetDescendants()) do
 		if gui:IsA("TextLabel") or gui:IsA("TextButton") then
-			local ok, txt = pcall(function()
-				return tostring(gui.Text)
-			end)
+			local ok, txt = pcall(function() return tostring(gui.Text) end)
 			if ok and txt and txt ~= "" and string.find(txt:lower(), kw, 1, true) then
 				return true
 			end
@@ -979,31 +623,20 @@ function Utils.hasPopupContaining(PlayerGui, keyword)
 	end
 	return false
 end
+
 function Utils.isInRankedCombat()
 	return Utils.hasPopupContaining(PlayerGui, "Please wait another ranked")
 end
-function Utils.isInBattlePopupPresent()
-	local ok1, hideBtn = pcall(function()
-		return react["1"]["5"]["5"]["3"]
-	end)
-	local ok2, showBtn = pcall(function()
-		return react.hud.rollRow["2"]["2"]["3"]
-	end)
 
+function Utils.isInBattlePopupPresent()
+	local ok1, hideBtn = pcall(function() return react["1"]["5"]["5"]["3"] end)
+	local ok2, showBtn = pcall(function() return react.hud.rollRow["2"]["2"]["3"] end)
 	return (ok1 and hideBtn) or (ok2 and showBtn)
 end
 
 function Utils.getBattleResult()
-	local ok, result = pcall(function()
-		return react.battleEndScreen["3"]["2"].Text
-	end)
-
-	if ok then
-		print(result)
-		return result
-	else
-		return "none"
-	end
+	local ok, result = pcall(function() return react.battleEndScreen["3"]["2"].Text end)
+	if ok then print(result) return result else return "none" end
 end
 
 -- Forfeit Battle
@@ -1017,48 +650,37 @@ end
 function Utils.getPing()
 	local stats = game:GetService("Stats")
 	local pingStat = stats.Network.ServerStatsItem["Data Ping"]
-	if not pingStat then
-		return 100
-	end -- fallback nếu chưa load
+	if not pingStat then return 100 end
 	return tonumber(pingStat:GetValueString():match("(%d+)")) or 100
 end
 
 function Utils.normalizeCardName(input)
-	if not input or input == "" then
-		return ""
-	end
-	input = input:gsub("^%s+", ""):gsub("%s+$", "") -- bỏ khoảng trắng đầu/cuối
+	if not input or input == "" then return "" end
+	input = input:gsub("^%s+", ""):gsub("%s+$", "")
 
 	local name, rarity = input:match("([^:]+):?(.*)")
+	if not name then return "" end
 
-	if not name then
-		return ""
-	end
+	name = name:lower():gsub("%s+", "_")
+	rarity = rarity:lower():gsub("%s+", "")
 
-	name = name:lower():gsub("%s+", "_") -- bỏ viết hoa + thay space = _
-	rarity = rarity:lower():gsub("%s+", "") -- rarity bỏ khoảng trắng
-
-	-- Nếu người chơi quên dấu :, giả định họ nhập kiểu "Naruto Mythic"
 	if rarity == "" and name:find("_") then
 		local parts = {}
-		for w in string.gmatch(name, "[^_]+") do
-			table.insert(parts, w)
-		end
-		rarity = table.remove(parts) or "" -- lấy phần cuối làm rarity
+		for w in string.gmatch(name, "[^_]+") do table.insert(parts, w) end
+		rarity = table.remove(parts) or ""
 		name = table.concat(parts, "_")
 	end
 
 	return string.format("%s:%s", name, rarity)
 end
+
 function Utils.normalize(text)
-	-- Loại bỏ khoảng trắng đầu và cuối
 	text = text:match("^%s*(.-)%s*$")
-	-- Chuyển thành chữ thường
 	text = text:lower()
-	-- Thay space ở giữa thành "_"
 	text = text:gsub("%s+", "_")
 	return text
 end
+
 
 -------------------------------------------------
 -- Events
@@ -1653,481 +1275,7 @@ function autoUpgradePoint()
 		task.wait(1)
 	end
 end
--------------------------------------------------
--- Quest Controller
--------------------------------------------------
-local function safeGet(fn)
-	local ok, result = pcall(fn)
-	if not ok then
-		warn("[safeGet] ❌ Error:", result)
-	else
-		print("[safeGet] ✅ Success:", result)
-	end
-	return ok and result or nil
-end
 
-local function triggerConnections(signal)
-	if type(getconnections) ~= "function" then
-		warn("[triggerConnections] ⚠️ getconnections not available.")
-		return
-	end
-	local cons = getconnections(signal or {})
-	print(string.format("[triggerConnections] Found %d connections", #cons))
-	for i, c in ipairs(cons) do
-		local ok, err = pcall(c.Function)
-		if not ok then
-			warn(string.format("[triggerConnections] ❌ Error triggering connection #%d: %s", i, err))
-		else
-			print(string.format("[triggerConnections] ✅ Triggered connection #%d", i))
-		end
-	end
-end
-
-local function safeClick(button)
-	if not button then
-		warn("[safeClick] ❌ No button provided")
-		return false
-	end
-	print("[safeClick] 🔘 Clicking:", button.Name)
-	if type(getconnections) == "function" then
-		triggerConnections(button.Activated)
-		triggerConnections(button.MouseButton1Click)
-	else
-		local ok, err = pcall(function()
-			button:Activate()
-		end)
-		if not ok then
-			warn("[safeClick] ❌ Error activating button:", err)
-		end
-	end
-	return true
-end
-local function getFullPath(obj)
-	if not obj then
-		return "nil"
-	end
-	local parts = {}
-	local current = obj
-	while current do
-		table.insert(parts, 1, current.Name)
-		current = current.Parent
-	end
-	return table.concat(parts, ".")
-end
-local function getQuestRoot()
-	local candidates = {}
-	for i, child in ipairs(react:GetChildren()) do
-		if child.Name == "1" then
-			table.insert(candidates, child)
-		end
-	end
-
-	if #candidates == 0 then
-		warn("[getQuestRoot] ❌ No child named '1' found in react.")
-		return nil
-	end
-	for _, cand in ipairs(candidates) do
-		local subs = cand:GetChildren()
-		if #subs > 0 then
-			local sub = subs[1]
-			local descCount = #sub:GetDescendants()
-			if descCount > 0 then
-				return sub -- ✅ trả về **biến con của "1"**
-			end
-		else
-			print(string.format("[getQuestRoot] ⚠️ '%s' has no subchildren.", getFullPath(cand)))
-		end
-	end
-
-	warn("[getQuestRoot] ❌ No valid quest root found.")
-	return nil
-end
--- Mở tab "Quests"
-local function getQuestFolder()
-	print("[getQuestFolder] 🔍 Attempting to get quest folder...")
-
-	local function tryGet()
-		return safeGet(function()
-			local quests = getQuestRoot()
-			if not quests then
-				warn("[tryGet] ⚠️ react[1][1] not found.")
-				return nil
-			end
-			local children = quests:GetChildren()
-			print("[tryGet] Found children:", #children)
-			if #children < 4 then
-				warn("[tryGet] ⚠️ Not enough children.")
-				return nil
-			end
-			return children[4]["3"]["3"]["1"]
-		end)
-	end
-
-	local folder = tryGet()
-	if folder then
-		print("[getQuestFolder] ✅ Folder found immediately.")
-		return folder
-	end
-
-	-- mở tab Quests
-	pcall(function()
-		print("[getQuestFolder] 🧭 Trying to open Quests tab...")
-		local nav = react:FindFirstChild("hud")
-		local navFrame = nav and nav:FindFirstChild("navigation")
-		local btn = navFrame and (navFrame:FindFirstChild("Quests") or nav:FindFirstChild("Quests"))
-		if btn and btn:FindFirstChild("Quests") then
-			btn = btn.Quests
-		end
-		if not btn then
-			warn("[getQuestFolder] ❌ Could not find Quests button.")
-		else
-			safeClick(btn)
-		end
-	end)
-
-	-- chờ UI load
-	for i = 1, 6 do
-		task.wait(0.4)
-		print(string.format("[getQuestFolder] ⏳ Waiting... (%d/6)", i))
-		folder = tryGet()
-		if folder then
-			print("✅ [Quest] Folder loaded on attempt:", i)
-			break
-		end
-	end
-
-	if not folder then
-		warn("[getQuestFolder] ❌ Folder not found after waiting.")
-	end
-
-	return folder
-end
-
--- Lấy trạng thái của một quest theo tên
-local function getQuestStatusByName(keyword)
-	print("[getQuestStatusByName] 🔍 Checking quest:", keyword)
-	local folder = getQuestFolder()
-	if not folder then
-		warn("[getQuestStatusByName] ❌ No folder found.")
-		return nil
-	end
-
-	for i = 1, 6 do
-		local q = folder:FindFirstChild("quest_" .. i)
-		if q then
-			print(string.format("[getQuestStatusByName] Inspecting quest_%d", i))
-			local ok, questText = pcall(function()
-				return q:GetChildren()[8].task_1:GetChildren()[6].Text
-			end)
-			if ok and questText then
-				print("[getQuestStatusByName] 📝 Found quest text:", questText)
-				if string.find(string.lower(questText), string.lower(keyword), 1, true) then
-					print("[getQuestStatusByName] 🎯 Match found:", questText)
-					local ok2, status = pcall(function()
-						return q["6"]["5"]["1"]["4"].Text
-					end)
-					if ok2 then
-						print("[getQuestStatusByName] ✅ Status:", status)
-						return status, q
-					else
-						warn("[getQuestStatusByName] ❌ Error reading status.")
-					end
-				end
-			else
-				warn(string.format("[getQuestStatusByName] ⚠️ Failed to read quest_%d text", i))
-			end
-		end
-	end
-
-	print("[getQuestStatusByName] ❌ No matching quest found for:", keyword)
-	return nil
-end
-
--- Chờ đến khi quest có tên keyword trở thành "Claimed"
-local function waitQuestClaimed(keyword, myId)
-	print("👀 [Quest] Waiting for quest:", keyword, "→ Claimed")
-	while State.autoEnabledQuest and myId == State.autoRunIdQuest do
-		local status = getQuestStatusByName(keyword)
-		print("[waitQuestClaimed] ⏱️ Current status:", status or "nil")
-		if status == "Claimed" then
-			print("✅ [Quest] Done:", keyword)
-			return true
-		end
-		task.wait(2.0)
-	end
-	print("[waitQuestClaimed] ⛔ Stopped waiting, State changed or ID mismatch.")
-	return false
-end
-
---========================================================--
--- Các QUEST – mỗi quest là 1 HÀM RIÊNG (setup → add → fight)
--- KHÔNG kiểm tra State ở các bước setup/remove/add như bạn yêu cầu
---========================================================--
-
--- 1) Stun cards
-local function runQuest_Stun()
-	print("🧩 [Quest] Stun cards → setup")
-	Net.setPartySlot:FireServer(State.questTeam)
-	task.wait(0.5)
-	Net.showBattle:FireServer("show_battles", false)
-	-- remove support x4
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "support", 1)
-		task.wait(0.3)
-	end
-	-- remove attack x4
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "attack", 1)
-		task.wait(0.3)
-	end
-
-	-- add cards
-	for i = 1, 4 do
-		Net.addCardToParty:FireServer(State.questTeam, "crimson_eyes:basic")
-		task.wait(0.3)
-	end
-	for i = 1, 4 do
-		Net.addCardToParty:FireServer(State.questTeam, "sealed_cube:basic")
-		task.wait(0.3)
-	end
-
-	print("⚔️ [Quest] Stun → fightInfinite('potion')")
-	Net.fightInfinite:FireServer("potion")
-end
-
--- 2) Freeze cards
-local function runQuest_Freeze()
-	print("🧩 [Quest] Freeze cards → setup")
-	Net.setPartySlot:FireServer(State.questTeam)
-	task.wait(0.5)
-	Net.showBattle:FireServer("show_battles", false)
-
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "support", 1)
-		task.wait(0.3)
-	end
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "attack", 1)
-		task.wait(0.3)
-	end
-
-	Net.addCardToParty:FireServer(State.questTeam, State.freezeCard)
-	task.wait(0.3)
-	Net.addCardToParty:FireServer(State.questTeam, "red_pilot:basic")
-	task.wait(0.3)
-
-	print("⚔️ [Quest] Freeze → fightInfinite('potion')")
-	Net.fightInfinite:FireServer("ninja_village")
-end
-
--- 3) Deal burn damage
-local function runQuest_Burn()
-	print("🧩 [Quest] Deal burn damage → setup")
-	Net.setPartySlot:FireServer(State.questTeam)
-	task.wait(0.5)
-	Net.showBattle:FireServer("show_battles", false)
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "support", 1)
-		task.wait(0.3)
-	end
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "attack", 1)
-		task.wait(0.3)
-	end
-
-	Net.addCardToParty:FireServer(State.questTeam, "mother_of_creation:secret")
-	task.wait(0.3)
-	Net.addCardToParty:FireServer(State.questTeam, "mother_of_creation:rainbow")
-	task.wait(0.3)
-	Net.addCardToParty:FireServer(State.questTeam, "mother_of_creation:gold")
-	task.wait(0.3)
-	Net.addCardToParty:FireServer(State.questTeam, "mother_of_creation:basic")
-	task.wait(0.3)
-
-	print("⚔️ [Quest] Burn → fightInfinite('potion')")
-	Net.fightInfinite:FireServer("potion")
-end
-
--- 4) Skill disable cards (copy y chang burn)
-local function runQuest_Disable()
-	print("🧩 [Quest] Skill disable cards → setup")
-	Net.setPartySlot:FireServer(State.questTeam)
-	task.wait(0.5)
-	Net.showBattle:FireServer("show_battles", false)
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "support", 1)
-		task.wait(0.3)
-	end
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "attack", 1)
-		task.wait(0.3)
-	end
-
-	Net.addCardToParty:FireServer(State.questTeam, "mother_of_creation:secret")
-	task.wait(0.3)
-	Net.addCardToParty:FireServer(State.questTeam, "mother_of_creation:rainbow")
-	task.wait(0.3)
-	Net.addCardToParty:FireServer(State.questTeam, "mother_of_creation:gold")
-	task.wait(0.3)
-	Net.addCardToParty:FireServer(State.questTeam, "mother_of_creation:basic")
-	task.wait(0.3)
-
-	print("⚔️ [Quest] Disable → fightInfinite('potion')")
-	Net.fightInfinite:FireServer("potion")
-end
-
--- 5) Heal damage
-local function runQuest_Heal()
-	print("🧩 [Quest] Heal damage → setup")
-	Net.setPartySlot:FireServer(State.questTeam)
-	task.wait(0.5)
-	Net.showBattle:FireServer("show_battles", false)
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "support", 1)
-		task.wait(0.3)
-	end
-	for i = 1, 4 do
-		Net.removePartyPosition:FireServer(State.questTeam, "attack", 1)
-		task.wait(0.3)
-	end
-	Net.addCardToParty:FireServer(State.questTeam, "healing_fist:basic")
-	task.wait(0.3)
-
-	Net.addCardToParty:FireServer(State.questTeam, State.healCard)
-	print("⚔️ [Quest] Heal → fightInfinite")
-	Net.fightInfinite:FireServer("ninja_village")
-end
-
-local function readQuestList()
-	local folder = getQuestFolder()
-	if not folder then
-		return {}
-	end
-	local out = {}
-
-	for i = 1, 6 do
-		local q = folder:FindFirstChild("quest_" .. i)
-		if q then
-			local ok, questText = pcall(function()
-				return q:GetChildren()[8].task_1:GetChildren()[6].Text
-			end)
-			if ok and type(questText) == "string" and #questText > 0 then
-				local lower = string.lower(questText)
-
-				local keyword = nil
-				if string.find(lower, "stun cards", 1, true) then
-					keyword = "Stun cards"
-				elseif string.find(lower, "freeze cards", 1, true) then
-					keyword = "Freeze cards"
-				elseif string.find(lower, "deal burn damage", 1, true) then
-					keyword = "Deal burn damage"
-				elseif string.find(lower, "skill disable cards", 1, true) then
-					keyword = "Skill disable cards"
-				elseif string.find(lower, "heal damage", 1, true) then
-					keyword = "Heal damage"
-				end
-
-				table.insert(out, { index = i, name = questText, keyword = keyword })
-			end
-		end
-	end
-	return out
-end
-
--- gọi đúng hàm runQuest_* ứng với keyword
-local function runQuestByKeyword(keyword)
-	if keyword == "Stun cards" then
-		runQuest_Stun()
-	elseif keyword == "Freeze cards" then
-		runQuest_Freeze()
-	elseif keyword == "Deal burn damage" then
-		runQuest_Burn()
-	elseif keyword == "Skill disable cards" then
-		runQuest_Disable()
-	elseif keyword == "Heal damage" then
-		runQuest_Heal()
-	else
-		-- không thuộc nhóm cần làm → bỏ qua
-	end
-end
-
-local function startAutoQuest()
-	State.autoRunIdQuest = State.autoRunIdQuest + 1
-	local myId = State.autoRunIdQuest
-
-	task.spawn(function()
-		print("🚀 [Quest] Auto started")
-
-		while State.autoEnabledQuest and myId == State.autoRunIdQuest do
-			local list = readQuestList()
-			if not (list and #list > 0) then
-				print("✅ [Quest] No quests found → stopping auto quest.")
-				State.autoEnabledQuest = false
-				break
-			end
-
-			local foundAnyToDo = false
-
-			for _, q in ipairs(list) do
-				if not (State.autoEnabledQuest and myId == State.autoRunIdQuest) then
-					break
-				end
-
-				if q.keyword then
-					foundAnyToDo = true
-
-					-- bật auto repeat infinite (giữ như cũ)
-					local args = { "auto_repeat_infinite", true }
-					ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-						:WaitForChild("setSetting")
-						:FireServer(unpack(args))
-
-					print(string.format("🧩 [Quest] Found slot #%d: %s → run", q.index, q.keyword))
-
-					runQuestByKeyword(q.keyword)
-
-					if not waitQuestClaimed(q.keyword, myId) then
-						break
-					end
-
-					pcall(function()
-						Net.forfeitBattle:FireServer()
-					end)
-					task.wait(0.5)
-
-					-- cập nhật lại list để tránh lặp quest cũ
-					list = readQuestList()
-				end
-			end
-
-			if not foundAnyToDo then
-				print("✅ [Quest] No actionable quests found → stopping auto quest.")
-				State.autoEnabledQuest = false
-				local args = { "auto_repeat_infinite", false }
-				ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-					:WaitForChild("setSetting")
-					:FireServer(unpack(args))
-				break
-			end
-
-			-- ngắn thôi, giữ behavior cũ
-			for i = 1, 10 do
-				if not (State.autoEnabledQuest and myId == State.autoRunIdQuest) then
-					break
-				end
-				task.wait(0.1)
-			end
-		end
-		local args = { "auto_repeat_infinite", false }
-		ReplicatedStorage:WaitForChild("shared/network@eventDefinitions")
-			:WaitForChild("setSetting")
-			:FireServer(unpack(args))
-		print("🛑 [Quest] Auto stopped")
-	end)
-end
-local function stopAutoQuest()
-	State.autoRunIdQuest = State.autoRunIdQuest + 1 -- ngắt toàn bộ vòng chờ
-end
 -------------------------------------------------
 -- Rank Shop
 -------------------------------------------------
@@ -4867,51 +4015,6 @@ Quest:Toggle({
 	end,
 })
 
-Quest:Dropdown({
-	Title = "Select Quest Team",
-	Values = { "slot_8", "slot_7", "slot_6", "slot_5" },
-	Value = State.questTeam or "slot_8",
-	Flag = "QuestTeamSelect",
-	Callback = function(option)
-		State.questTeam = option
-		print("[Quest] Team set to:", option)
-	end,
-})
-Quest:Input({
-	Title = "Select Freeze Card",
-	Desc = "choose your best freeze card",
-	Value = State.freezeCard,
-	Type = "Input",
-	Placeholder = "ex: 'soul_queen:gold'",
-	Flag = "freezecard",
-	Callback = function(input)
-		State.freezeCard = input
-	end,
-})
-Quest:Input({
-	Title = "Select Heal Card",
-	Desc = "select your best card for heal quest(highest hp card)",
-	Value = State.healCard,
-	Type = "Input",
-	Placeholder = "ex: 'soul_queen:gold'",
-	Flag = "healcard",
-	Callback = function(input)
-		State.healCard = input
-	end,
-})
-Quest:Toggle({
-	Title = "Auto Quest",
-	Value = State.autoEnabledQuest or false,
-	Flag = "AutoQuestToggle",
-	Callback = function(v)
-		State.autoEnabledQuest = v
-		if v then
-			startAutoQuest()
-		else
-			stopAutoQuest()
-		end
-	end,
-})
 
 local RaidTab = Pack:Tab({
 	Title = "Raid",
