@@ -1089,11 +1089,8 @@ workspace.ChildRemoved:Connect(function(child)
 end)
 
 workspace.ChildAdded:Connect(function(child)
-    if not child.Name:match("^Dungeon Lobby %d+$") then return end
-		task.wait()
-		if child.Parent == workspace then
+    if child.Name:match("^Dungeon Lobby %d+$") then
         CachedDungeonLobby = child
-		
     end
 end)
 
@@ -1200,6 +1197,8 @@ function AutoClearDungeon()
                 Utils.teleport(portal:GetPivot())
             end
 
+            -- 3. reset lobby cache để bắt floor mới
+            CachedDungeonLobby = nil
             task.wait(0.3)
         end
     end)
