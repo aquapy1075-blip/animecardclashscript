@@ -1093,14 +1093,16 @@ function AutoClearDungeon()
 
 	task.spawn(function()
 		while State.autoClearDungeon and runId == State.autoRunIdDungeon do
-			Utils.teleport()
 			local dungeonfolder = FindDungeonLobby()
 			if dungeonfolder then
 				for _, mob in ipairs(dungeonfolder:GetChildren()) do
 					if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
 						break
 					end
-                   
+                      if string.match(mob.Name, "^completion_portal")  then
+						local portalCFrame = mob:GetPivot()
+						Utils.teleport(portalCFrame)
+					end
 					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
 							local serverId = mob:GetAttribute("serverEntityId")
 							if serverId then
