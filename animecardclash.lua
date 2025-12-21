@@ -378,7 +378,7 @@ local CursedZoneData = {
 	TeamOptions = { "slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8" },
 }
 local RaidData = {
-	["Monser 9"] = { id = 313, modes = { "easy", "medium", "hard", "extreme" }, teleportName = "raid_monster_9" },
+	["Monster 9"] = { id = 313, modes = { "easy", "medium", "hard", "extreme" }, teleportName = "raid_monster_9" },
 	["Cifer"] = { id = 382, modes = { "easy", "medium", "hard", "extreme" }, teleportName = "raid_cifer" },
 	["Creator of Flames"] = {
 		id = 404,
@@ -4684,8 +4684,8 @@ local raidSection = RaidTab:Section({
 })
 raidSection:Dropdown({
 	Title = "🎯 Select Raid Boss",
-	Values = { "Cifer", "Creator of Flames", "Sword Deity", "Shadow Dragon", "Eternal Dragon" },
-	Value = State.selectedRaidBoss or "Cifer",
+	Values = { "Monster 9", "Cifer", "Creator of Flames", "Sword Deity", "Shadow Dragon", "Eternal Dragon" },
+	Value = State.selectedRaidBoss or "Monster 9",
 	Flag = "SelectRaidBossDropdown",
 	Callback = function(option)
 		local selectedName = tostring(option)
