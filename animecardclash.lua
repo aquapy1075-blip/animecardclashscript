@@ -29,6 +29,9 @@ local UIS = game:GetService("UserInputService")
 
 -- Net
 local Net = {
+	startdungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonStart"),
+	fightenemydungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonFightEnemy"),
+	votedungoen = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonVoteModifier"),
 	buyraiditem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("craft"),
 	buyrankitem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("buyRankedShopItem"),
 	fightStoryBoss = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("fightStoryBoss"),
@@ -753,6 +756,12 @@ State.enableRejoin = State.enableRejoin or false
 State.boostfpsv1 = State.boostfpsv1 or false
 State.boostfpsv2 = State.boostfpsv2 or false
 
+------------------ Events -------------------
+State.autoStartDungeon = State.autoStartDungeon or false
+State.autoClearDungeon = State.autoClearDungeon or false
+State.autoVoteDungeon = State.autoVoteDungeon or false
+State.autoRunIdDungeon = State.autoRunIdDungeon or 0
+
 -------------------------------------------------
 -- Utils
 -------------------------------------------------
@@ -1041,6 +1050,98 @@ function Utils.normalize(text)
 	text = text:gsub("%s+", "_")
 	return text
 end
+
+-------------------------------------------------
+-- Events
+-------------------------------------------------
+-- Dungeon 
+
+local function IsDungeonLobbyPresent()
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if string.match(obj.Name, "^Dungeon Lobby %d+$") then
+            return true
+        end
+    end
+    return false
+end
+
+local function AutoStartDungeonLoop()
+    task.spawn(function()
+        while State.autoStartDungeon do
+            if not IsDungeonLobbyPresent() then
+                local args = { "dungeon_christmas" }
+                Net.startdungeon:FireServer(unpack(args))
+                Utils.notify("Auto Dungeon", "Started a new dungeon!", 2)
+            end
+            task.wait(0.25)
+        end
+    end)
+end
+
+local function FindDungeonLobby()
+    for _, obj in ipairs(workspace:GetChildren()) do
+        if string.match(obj.Name, "^Dungeon Lobby %d+$") then
+            return obj
+        end
+    end
+    return nil
+end
+
+function AutoClearDungeon()
+	State.autoRunIdDungeon = State.autoRunIdDungeon + 1
+	local runId = State.autoRunIdDungeon
+
+	task.spawn(function()
+		while State.autoClearDungeon and runId == State.autoRunIdDungeon do
+			Utils.teleport()
+			local dungeonfolder = FindDungeonLobby()
+			if dungeonfolder then
+				for _, mob in ipairs(dungeonfolder:GetChildren()) do
+					if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
+						break
+					end
+                    if string.match(mob.Name, "^completion_portal")  then
+						local portalCFrame = mob.WorldPivot
+						Utils.teleport(portalCFrame)
+					end
+					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
+							local serverId = mob:GetAttribute("serverEntityId")
+							if serverId then
+								pcall(function()
+									Net.fightenemydungeon:FireServer(serverId)
+								end)
+								
+								-- Đợi popup combat xuất hiện
+								local waited = 0
+								local ping = Utils.getPing()
+								local timeout = 5 + math.clamp(ping / 200, 0, 10)
+								while not Utils.isInBattlePopupPresent() and waited < timeout do
+									if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
+										break
+									end
+									task.wait(0.5)
+									waited = waited + 0.5
+								end
+
+								while Utils.isInBattlePopupPresent() do
+									if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
+										break
+									end
+									task.wait(0.5)
+								end
+
+								task.wait(0.5)
+							end
+						
+					end
+				end
+			end
+			task.wait(1)
+		end
+	end)
+end
+
+
 
 -------------------------------------------------
 -- Item
@@ -3733,7 +3834,39 @@ local Theme = Dashboard:Dropdown({
 		WindUI:SetTheme(option)
 	end,
 })
-Window:Divider()
+
+local Event = Window:Section({
+	Title = "Event",
+	Icon = "lucide:calendar", -- optional
+	Opened = false,
+})
+
+local Dungeon = Event:Tab({
+	Title = "Dungeon",
+	Icon = "lucide:door-open", -- optional
+})
+Dungeon:Toggle({
+	Title = "Auto Start Dungeon",
+	Value = State.autoStartDungeon or false,
+	Flag = "AutoStartDungeon",
+	Callback = function(v)
+		State.autoStartDungeon = v
+		if v then
+			AutoStartDungeonLoop()
+		end
+	end,
+})
+Dungeon:Toggle({
+	Title = "Auto Clear Dungeon",
+	Value = State.autoClearDungeon or false,
+	Flag = "AutoClearDungeon",
+	Callback = function(v)
+		State.autoClearDungeon = v
+		if v then
+			AutoClearDungeon()
+		end
+	end,
+})
 local Pack = Window:Section({
 	Title = "Farm",
 	Icon = "lucide:slack",
