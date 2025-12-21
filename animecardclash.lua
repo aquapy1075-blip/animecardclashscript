@@ -759,10 +759,8 @@ State.boostfpsv2 = State.boostfpsv2 or false
 ------------------ Events -------------------
 State.autoStartDungeon = State.autoStartDungeon or false
 State.autoClearDungeon = State.autoClearDungeon or false
+State.autoVoteDungeon = State.autoVoteDungeon or false
 State.autoRunIdDungeon = State.autoRunIdDungeon or 0
-State.autoLeaveDungeon = State.autoLeaveDungeon or false
-State.floorLeaveDungeon = State.floorLeaveDungeon or 40
-
 
 -------------------------------------------------
 -- Utils
@@ -1080,124 +1078,69 @@ local function AutoStartDungeonLoop()
     end)
 end
 
-local CachedDungeonLobby = nil
-
-workspace.ChildRemoved:Connect(function(child)
-    if child == CachedDungeonLobby then
-        CachedDungeonLobby = nil
-    end
-end)
-
-workspace.ChildAdded:Connect(function(child)
-    if not child.Name:match("^Dungeon Lobby %d+$") then return end
-		task.wait()
-		if child.Parent == workspace then
-        CachedDungeonLobby = child
-    end
-end)
-
-
 local function FindDungeonLobby()
-    if CachedDungeonLobby and CachedDungeonLobby.Parent then
-        return CachedDungeonLobby
-    end
-
     for _, obj in ipairs(workspace:GetChildren()) do
-        if obj.Name:match("^Dungeon Lobby %d+$") then
-            CachedDungeonLobby = obj
+        if string.match(obj.Name, "^Dungeon Lobby %d+$") then
             return obj
         end
     end
-
     return nil
 end
 
-local function WaitForPortalFast(timeout)
-    local dungeon = FindDungeonLobby()
-    if not dungeon then return nil end
-
-    -- check ngay lập tức
-    for _, obj in ipairs(dungeon:GetChildren()) do
-        if obj.Name:match("^completion_portal") then
-            return obj
-        end
-    end
-
-    local found = nil
-    local conn
-
-    conn = dungeon.ChildAdded:Connect(function(child)
-        if child.Name:match("^completion_portal") then
-            found = child
-        end
-    end)
-
-    local start = os.clock()
-    while not found and os.clock() - start < timeout do
-        task.wait(0.05)
-    end
-
-    if conn then conn:Disconnect() end
-    return found
-end
-
-
-local function ClearCurrentFloor(runId)
-    local dungeonfolder = FindDungeonLobby()
-    if not dungeonfolder then return end
-
-    for _, mob in ipairs(dungeonfolder:GetChildren()) do
-        if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
-            return
-        end
-
-        if mob.Name:match("^floor") or mob.Name:match("^completion_portal") then
-            continue
-        end
-
-        local serverId = mob:GetAttribute("serverEntityId")
-        if serverId then
-            Net.fightenemydungeon:FireServer(serverId)
-
-            -- giữ nguyên combat check của bạn
-            local waited = 0
-            local timeout = 6
-            while not Utils.isInBattlePopupPresent() and waited < timeout do
-                task.wait(0.2)
-                waited += 0.2
-            end
-
-            while Utils.isInBattlePopupPresent() do
-                task.wait(0.2)
-            end
-        end
-    end
-end
-
 function AutoClearDungeon()
-    State.autoRunIdDungeon += 1
-    local runId = State.autoRunIdDungeon
+	State.autoRunIdDungeon = State.autoRunIdDungeon + 1
+	local runId = State.autoRunIdDungeon
 
-    task.spawn(function()
-        while State.autoClearDungeon and runId == State.autoRunIdDungeon do
+	task.spawn(function()
+		while State.autoClearDungeon and runId == State.autoRunIdDungeon do
+			Utils.teleport()
+			local dungeonfolder = FindDungeonLobby()
+			if dungeonfolder then
+				for _, mob in ipairs(dungeonfolder:GetChildren()) do
+					if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
+						break
+					end
+                    if string.match(mob.Name, "^completion_portal")  then
+						local portalCFrame = mob.WorldPivot
+						Utils.teleport(portalCFrame)
+					end
+					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
+							local serverId = mob:GetAttribute("serverEntityId")
+							if serverId then
+								pcall(function()
+									Net.fightenemydungeon:FireServer(serverId)
+								end)
+								
+								-- Đợi popup combat xuất hiện
+								local waited = 0
+								local ping = Utils.getPing()
+								local timeout = 5 + math.clamp(ping / 200, 0, 10)
+								while not Utils.isInBattlePopupPresent() and waited < timeout do
+									if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
+										break
+									end
+									task.wait(0.5)
+									waited = waited + 0.5
+								end
 
-            -- 1. clear hết mob hiện tại
-            ClearCurrentFloor(runId)
+								while Utils.isInBattlePopupPresent() do
+									if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
+										break
+									end
+									task.wait(0.5)
+								end
 
-            if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
-                break
-            end
-
-            -- 2. đợi portal (gần như instant)
-            local portal = WaitForPortalFast(10)
-            if portal then
-                Utils.teleport(portal:GetPivot())
-            end
-
-            task.wait(0.3)
-        end
-    end)
+								task.wait(0.5)
+							end
+						
+					end
+				end
+			end
+			task.wait(1)
+		end
+	end)
 end
+
 
 
 -------------------------------------------------
