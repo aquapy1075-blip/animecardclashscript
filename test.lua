@@ -1192,7 +1192,8 @@ function AutoClearDungeon()
             -- 2. đợi portal (gần như instant)
             local portal = WaitForPortalFast(10)
             if portal then
-                Utils.teleport(portal:GetPivot())
+                local position = portal:GetPivot()
+				Utils.teleport(position)
             end
 
             task.wait(0.3)
