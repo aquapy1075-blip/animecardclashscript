@@ -858,7 +858,7 @@ function AutoUpgradeDungeon()
 	end)
 end
 
-function AutoBuyStockItem()
+function AutoBuyStockItems()
 	task.spawn(function()
 	        while State.autoStockItem do 
 				   local items = State.selectedStockItem
@@ -3127,6 +3127,17 @@ Shop:Dropdown({
 	Flag = "ShopStockItems",
 	Callback = function(option)
 		State.selectedStockItem = option
+	end,
+})
+Shop:Toggle({
+	Title = "Auto Buy Shop Stock Items",
+	Value = State.autoStockItem or false,
+	Flag = "AutoBuyStockItems",
+	Callback = function(v)
+		State.autoStockItem = v
+		if v then
+			AutoBuyStockItems()
+		end
 	end,
 })
 local Upgrade = Event:Tab({
