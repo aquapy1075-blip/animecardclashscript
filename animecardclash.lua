@@ -751,7 +751,7 @@ end
 
 local function isDungeonFailed()
 	local success, text = pcall(function() return react.hud.dungeon["2"]["3"] end)
-	if success and text and text:find("Dungeon failed") then
+	if success and text.Text == "Dungeon failed" then
 		return true
 	end
 	return false
@@ -772,7 +772,11 @@ function AutoClearDungeon()
 					 local args = { State.teamDungeon }
 					 Net.setPartySlot:FireServer(unpack(args))
 				 end
-				 if (floor and floor >= State.leaveDungeonFloor) or isDungeonFailed() then
+				 if floor and floor >= State.leaveDungeonFloor then
+					 Net.teleportmap:FireServer("lobby")
+				 end
+				 if isDungeonFailed() then
+					 Utils.notify("Auto Dungeon", "Dungeon failed detected, teleporting to lobby...", 2)
 					 Net.teleportmap:FireServer("lobby")
 				 end
 				 task.wait(2.5)
