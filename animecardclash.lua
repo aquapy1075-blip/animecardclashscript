@@ -222,10 +222,10 @@ local CursedZoneData = {
 local RaidData = {
 	["Monster 9"] = {id = 314, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_monster_9"},
 	["Cifer"] = {id = 392, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_cifer"},
-	["Creator of Flames"] = {id = 405, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_creator_of_flames"},
-	["Sword Deity"] = {id = 314, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_sword_deity"},
-	["Shadow Dragon"] = {id = 311, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_shadow_dragon"},
-	["Eternal Dragon"] = {id = 394, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_eternal_dragon"},
+	["Creator of Flames"] = {id = 415, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_creator_of_flames"},
+	["Sword Deity"] = {id = 311, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_sword_deity"},
+	["Shadow Dragon"] = {id = 308, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_shadow_dragon"},
+	["Eternal Dragon"] = {id = 404, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_eternal_dragon"},
 }
 
 local RaidItem = {
