@@ -801,10 +801,10 @@ function AutoClearDungeon()
 					if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
 						break
 					end
-					--if string.match(mob.Name, "^completion_portal") then
-					---	local portalCFrame = mob.WorldPivot
-					---	Utils.teleport(portalCFrame)
-					---end
+					if string.match(mob.Name, "^completion_portal") then
+						local portalCFrame = mob.WorldPivot
+						Utils.teleport(portalCFrame)
+					end
 					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
 							local serverId = mob:GetAttribute("serverEntityId")
 							if serverId then
