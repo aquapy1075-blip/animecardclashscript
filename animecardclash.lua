@@ -773,6 +773,10 @@ function AutoClearDungeon()
 	task.spawn(function()
 		while State.autoClearDungeon and runId == State.autoRunIdDungeon do
 			local dungeonfolder = FindDungeonLobby()
+			  if not dungeonfolder then 
+                task.wait(0.3)  -- Nhanh detect lobby mới
+                continue 
+            end
 			if dungeonfolder then
 				local detectportal = dungeonfolder.ChildAdded:Connect(function(child)
 				  if not child.Name:match("^completion_portal") then return end
@@ -784,11 +788,10 @@ function AutoClearDungeon()
 					if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
 						break
 					end
-					if string.match(mob.Name, "^completion_portal") then
-						task.wait(1.5)
-						local portalCFrame = mob.WorldPivot
-						Utils.teleport(portalCFrame)
-					end
+					--if string.match(mob.Name, "^completion_portal") then
+					---	local portalCFrame = mob.WorldPivot
+					---	Utils.teleport(portalCFrame)
+					---end
 					if not string.match(mob.Name, "^floor") and not string.match(mob.Name, "^completion_portal") then
 							local serverId = mob:GetAttribute("serverEntityId")
 							if serverId then
