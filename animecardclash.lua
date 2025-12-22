@@ -751,7 +751,7 @@ end
 
 local function isDungeonFailed()
 	local success, text = pcall(function() return react.hud.dungeon["2"]["3"] end)
-	if success and text and text:find("Dungeon Failed") then
+	if success and text and text:find("Dungeon failed") then
 		return true
 	end
 	return false
