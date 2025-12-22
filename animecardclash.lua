@@ -63,6 +63,8 @@ local Net = {
 	refreshEvent = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("refreshRanked"),
 	showBattle = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("setSetting"),
 	useXpBook = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("useXpBook"),
+	buyDungeonUpgrade = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("buyDungeonUpgrade"),
+	buyStockItem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("buyChristmasStockShopItem")
 }
 
 -------------------------------------------------
@@ -256,6 +258,25 @@ local RankItem = {
 	["item:mythical_book"] = {display_name = "Mythical Book", amount = 100},
 }
 
+local StockItem = {
+	"item:small_green_present",
+	"item:small_red_present",
+	"item:small_blue_present",
+	"item:medium_green_present",
+	"item:medium_red_present",
+	"item:medium_blue_present",
+	"item:large_green_present",
+	"item:large_red_present",
+	"item:large_blue_present",
+	"item:x-large_green_present",
+	"item:x-large_red_present",
+	"item:x-large_blue_present",
+	"item:rose_oni_present",
+	"item:azure_oni_present",
+	"item:frozen_princess_present",
+	"item:the_returner_present",
+	"item:christmas_skin_present"
+}
 local MoonCycleData = {
 	{Name = "full_moon", DisplayName = "Full Moon"}, {Name = "snow_moon", DisplayName = "Snow Moon"},
 	{Name = "harvest_moon", DisplayName = "Harvest Moon"}, {Name = "blood_moon", DisplayName = "Blood Moon"},
@@ -454,7 +475,10 @@ State.swapTeamDungeon = State.swapTeamDungeon or "slot_1"
 State.swapFloorDungeon = State.swapFloorDungeon or 100
 State.autoSwapTeamDungeon = State.autoSwapTeamDungeon or false
 State.autoDepositOrnament = State.autoDepositOrnament or false
-
+State.autoUpgradeDungeon = State.autoUpgradeDungeon or false
+State.selectedDungeonStat = State.selectedDungeonStat or {}
+State.selectedStockItem = State.selectedStockItem or {}
+State.autoStockItem = State.autoStockItem or false
 
 -------------------------------------------------
 -- Utils
@@ -803,7 +827,7 @@ end
 function AutoDepositOrnament()
     task.spawn(function()
 	        while State.autoDepositOrnament do 
-                   for _, ornament in ipairs({"red","blue","green","yellow","pink"}) do
+                   for _, ornament in ipairs({"red","blue","green","yellow","purple"}) do
 	                   local args = { ornament }
 					   for i = 1,10 do
 	                        Net.depositOrnament:FireServer(unpack(args))
@@ -811,7 +835,54 @@ function AutoDepositOrnament()
 					   end
 	                   task.wait(0.1)
 				   end
+				   ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("collectSnowflakes"):FireServer()
+
                    task.wait(300)
+			end
+	
+	end)
+end
+
+function AutoUpgradeDungeon()
+	task.spawn(function()
+	        while State.autoUpgradeDungeon do 
+				   local statList = State.selectedDungeonStat
+				   for _, stat in ipairs(statList) do
+	                   local args = { stat, "snowflake"}
+					   Net.buyDungeonUpgrade:FireServer(unpack(args))
+	                   task.wait(0.1)
+				   end
+				   task.wait(5)
+			end
+	
+	end)
+end
+
+function AutoBuyStockItem()
+	task.spawn(function()
+	        while State.autoStockItem do 
+				   local items = State.selectedStockItem
+				   for _, item in ipairs(items) do
+					   local tier = "tier_1"
+				       if item:find("medium") then
+						   tier = "tier_2"
+					   elseif item:find("large") then
+						   tier = "tier_3"
+					   elseif item:find("x-large") then
+						   tier = "tier_4"
+					   elseif item:find("oni") or item:find("princess") or item:find("returner") or item:find("azure") then
+						   tier = "tier_5"
+					   else 
+						   tier = "tier_6"
+                       end
+	                   local args = { tier, item }
+					   for i = 1,5 do 
+						 Net.buyStockItem:FireServer(unpack(args))
+						 task.wait(0.05)
+					   end
+	                   task.wait(0.1)
+				   end
+				   task.wait(900)
 			end
 	
 	end)
@@ -3041,6 +3112,48 @@ local Event = Window:Section({
 	Title = "Event",
 	Icon = "lucide:calendar", -- optional
 	Opened = false,
+})
+
+local Shop = Event:Tab({
+	Title = "Shop",
+	Icon = "lucide:shopping-cart", -- optional
+})
+Shop:Dropdown({
+	Title = "Select Shop Stock Items",
+	Values = StockItem,
+	Value = State.selectedStockItem or {},
+	Multi = true,
+	AllowNone = false,
+	Flag = "ShopStockItems",
+	Callback = function(option)
+		State.selectedStockItem = option
+	end,
+})
+local Upgrade = Event:Tab({
+	Title = "Upgrade",
+	Icon = "lucide:arrow-up-circle", -- optional
+})
+Upgrade:Dropdown({
+	Title = "Select Upgrade Stats",
+	Values = {"doubleOrnamentDrop","ornamentDropChance","doubleSnowflakeDrop","dungeonBattleSpeed"},
+	Value = State.selectedDungeonStat or {},
+	Multi = true,
+	AllowNone = false,
+	Flag = "UpgradeStats",
+	Callback = function(option)
+		State.selectedDungeonStat = option
+	end,
+})
+Upgrade:Toggle({
+	Title = "Auto Upgrade Merchant Stats",
+	Value = State.autoUpgradeDungeon or false,
+	Flag = "AutoUpgradeStats",
+	Callback = function(v)
+		State.autoUpgradeDungeon = v
+		if v then
+			AutoUpgradeDungeon()
+		end
+	end,
 })
 local Ornament = Event:Tab({
 	Title = "Ornament",
