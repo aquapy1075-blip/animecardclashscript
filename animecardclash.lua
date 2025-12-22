@@ -74,7 +74,7 @@ local Net = {
 local BossData = {
 	Names = {
 		[364] = "Naruto", [360] = "Frieza", [397] = "Sukuna", [332] = "Titan", [350] = "Muzan",
-		[325] = "Big Mom", [493] = "Sungjinwoo", [302] = "Cid", [343] = "Celestial Sovereign",
+		[325] = "Big Mom", [493] = "Sungjinwoo", [299] = "Cid", [343] = "Celestial Sovereign",
 		[387] = "Dead King", [398] = "Ichigo", [318] = "Yhwach", [381] = "Monster 8",
 	},
 	List = {
@@ -85,7 +85,7 @@ local BossData = {
 		{ id = 350, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
 		{ id = 325, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
 		{ id = 493, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 302, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+		{ id = 299, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
 		{ id = 343, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
 		{ id = 387, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
 		{ id = 398, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
@@ -159,8 +159,8 @@ local StorylineData = {
 			{id = 492, name = "shadow_commander"}, {id = 490, name = "shadow_ant"}, {id = 493, name = "awakened_shadow_monarch"}
 		},
 		eminence_lookout = {
-			{id = 307, name = "eminence_accountant"}, {id = 306, name = "eminence_scout"}, {id = 304, name = "eminence_cat"},
-			{id = 303, name = "eminence_strategist"}, {id = 305, name = "eminence_commander"}, {id = 302, name = "lord_of_eminence"}
+			{id = 304, name = "eminence_accountant"}, {id = 303, name = "eminence_scout"}, {id = 301, name = "eminence_cat"},
+			{id = 300, name = "eminence_strategist"}, {id = 302, name = "eminence_commander"}, {id = 299, name = "lord_of_eminence"}
 		},
 		invaded_ninja_village = {
 			{id = 345, name = "celestial_warrior"}, {id = 341, name = "mother_of_creation"}, {id = 342, name = "celestial_fisherman"},
