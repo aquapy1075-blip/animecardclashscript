@@ -83,17 +83,12 @@ local function placeUnit(slot, unitName, tileName)
     PlaceRemote:FireServer(unpack(args))
 end
 
-local lastSkipWave = 0
-
-local function autoSkip(wave)
-    Remote:FireServer("Vote")
-end
 
 -- MAIN LOOP
 local lastWave = 0
 
 task.spawn(function()
-    while task.wait(0.5) do
+    while task.wait(0.65) do
         local wave, maxWave = getWave()
         if wave and wave ~= lastWave then
             lastWave = wave
@@ -113,7 +108,7 @@ task.spawn(function()
                 end
             end
         end
-        autoSkip(wave)
+        Remote:FireServer("Vote")
         Remote:FireServer(GameAction)
     end
 end)
