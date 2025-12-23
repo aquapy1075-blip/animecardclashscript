@@ -102,7 +102,7 @@ end
 --------------------------------------------------
 -- AUTO UPGRADE (CHẠY NỀN)
 --------------------------------------------------
-local upgradeCooldown = 5
+local upgradeCooldown = 2
 
 task.spawn(function()
 	while task.wait(upgradeCooldown) do
@@ -111,7 +111,7 @@ task.spawn(function()
 				for _, unit in ipairs(UnitIds[prefix]) do
 					if unit and unit.Parent then
 						UpgradeRemote:FireServer("Upgrade", unit)
-						task.wait(0.25)
+						task.wait(0.3)
 					end
 				end
 			end
