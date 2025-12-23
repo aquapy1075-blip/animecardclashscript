@@ -48,7 +48,7 @@ end
 local function waitForLiveLoaded()
     local Lives = workspace:WaitForChild("Lives")
 
-    while #Presets:GetChildren() == 0 do
+    while #Lives:GetChildren() == 0 do
         task.wait(0.1)
     end
 end
