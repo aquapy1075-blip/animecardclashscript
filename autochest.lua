@@ -27,7 +27,7 @@ local CFG = getgenv().AutoConfig
 local PRIORITY_PREFIXES = CFG.priorityUpgrade
 local WaveActions = CFG.waveActions
 local PLACE_DELAY = 0.75
-local UPGRADE_DELAY = 0.2
+local UPGRADE_DELAY = 0.0005
 local GameAction = CFG.GameAction or "PlayAgain"
 
 -- PARSE WAVE
