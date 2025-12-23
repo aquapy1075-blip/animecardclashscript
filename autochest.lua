@@ -10,7 +10,6 @@ end)
 -- SERVICES
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-
 local Player = Players.LocalPlayer
 
 -- GUI WAVE
@@ -27,8 +26,14 @@ local CFG = getgenv().AutoConfig
 local PRIORITY_PREFIXES = CFG.priorityUpgrade
 local WaveActions = CFG.waveActions
 local PLACE_DELAY = 0.75
-local UPGRADE_DELAY = 0.005
 local GameAction = CFG.GameAction or "PlayAgain"
+
+
+--------------------------------------------------
+-- TABLE QUẢN LÝ UNIT
+--------------------------------------------------
+local UnitIds = {}        -- [Prefix] = {unit1, unit2}
+local AutoUpgrade = {}   -- [Prefix] = true/false
 
 -- PARSE WAVE
 local function getWave()
@@ -45,39 +50,36 @@ local function upgradeUnit(unit)
     UpgradeRemote:FireServer(unpack(args))
 end
 
-local function waitForLiveLoaded()
-    local Lives = workspace:WaitForChild("Lives")
-
-    while #Lives:GetChildren() == 0 do
-        task.wait(0.1)
-    end
+local function waitForLives()
+	local Lives = workspace:WaitForChild("Lives")
+	while #Lives:GetChildren() == 0 do
+		task.wait(0.1)
+	end
+	return Lives
 end
+local Presets = workspace:WaitForChild("Presets")
+--------------------------------------------------
+-- TRACK UNIT SAU KHI PLACE
+--------------------------------------------------
+local function trackPlacedUnit(unitPrefix)
+	local conn
+	conn = Presets.ChildAdded:Connect(function(unit)
+		task.wait() -- chờ attribute sync
 
+		if unit:GetAttribute("Prefix") == unitPrefix then
+			UnitIds[unitPrefix] = UnitIds[unitPrefix] or {}
+			table.insert(UnitIds[unitPrefix], unit)
 
-local function autoUpgradePriority()
-    waitForLiveLoaded()
-    local Lives = workspace.Lives
-    for _, unit in ipairs(Lives:GetChildren()) do
-            local prefix = unit:GetAttribute("Prefix")
-            if PRIORITY_PREFIXES[prefix] then
-                upgradeUnit(unit)
-                task.wait()
-            end
-    end
-end
-local function autoUpgradeAll()
-	waitForLiveLoaded()
-   local Lives = workspace.Lives
-   for _, unit in ipairs(Lives:GetChildren()) do
-        upgradeUnit(unit)
-        task.wait()
-    end
-    print("⬆️ Auto Upgrade All Units")
+			print("📌 Lưu unit:", unitPrefix, unit:GetDebugId())
+			conn:Disconnect()
+		end
+	end)
 end
 
 
 -- PLACE UNIT
 local function placeUnit(slot, unitName, tileName)
+	trackPlacedUnit(unitName)
     local args = {
         "Place",
         slot,
@@ -86,41 +88,64 @@ local function placeUnit(slot, unitName, tileName)
         workspace:WaitForChild("Arena"):WaitForChild(tileName),
         0
     }
-
     PlaceRemote:FireServer(unpack(args))
 end
 
+--------------------------------------------------
+-- AUTO UPGRADE (CHẠY NỀN)
+--------------------------------------------------
+task.spawn(function()
+	while task.wait(0.3) do
+		for prefix, enabled in pairs(AutoUpgrade) do
+			if enabled and UnitIds[prefix] then
+				for _, unit in ipairs(UnitIds[prefix]) do
+					if unit and unit.Parent then
+						UpgradeRemote:FireServer("Upgrade", unit)
+						task.wait(0.05)
+					end
+				end
+			end
+		end
+	end
+end)
 
+
+--------------------------------------------------
 -- MAIN LOOP
+--------------------------------------------------
 local lastWave = 0
 
 task.spawn(function()
-    while task.wait(0.65) do
-        local wave, maxWave = getWave()
-        if wave and wave ~= lastWave then
-            lastWave = wave
-            print("🌊 Wave", wave, "/", maxWave)
+	while task.wait(0.6) do
+		local wave, maxWave = getWave()
+		if wave and wave ~= lastWave then
+			lastWave = wave
+			print("🌊 Wave", wave, "/", maxWave)
 
-            local actions = WaveActions[wave]
-            if actions then
-               for _, info in ipairs(actions) do
-                 if info.upgradePriority then
-                       autoUpgradePriority()
-					   task.wait(0.005)
-                   elseif info.upgradeAll then
-                       autoUpgradeAll()
-					   task.wait(0.005)
-                   else
-                       placeUnit(info.slot, info.unit, info.tile)
-                       task.wait(PLACE_DELAY)
-                    end
-                end
-            end
-        end
+			-- RESET KHI GAME MỚI
+			if wave == 1 then
+				UnitIds = {}
+				AutoUpgrade = {}
+				print("♻️ Reset UnitIds & AutoUpgrade")
+			end
+
+			local actions = WaveActions[wave]
+			if actions then
+				for _, info in ipairs(actions) do
+					if info.place then
+						placeUnit(info.slot, info.unit, info.tile)
+						task.wait(PLACE_DELAY)
+					elseif info.autoUpgrade then
+						AutoUpgrade[info.autoUpgrade] = true
+						print("🔁 Auto Upgrade ON:", info.autoUpgrade)
+					end
+				end
+			end
+			task.wait(0.3)
+            Remote:FireServer("Vote")
+		end
 		task.wait(0.1)
-        Remote:FireServer("Vote")
-		task.wait(0.1)
-        Remote:FireServer(GameAction)
-    end
+		UpboardRemote:FireServer(GameAction)
+	end
 end)
 
