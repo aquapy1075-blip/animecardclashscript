@@ -71,7 +71,7 @@ local function autoUpgradePriority()
             local prefix = unit:GetAttribute("Prefix")
             if PRIORITY_PREFIXES[prefix] then
                 upgradeUnit(unit)
-                task.wait(UPGRADE_DELAY)
+                task.wait()
             end
     end
     waitForLiveLoaded()
@@ -80,7 +80,7 @@ local function autoUpgradePriority()
             local prefix = unit:GetAttribute("Prefix")
             if PRIORITY_PREFIXES[prefix] then
                 upgradeUnit(unit)
-                task.wait(UPGRADE_DELAY)
+                task.wait()
             end
     end
 end
@@ -88,13 +88,13 @@ local function autoUpgradeAll()
 	local Presets = workspace.Presets
     for _, unit in ipairs(Presets:GetChildren()) do
         upgradeUnit(unit)
-        task.wait(UPGRADE_DELAY)
+        task.wait()
     end
 	waitForLiveLoaded()
    local Lives = workspace.Lives
    for _, unit in ipairs(Lives:GetChildren()) do
         upgradeUnit(unit)
-        task.wait(UPGRADE_DELAY)
+        task.wait()
     end
     print("⬆️ Auto Upgrade All Units")
 end
@@ -130,8 +130,10 @@ task.spawn(function()
                for _, info in ipairs(actions) do
                  if info.upgradePriority then
                        autoUpgradePriority()
+					   task.wait(0.005)
                    elseif info.upgradeAll then
                        autoUpgradeAll()
+					   task.wait(0.005)
                    else
                        placeUnit(info.slot, info.unit, info.tile)
                        task.wait(PLACE_DELAY)
