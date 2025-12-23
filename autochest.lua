@@ -52,12 +52,20 @@ local function waitForPresetsLoaded()
         task.wait(0.1)
     end
 end
+local function waitForPrefix(unit)
+    local t = tick()
+    while not unit:GetAttribute("Prefix") do
+        if tick() - t > 2 then break end
+        task.wait(0.05)
+    end
+end
 local function autoUpgradePriority()
 	  waitForPresetsLoaded()
     local Presets = workspace:WaitForChild("Presets")
     local upgraded = {}
 
     for _, unit in ipairs(Presets:GetChildren()) do
+		waitForPrefix(unit)
         local prefix = unit:GetAttribute("Prefix")
         if prefix and PRIORITY_PREFIXES[prefix] then
             upgradeUnit(unit)
@@ -117,6 +125,7 @@ task.spawn(function()
                 end
             end
         end
+		task.wait(0.1)
         Remote:FireServer("Vote")
 		task.wait(0.1)
         Remote:FireServer(GameAction)
