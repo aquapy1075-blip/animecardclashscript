@@ -80,13 +80,12 @@ local function autoUpgradePriority()
     end
 end
 local function autoUpgradeAll()
-	waitForLivesLoaded()
-	
-    local Lives = workspace.Lives
-    for _, unit in ipairs(Lives:GetChildren()) do
+    local Presets = workspace:WaitForChild("Presets")
+    for _, unit in ipairs(Presets:GetChildren()) do
         upgradeUnit(unit)
         task.wait(UPGRADE_DELAY)
     end
+    print("⬆️ Auto Upgrade All Units")
 end
 
 
