@@ -42,6 +42,10 @@ local function getWave()
     return tonumber(current), tonumber(max)
 end
 
+
+-- [unit] = lastUpgradeTick
+
+
 local function upgradeUnit(unit)
     local args = {
         "Upgrade",
@@ -99,22 +103,22 @@ end
 --------------------------------------------------
 -- AUTO UPGRADE (CHẠY NỀN)
 --------------------------------------------------
+local upgradeCooldown = 5
+
 task.spawn(function()
-	while task.wait(0.3) do
+	while task.wait(upgradeCooldown) do
 		for prefix, enabled in pairs(AutoUpgrade) do
 			if enabled and UnitIds[prefix] then
 				for _, unit in ipairs(UnitIds[prefix]) do
 					if unit and unit.Parent then
 						UpgradeRemote:FireServer("Upgrade", unit)
-						task.wait(0.05)
+						task.wait(0.25)
 					end
 				end
 			end
 		end
 	end
 end)
-
-
 --------------------------------------------------
 -- MAIN LOOP
 --------------------------------------------------
@@ -148,8 +152,13 @@ task.spawn(function()
 			task.wait(0.3)
             Remote:FireServer("Vote")
 		end
+		if wave == 1 then 
+				task.wait(0.5)          
+				Remote:FireServer("Vote")
+		end
 		task.wait(0.1)
-		Remote:FireServer(GameAction)
+		local health = LocalPlayer.PlayerGui.Upboard.Wave.HealthBar
+		if health.Text == "0/100" or wave == maaxWave then Remote:FireServer(GameAction) end
 	end
 end)
 
