@@ -45,8 +45,26 @@ local function upgradeUnit(unit)
     UpgradeRemote:FireServer(unpack(args))
 end
 
+local function waitForPresetsLoaded(timeout)
+    timeout = timeout or 5
+    local Presets = workspace:WaitForChild("Presets")
+    local start = tick()
 
+    -- chờ tới khi có ít nhất 1 unit
+    while #Presets:GetChildren() == 0 do
+        if tick() - start > timeout then
+            warn("⏳ Presets load timeout")
+            return false
+        end
+        task.wait(0.1)
+    end
+
+    -- chờ thêm cho ổn định
+    task.wait(0.4)
+    return true
+end
 local function autoUpgradePriority()
+	if not waitForPresetsLoaded() then return end
     local Presets = workspace:WaitForChild("Presets")
     local upgraded = {}
 
@@ -60,6 +78,8 @@ local function autoUpgradePriority()
     end
 end
 local function autoUpgradeAll()
+	 if not waitForPresetsLoaded() then return end
+	
     local Presets = workspace:WaitForChild("Presets")
     for _, unit in ipairs(Presets:GetChildren()) do
         upgradeUnit(unit)
