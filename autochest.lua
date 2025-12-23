@@ -109,6 +109,7 @@ task.spawn(function()
             end
         end
         Remote:FireServer("Vote")
+		task.wait(0.1)
         Remote:FireServer(GameAction)
     end
 end)
