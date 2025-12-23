@@ -2982,18 +2982,16 @@ local Window = WindUI:CreateWindow({
 	},
 	OpenButton = {
 		Title = "Aqua hub UI", -- can be changed
-		CornerRadius = UDim.new(1, 0), -- fully rounded
-		StrokeThickness = 3, -- removing outline
+		CornerRadius = UDim.new(0,16), -- fully rounded
+		StrokeThickness = 2, -- removing outline
+		 Color = ColorSequence.new( -- gradient
+        Color3.fromHex("FF0F7B"), 
+        Color3.fromHex("F89B29")
+    ),
 		Enabled = true, -- enable or disable openbutton
 		OnlyMobile = false,
-		Icon = "rbxassetid://114289527320220",
-
-		Color = ColorSequence.new( -- gradient
-			Color3.fromHex("#30FF6A"),
-			Color3.fromHex("#e7ff2f")
-		),
+		Icon = "monitor",
 		Draggable = true,
-		OnlyIcon = true,
 	},
 })
 
