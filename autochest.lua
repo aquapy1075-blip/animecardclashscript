@@ -26,8 +26,9 @@ local CFG = getgenv().AutoConfig
 
 local PRIORITY_PREFIXES = CFG.priorityUpgrade
 local WaveActions = CFG.waveActions
-local PLACE_DELAY = CFG.placeDelay
-local UPGRADE_DELAY = CFG.upgradeDelay
+local PLACE_DELAY = 0.6
+local UPGRADE_DELAY = 0.025
+local GameAction = CFG.GameAction or "PlayAgain"
 
 -- PARSE WAVE
 local function getWave()
@@ -117,7 +118,7 @@ task.spawn(function()
             end
         end
         autoSkip(wave)
-        Remote:FireServer("PlayAgain")
+        Remote:FireServer(GameAction)
     end
 end)
 
