@@ -74,15 +74,6 @@ local function autoUpgradePriority()
                 task.wait()
             end
     end
-    waitForLiveLoaded()
-    local Lives = workspace.Lives
-    for _, unit in ipairs(Lives:GetChildren()) do
-            local prefix = unit:GetAttribute("Prefix")
-            if PRIORITY_PREFIXES[prefix] then
-                upgradeUnit(unit)
-                task.wait()
-            end
-    end
 end
 local function autoUpgradeAll()
 	local Presets = workspace.Presets
