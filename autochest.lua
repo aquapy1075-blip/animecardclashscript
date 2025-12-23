@@ -52,18 +52,7 @@ local function waitForLiveLoaded()
         task.wait(0.1)
     end
 end
-local function waitForPrefix(unit, timeout)
-    timeout = timeout or 2
-    local start = tick()
 
-    while not unit:GetAttribute("Prefix") do
-        if tick() - start > timeout then
-            return false
-        end
-        task.wait(0.05)
-    end
-    return true
-end
 
 local function autoUpgradePriority()
     waitForLiveLoaded()
