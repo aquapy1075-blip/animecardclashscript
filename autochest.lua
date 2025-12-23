@@ -86,18 +86,14 @@ end
 local lastSkipWave = 0
 
 local function autoSkip(wave)
-    if lastSkipWave == wave then return end
-    lastSkipWave = wave
-
     Remote:FireServer("Vote")
-    print("⏩ Auto Skip wave", wave)
 end
 
 -- MAIN LOOP
 local lastWave = 0
 
 task.spawn(function()
-    while task.wait(0.4) do
+    while task.wait(0.5) do
         local wave, maxWave = getWave()
         if wave and wave ~= lastWave then
             lastWave = wave
@@ -118,7 +114,7 @@ task.spawn(function()
             end
         end
         autoSkip(wave)
-        Remote:FireServer(GameAction)
+        if wave == maxWave then Remote:FireServer(GameAction)
     end
 end)
 
