@@ -27,7 +27,7 @@ local CFG = getgenv().AutoConfig
 local PRIORITY_PREFIXES = CFG.priorityUpgrade
 local WaveActions = CFG.waveActions
 local PLACE_DELAY = 0.75
-local UPGRADE_DELAY = 0.0005
+local UPGRADE_DELAY = 0.005
 local GameAction = CFG.GameAction or "PlayAgain"
 
 -- PARSE WAVE
@@ -66,20 +66,28 @@ local function waitForPrefix(unit, timeout)
 end
 
 local function autoUpgradePriority()
-    waitForLiveLoaded()
-
-    local Lives = workspace.Lives
-    for _, unit in ipairs(Lives:GetChildren()) do
-        if waitForPrefix(unit) then
+   for _, unit in ipairs(Presets:GetChildren()) do
             local prefix = unit:GetAttribute("Prefix")
             if PRIORITY_PREFIXES[prefix] then
                 upgradeUnit(unit)
                 task.wait(UPGRADE_DELAY)
             end
-        end
+    end
+    waitForLiveLoaded()
+    local Lives = workspace.Lives
+    for _, unit in ipairs(Lives:GetChildren()) do
+            local prefix = unit:GetAttribute("Prefix")
+            if PRIORITY_PREFIXES[prefix] then
+                upgradeUnit(unit)
+                task.wait(UPGRADE_DELAY)
+            end
     end
 end
 local function autoUpgradeAll()
+    for _, unit in ipairs(Presets:GetChildren()) do
+        upgradeUnit(unit)
+        task.wait(UPGRADE_DELAY)
+    end
 	waitForLiveLoaded()
    local Lives = workspace.Lives
    for _, unit in ipairs(Lives:GetChildren()) do
