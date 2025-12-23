@@ -11,9 +11,10 @@ end)
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Player = Players.LocalPlayer
+local PlayerGui = Player:WaitForChild("PlayerGui")
 
 -- GUI WAVE
-local WaveLabel = Player.PlayerGui.Upboard.Wave.WaveFrame.BG.TextLabel
+local WaveLabel = PlayerGui.Upboard.Wave.WaveFrame.BG.TextLabel
 
 -- REMOTE (ĐỔI NẾU TÊN KHÁC)
 local PlaceRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("TilePlacement")
@@ -22,8 +23,6 @@ local UpgradeRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("Ch
 
 
 local CFG = getgenv().AutoConfig
-
-local PRIORITY_PREFIXES = CFG.priorityUpgrade
 local WaveActions = CFG.waveActions
 local PLACE_DELAY = 0.75
 local GameAction = CFG.GameAction or "PlayAgain"
@@ -157,8 +156,7 @@ task.spawn(function()
 				Remote:FireServer("Vote")
 		end
 		task.wait(0.1)
-		local health = LocalPlayer.PlayerGui.Upboard.Wave.HealthBar
-		if health.Text == "0/100" or wave == maaxWave then Remote:FireServer(GameAction) end
+		local health = PlayerGui.Upboard.Wave.HealthBar
+		if health.Text == "0/100" or wave == maxWave then Remote:FireServer(GameAction) end
 	end
 end)
-
