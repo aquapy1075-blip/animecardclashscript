@@ -64,13 +64,18 @@ local Presets = workspace:WaitForChild("Presets")
 local function trackPlacedUnit(unitPrefix)
 	local conn
 	conn = Presets.ChildAdded:Connect(function(unit)
-		task.wait() -- chờ attribute sync
-
+		task.wait(0.05)
 		if unit:GetAttribute("Prefix") == unitPrefix then
 			UnitIds[unitPrefix] = UnitIds[unitPrefix] or {}
 			table.insert(UnitIds[unitPrefix], unit)
+			print("📌 Track:", unitPrefix)
+			conn:Disconnect()
+		end
+	end)
 
-			print("📌 Lưu unit:", unitPrefix, unit:GetDebugId())
+	-- auto disconnect nếu không thấy sau 2s
+	task.delay(2, function()
+		if conn.Connected then
 			conn:Disconnect()
 		end
 	end)
@@ -132,12 +137,11 @@ task.spawn(function()
 			local actions = WaveActions[wave]
 			if actions then
 				for _, info in ipairs(actions) do
-					if info.place then
+					if info.slot and info.unit and info.tile then
 						placeUnit(info.slot, info.unit, info.tile)
 						task.wait(PLACE_DELAY)
 					elseif info.autoUpgrade then
 						AutoUpgrade[info.autoUpgrade] = true
-						print("🔁 Auto Upgrade ON:", info.autoUpgrade)
 					end
 				end
 			end
@@ -145,7 +149,7 @@ task.spawn(function()
             Remote:FireServer("Vote")
 		end
 		task.wait(0.1)
-		UpboardRemote:FireServer(GameAction)
+		Remote:FireServer(GameAction)
 	end
 end)
 
