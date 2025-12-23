@@ -150,13 +150,9 @@ task.spawn(function()
 			end
 			task.wait(0.3)
             Remote:FireServer("Vote")
-		end
-		if wave == 1 then 
-				task.wait(0.5)          
-				Remote:FireServer("Vote")
-		end
+	end
 		task.wait(0.1)
-		local health = PlayerGui.Upboard.Wave.HealthBar
+		local health = PlayerGui.Upboard.Wave.HealthBar.TextLabel
 		if health.Text == "0/100" or wave == maxWave then Remote:FireServer(GameAction) end
 	end
 end)
