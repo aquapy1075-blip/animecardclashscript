@@ -114,7 +114,7 @@ task.spawn(function()
             end
         end
         autoSkip(wave)
-        if wave == maxWave then Remote:FireServer(GameAction)
+        Remote:FireServer(GameAction)
     end
 end)
 
