@@ -45,40 +45,46 @@ local function upgradeUnit(unit)
     UpgradeRemote:FireServer(unpack(args))
 end
 
-local function waitForPresetsLoaded()
-    local Presets = workspace:WaitForChild("Presets")
+local function waitForLiveLoaded()
+    local Lives = workspace:WaitForChild("Lives")
 
     while #Presets:GetChildren() == 0 do
         task.wait(0.1)
     end
 end
-local function waitForPrefix(unit)
-    local t = tick()
+local function waitForPrefix(unit, timeout)
+    timeout = timeout or 2
+    local start = tick()
+
     while not unit:GetAttribute("Prefix") do
-        if tick() - t > 2 then break end
+        if tick() - start > timeout then
+            return false
+        end
         task.wait(0.05)
     end
+    return true
 end
-local function autoUpgradePriority()
-	  waitForPresetsLoaded()
-    local Presets = workspace:WaitForChild("Presets")
-    local upgraded = {}
 
-    for _, unit in ipairs(Presets:GetChildren()) do
-		waitForPrefix(unit)
-        local prefix = unit:GetAttribute("Prefix")
-        if prefix and PRIORITY_PREFIXES[prefix] then
-            upgradeUnit(unit)
-            upgraded[unit] = true
-            task.wait(UPGRADE_DELAY)
+local function autoUpgradePriority()
+    waitForLiveLoaded()
+
+    local Lives = workspace.Lives
+    for _, unit in ipairs(Lives:GetChildren()) do
+        if waitForPrefix(unit) then
+            local prefix = unit:GetAttribute("Prefix")
+            if PRIORITY_PREFIXES[prefix] then
+                print("⬆️ Priority Upgrade:", prefix)
+                upgradeUnit(unit)
+                task.wait(UPGRADE_DELAY)
+            end
         end
     end
 end
 local function autoUpgradeAll()
-	   waitForPresetsLoaded()
+	   waitForLivesLoaded()
 	
-    local Presets = workspace:WaitForChild("Presets")
-    for _, unit in ipairs(Presets:GetChildren()) do
+    local Lives = workspace:WaitForChild("Lives")
+    for _, unit in ipairs(Lives:GetChildren()) do
         upgradeUnit(unit)
         task.wait(UPGRADE_DELAY)
     end
