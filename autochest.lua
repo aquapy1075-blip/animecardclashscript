@@ -73,7 +73,6 @@ local function autoUpgradePriority()
         if waitForPrefix(unit) then
             local prefix = unit:GetAttribute("Prefix")
             if PRIORITY_PREFIXES[prefix] then
-                print("⬆️ Priority Upgrade:", prefix)
                 upgradeUnit(unit)
                 task.wait(UPGRADE_DELAY)
             end
@@ -81,14 +80,13 @@ local function autoUpgradePriority()
     end
 end
 local function autoUpgradeAll()
-	   waitForLivesLoaded()
+	waitForLivesLoaded()
 	
-    local Lives = workspace:WaitForChild("Lives")
+    local Lives = workspace.Lives
     for _, unit in ipairs(Lives:GetChildren()) do
         upgradeUnit(unit)
         task.wait(UPGRADE_DELAY)
     end
-    print("⬆️ Auto Upgrade All Units")
 end
 
 
