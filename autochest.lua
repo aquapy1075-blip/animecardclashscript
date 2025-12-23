@@ -102,7 +102,7 @@ end
 --------------------------------------------------
 -- AUTO UPGRADE (CHẠY NỀN)
 --------------------------------------------------
-local upgradeCooldown = 2
+local upgradeCooldown = 1.25
 
 task.spawn(function()
 	while task.wait(upgradeCooldown) do
