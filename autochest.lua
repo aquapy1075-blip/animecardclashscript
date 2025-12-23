@@ -66,8 +66,9 @@ local function waitForPrefix(unit, timeout)
 end
 
 local function autoUpgradePriority()
-	local Presets = workspace.Presets
-   for _, unit in ipairs(Presets:GetChildren()) do
+    waitForLiveLoaded()
+    local Lives = workspace.Lives
+    for _, unit in ipairs(Lives:GetChildren()) do
             local prefix = unit:GetAttribute("Prefix")
             if PRIORITY_PREFIXES[prefix] then
                 upgradeUnit(unit)
