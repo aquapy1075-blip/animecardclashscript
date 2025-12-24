@@ -3496,12 +3496,6 @@ local function prettyName(str)
 		:gsub("^%l", string.upper)
 		:gsub(" %l", string.upper)
 end
-local bossesByMap = {}
-
-for _, boss in ipairs(BossData.List) do
-	bossesByMap[boss.map] = bossesByMap[boss.map] or {}
-	table.insert(bossesByMap[boss.map], boss)
-end
 
 local StoryBossSection = StoryBoss:Section({
 	Title = "Story Boss Setting",
@@ -3512,63 +3506,49 @@ local StoryBossSection = StoryBoss:Section({
 	Opened = false,
 })
 
-for mapName, bosses in pairs(bossesByMap) do
-	local mapSection = StoryBossSection:Section({
-		Title = prettyName(mapName),
-		Box = true,
-		Opened = false,
+for _, b in ipairs(BossData.List) do
+	local key = b.key
+	local label = prettyName(key)
+
+	-- TOGGLE BOSS
+	StoryBossSection:Toggle({
+		Title = label,
+		Value = false,
+		Flag = "Boss_" .. key,
+		Callback = function(state)
+			State.selectedBosses[key] = state
+			Utils.notify(
+				"Boss Select",
+				(state and "✔ " or "✖ ") .. label,
+				2
+			)
+		end,
 	})
 
-	for _, b in ipairs(bosses) do
-		local key = b.key
-		local label = prettyName(key)
+	-- CHỌN ĐỘ KHÓ
+	StoryBossSection:Dropdown({
+		Title = label .. " | Difficulties",
+		Values = b.modes,
+		Value = State.bossSelectedModes[key] or {},
+		Multi = true,
+		AllowNone = true,
+		Flag = "BossModes_" .. key,
+		Callback = function(options)
+			State.bossSelectedModes[key] = options
+		end,
+	})
 
-		-- TOGGLE BOSS
-		mapSection:Toggle({
-			Title = label,
-			Value = false,
-			Flag = "Boss_" .. key,
-			Callback = function(state)
-				State.selectedBosses[key] = state
-				Utils.notify(
-					"Boss Select",
-					(state and "✔ " or "✖ ") .. label,
-					2
-				)
-			end,
-		})
-
-		-- CHỌN ĐỘ KHÓ
-		mapSection:Dropdown({
-			Title = label .. " | Difficulties",
-			Values = b.modes,
-			Value = State.bossSelectedModes[key] or {},
-			Multi = true,
-			AllowNone = true,
-			Flag = "BossModes_" .. key,
-			Callback = function(options)
-				State.bossSelectedModes[key] = options
-				Utils.notify(
-					"Story Boss",
-					label .. " → " .. (#options > 0 and table.concat(options, ", ") or "All"),
-					2
-				)
-			end,
-		})
-
-		-- CHỌN TEAM
-		mapSection:Dropdown({
-			Title = label .. " | Choose Team",
-			Values = BossData.TeamOptions,
-			Value = State.bossTeams[key],
-			Flag = "Team_" .. key,
-			SearchBarEnabled = true,
-			Callback = function(option)
-				State.bossTeams[key] = option
-				Utils.notify("Team Changed", label .. " → " .. option, 2)
-			end,
-		})
-	end
+	-- CHỌN TEAM
+	StoryBossSection:Dropdown({
+		Title = label .. " | Choose Team",
+		Values = BossData.TeamOptions,
+		Value = State.bossTeams[key],
+		Flag = "Team_" .. key,
+		SearchBarEnabled = true,
+		Callback = function(option)
+			State.bossTeams[key] = option
+		end,
+	})
 end
 StoryBoss:Section({
 	Title = "Story Boss Toggle",
