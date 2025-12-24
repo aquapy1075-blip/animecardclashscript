@@ -2388,7 +2388,7 @@ function BossController.runAuto()
 
 					if #modesToFight > 0 then
 						table.insert(plan, {
-							key = key,
+							boss = boss,
 							modes = modesToFight
 						})
 					end
@@ -2424,7 +2424,7 @@ function BossController.runAuto()
 						if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then
 							break
 						end
-						BossController.fightBoss(item.key, mode, runId)
+						BossController.fightBoss(item.boss, mode, runId)
 					end
 					if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then
 						break
