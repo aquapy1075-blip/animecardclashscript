@@ -138,7 +138,7 @@ local BossData = {
 		},
 		{
 			key = "substitute_shinigami",
-			map = "soul_kings_castle",
+			map = "soul_king_castle",
 			teleport = CFrame.new(-8352, 41, 9075),
 			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
 		},
