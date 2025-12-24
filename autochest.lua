@@ -121,7 +121,7 @@ NotificationGui.DescendantAdded:Connect(function(obj)
 	-- ❌ Không đủ tiền
 	if text:find("can't afford") then
 		CantAfford = true
-		task.delay(3, function()
+		task.delay(7, function()
 			CantAfford = false
 		end)
 		return
