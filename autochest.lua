@@ -111,7 +111,7 @@ task.spawn(function()
 				for _, unit in ipairs(UnitIds[prefix]) do
 					if unit and unit.Parent then
 						UpgradeRemote:FireServer("Upgrade", unit)
-						task.wait(0.3)
+						task.wait(0.4)
 					end
 				end
 			end
