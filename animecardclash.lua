@@ -74,28 +74,91 @@ local Net = {
 -------------------------------------------------
 
 local BossData = {
-Names = {
-    [366] = "Naruto", [362] = "Frieza", [409] = "Sukuna", [334] = "Titan", [352] = "Muzan",
-    [327] = "Big Mom", [495] = "Sungjinwoo", [301] = "Cid", [345] = "Celestial Sovereign",
-    [389] = "Dead King", [400] = "Ichigo", [320] = "Yhwach", [374] = "Monster 8",
-},
+	List = {
+		{
+			key = "bijuu_beast",
+			map = "ninja_village",
+			teleport = CFrame.new(-143, 12, -6675),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "awakened_galactic_tyrant",
+			map = "green_planet",
+			teleport = CFrame.new(6164, 50, -31),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "king_of_curses",
+			map = "shibuya_station",
+			teleport = CFrame.new(-228, 37, 4944),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "combat_giant",
+			map = "titans_city",
+			teleport = CFrame.new(-5394, 14, -5941),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "awakened_pale_demon_lord",
+			map = "dimensional_fortress",
+			teleport = CFrame.new(4904, 151, 6338),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "soul_queen",
+			map = "candy_island",
+			teleport = CFrame.new(-5820, 57, 5368),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "awakened_shadow_monarch",
+			map = "solo_city",
+			teleport = CFrame.new(-8613, 283, -9580),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "lord_of_eminence",
+			map = "eminence_lookout",
+			teleport = CFrame.new(5583, 330, -8961),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "celestial_sovereign",
+			map = "invaded_ninja_village",
+			teleport = CFrame.new(1018, 476, 7846),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "undead_king",
+			map = "necromancer_graveyard",
+			teleport = CFrame.new(6180, 43, -4206),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "substitute_shinigami",
+			map = "soul_kings_castle",
+			teleport = CFrame.new(-8352, 41, 9075),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "quincy_king",
+			map = "empire_of_light",
+			teleport = CFrame.new(1420, -7, -10854),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+		{
+			key = "humanitys_weapon",
+			map = "defense_force_base",
+			teleport = CFrame.new(-29003, 3, 2121),
+			modes = {"normal","medium","hard","extreme","nightmare","celestial"}
+		},
+	},
 
-List = {
-    { id = 366, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 362, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 409, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 334, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 352, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 327, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 495, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 301, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 345, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 389, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 400, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 320, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-    { id = 374, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-},
- TeamOptions = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"}
+	TeamOptions = {
+		"slot_1","slot_2","slot_3","slot_4",
+		"slot_5","slot_6","slot_7","slot_8"
+	}
 }
 
 -- Tower Data
@@ -151,7 +214,7 @@ titans_city = {
 },
 dimensional_fortress = {
     {id = 350, name = "thunder_demon"}, {id = 353, name = "childish_demon"}, {id = 355, name = "compass_demon"},
-    {id = 354, name = "awakened_frost_demon"}, {id = 351, name = "awaken_six_eye_slayer"}, {id = 352, name = "awaken_pale_demon_lord"}
+    {id = 354, name = "awakened_frost_demon"}, {id = 351, name = "awaken_six_eye_slayer"}, {id = 352, name = "awakened_pale_demon_lord"}
 },
 candy_island = {
     {id = 331, name = "genie_commander"}, {id = 328, name = "candy_master"}, {id = 326, name = "biscuit_warrior"},
@@ -174,12 +237,12 @@ necromancer_graveyard = {
     {id = 385, name = "undead_commander"}, {id = 387, name = "blood_valkyrie"}, {id = 389, name = "undead_king"}
 },
 soul_kings_castle = {
-    {id = 397, name = "Hornet Shinigami"}, {id = 401, name = "Shinigami Strategist"}, {id = 402, name = "Shinigami Illusionist"},
-    {id = 399, name = "Fate Weaver Shinigami"}, {id = 398, name = "Shinigami Monk"}, {id = 400, name = "Substitute Shinigami"}
+    {id = 397, name = "hornet_shinigami"}, {id = 401, name = "shinigami_strategist"}, {id = 402, name = "shinigami_illusionist"},
+    {id = 399, name = "fate_weaver_shinigami"}, {id = 398, name = "shinigami_monk"}, {id = 400, name = "substitute_shinigami"}
 },
 empire_of_light = {
-    {id = 323, name = "The Visionary"}, {id = 319, name = "The Antithesis"}, {id = 321, name = "The X-Axis"},
-    {id = 322, name = "The Miracle"}, {id = 318, name = "The Balance"}, {id = 320, name = "Quincy King"}
+    {id = 323, name = "the_visionary"}, {id = 319, name = "the_antithesis"}, {id = 321, name = "the_x_axis"},
+    {id = 322, name = "the_miracle"}, {id = 318, name = "the_balance"}, {id = 320, name = "quincy_king"}
 },
 defense_force_base = {
     {id = 375, name = "frostbite_sodier"}, {id = 378, name = "eightfold_slayer"}, {id = 380, name = "gun_blade_hunter"},
@@ -223,12 +286,12 @@ local CursedZoneData = {
 }
 
 local RaidData = {
-	["Monster 9"] = {id = 315, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_monster_9"},
-	["Cifer"] = {id = 393, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_cifer"},
-	["Creator of Flames"] = {id = 416, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_creator_of_flames"},
-	["Sword Deity"] = {id = 312, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_sword_deity"},
-	["Shadow Dragon"] = {id = 309, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_shadow_dragon"},
-	["Eternal Dragon"] = {id = 405, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_eternal_dragon"},
+	["Monster 9"] = {modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_monster_9"},
+	["Cifer"] = { modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_cifer"},
+	["Creator of Flames"] = { modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_creator_of_flames"},
+	["Sword Deity"] = {modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_sword_deity"},
+	["Shadow Dragon"] = { modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_shadow_dragon"},
+	["Eternal Dragon"] = { modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_eternal_dragon"},
 }
 
 local RaidItem = {
@@ -375,19 +438,19 @@ State.storylineSelectedMode = State.storylineSelectedMode or {}
 State.storylineRunId = State.storylineRunId or 0
 
 -- Boss
-State.selectedBosses = {}
-State.bossTeams = {}
-State.alreadyFought = {}
-State.bossSelectedModes = {}
+State.selectedBosses = State.selectedBosses or {}
+State.bossTeams = State.bossTeams or {}
+State.alreadyFought = State.alreadyFought or {}
+State.bossSelectedModes = State.bossSelectedModes or {}
 State.bossRetry = State.bossRetry or 3
 
-for id in pairs(BossData.Names) do
-	State.selectedBosses[id] = false
-	State.bossTeams[id] = "slot_1"
-	State.alreadyFought[id] = {}
-	State.bossSelectedModes[id] = {}
+for _, boss in ipairs(BossData.List) do
+	local key = boss.key
+	State.selectedBosses[key] = State.selectedBosses[key] or false
+	State.bossTeams[key] = State.bossTeams[key] or "slot_1"
+	State.alreadyFought[key] = State.alreadyFought[key] or {}
+	State.bossSelectedModes[key] = State.bossSelectedModes[key] or {}
 end
-
 -- Battle Tower
 State.selectedTowerModes = {}
 State.towerTeams = {}
@@ -1743,58 +1806,96 @@ function teleportToRaid(raidName)
 		task.wait(1) -- chờ teleport xong
 	end
 end
+local function getRaidServerEntityId(teleportName, timeout)
+	timeout = timeout or 5
+	local elapsed = 0
+
+	while elapsed < timeout do
+		local folder = workspace:FindFirstChild(teleportName)
+		if folder then
+			local boss = folder:FindFirstChild(teleportName)
+			if boss then
+				local id = boss:GetAttribute("serverEntityId")
+				if id then
+					return id
+				end
+			end
+		end
+		task.wait(0.25)
+		elapsed += 0.25
+	end
+
+	return nil
+end
 
 function RaidBossController.runAuto()
 	State.autoRunIdRaid = (State.autoRunIdRaid or 0) + 1
 	local runId = State.autoRunIdRaid
 
-	local selectedRaid = State.selectedRaidBoss or "Creator of Flames"
+	local raidName = State.selectedRaidBoss
 	local selectedMode = State.selectedRaidMode or "easy"
-	local raidInfo = RaidData[selectedRaid]
-	if raidInfo then
-		teleportToRaid(selectedRaid)
-	else
+	local raidInfo = RaidData[raidName]
+
+	if not raidInfo then
 		Utils.notify("Raid Boss", "❌ No raid selected!", 2)
 		return
 	end
 
-	Utils.notify("Raid Boss", "🔥 Auto Raid Boss Started (" .. selectedRaid .. ")", 2)
+	teleportToRaid(raidName)
+
+	Utils.notify(
+		"Raid Boss",
+		"🔥 Auto Raid Started (" .. raidName .. ")",
+		2
+	)
 
 	task.spawn(function()
 		while State.autoEnabledRaid and runId == State.autoRunIdRaid do
-			local id = raidInfo.id
-			if id then
-				pcall(function()
-					Net.fightRaidBoss:FireServer(id, selectedMode)
-				end)
-				Utils.notify("Raid Boss", "⚔️ Fighting " .. selectedRaid, 2)
+			local entityId = getRaidServerEntityId(raidInfo.teleportName)
 
-				-- chờ popup combat xuất hiện
-				local waited = 0
-				local ping = Utils.getPing()
-				local scale = math.clamp(1 + ping / 320, 1, 4)
-				local timeout = 2 * scale
-				while not Utils.isInBattlePopupPresent() and waited < timeout do
-					if not State.autoEnabledRaid or runId ~= State.autoRunIdRaid then
-						break
-					end
-					task.wait(0.2)
-					waited = waited + 0.2
-					Net.fightRaidBoss:FireServer(id)
-				end
-
-				-- chờ popup biến mất (trận kết thúc)
-				while Utils.isInBattlePopupPresent() do
-					if not State.autoEnabledRaid or runId ~= State.autoRunIdRaid then
-						break
-					end
-					task.wait(0.5)
-				end
-
-				task.wait(0.25)
+			if not entityId then
+				Utils.notify(
+					"Raid Boss",
+					"⚠️ Boss not found, retrying...",
+					2
+				)
+				task.wait(1)
+				continue
 			end
-			task.wait(0.25)
+
+			Utils.notify(
+				"Raid Boss",
+				"⚔️ Fighting " .. raidName .. " | " .. selectedMode,
+				2
+			)
+
+			pcall(function()
+				Net.fightRaidBoss:FireServer(entityId, selectedMode)
+			end)
+
+			-- chờ popup
+			local waited = 0
+			local timeout = 2 * math.clamp(1 + Utils.getPing() / 320, 1, 4)
+
+			while not Utils.isInBattlePopupPresent() and waited < timeout do
+				if not State.autoEnabledRaid or runId ~= State.autoRunIdRaid then
+					return
+				end
+				task.wait(0.25)
+				waited += 0.25
+			end
+
+			-- chờ fight kết thúc
+			while Utils.isInBattlePopupPresent() do
+				if not State.autoEnabledRaid or runId ~= State.autoRunIdRaid then
+					return
+				end
+				task.wait(0.5)
+			end
+
+			task.wait(0.5)
 		end
+
 		Utils.notify("Raid Boss", "🛑 Auto Raid Boss Stopped!", 2)
 	end)
 end
@@ -2199,142 +2300,176 @@ end
 -------------------------------------------------
 local BossController = {}
 
-function BossController.fightBoss(id, mode, runId)
+local function getServerEntityId(mapName, bossName, timeout)
+	timeout = timeout or 10
+	local t = 0
+
+	while t < timeout do
+		local map = workspace:FindFirstChild(mapName)
+		if map then
+			local bossFolder = map:FindFirstChild("boss")
+			if bossFolder then
+				local boss = bossFolder:FindFirstChild(bossName)
+				if boss then
+					local id = boss:GetAttribute("serverEntityId")
+					if id then
+						return id
+					end
+				end
+			end
+		end
+		task.wait(0.3)
+		t += 0.3
+	end
+
+	return nil
+end
+
+function BossController.fightBoss(boss, mode, runId)
 	if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then
 		return
 	end
 
-	local name = BossData.Names[id] or ("Boss " .. id)
 	local retries = 0
 	local maxRetries = State.bossRetry or 3
+	local name = boss.key
 
 	while State.autoEnabledBoss and runId == State.autoRunIdBoss and retries < maxRetries do
-		Net.setPartySlot:FireServer(State.bossTeams[id] or "slot_1")
-		-- chọn team
+		Net.setPartySlot:FireServer(State.bossTeams[boss.key] or "slot_1")
 		Utils.notify("Story Boss", "⚔️ Fighting " .. name .. " | " .. mode, 2)
 
-		-- gọi fight
-		pcall(function()
-			Net.fightStoryBoss:FireServer(id, mode)
-		end)
+		-- teleport
+		local char = LocalPlayer.Character
+		if char and char:FindFirstChild("HumanoidRootPart") then
+			char.HumanoidRootPart.CFrame = boss.teleport
+		end
 
-		-- chờ popup combat xuất hiện
+		task.wait(1)
+
+		-- lấy id runtime
+		local serverEntityId = getServerEntityId(boss.map, boss.key)
+		if not serverEntityId then
+			retries += 1
+			task.wait(1)
+			continue
+		end
+
+		-- fight
+		Net.fightStoryBoss:FireServer(serverEntityId, mode)
+
+		-- popup wait (giữ nguyên logic cũ)
 		local waited = 0
-		local ping = Utils.getPing()
-		local scale = math.clamp(1 + ping / 375, 1, 4)
-		local timeout = 2.5 * scale
+		local timeout = 2.5 * math.clamp(1 + Utils.getPing() / 375, 1, 4)
+
 		while not Utils.isInBattlePopupPresent() and waited < timeout do
-			if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then
-				return
-			end
+			if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then return end
 			task.wait(0.5)
-			Net.fightStoryBoss:FireServer(id, mode)
-			waited = waited + 0.5
+			Net.fightStoryBoss:FireServer(serverEntityId, mode)
+			waited += 0.5
 		end
 
-		if not Utils.isInBattlePopupPresent() then
-			Utils.notify("No Response", name .. " | " .. mode .. " no response", 2)
-			break
-		end
+		if not Utils.isInBattlePopupPresent() then break end
+
 		local elapsed = 0
 		while Utils.isInBattlePopupPresent() and elapsed < 120 do
-			if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then
-				return
-			end
 			task.wait(1)
-			elapsed = elapsed + 1
+			elapsed += 1
 		end
 
-		local result = Utils.getBattleResult()
-
-		if result == "Victory" then
-			Utils.notify("Finished", name .. " | " .. mode .. " victory!", 2)
-			State.alreadyFought[id] = State.alreadyFought[id] or {}
-			State.alreadyFought[id][mode] = true
-			return -- thắng rồi thì thoát luôn
-		else
-			retries = retries + 1
-			Utils.notify(
-				"Defeated",
-				name .. " | " .. mode .. " lost, retrying (" .. retries .. "/" .. maxRetries .. ")",
-				2
-			)
-			task.wait(1) -- delay trước khi thử lại
+		if Utils.getBattleResult() == "Victory" then
+			State.alreadyFought[boss.key] = State.alreadyFought[boss.key] or {}
+			State.alreadyFought[boss.key][mode] = true
+			return
 		end
+
+		retries += 1
 	end
 
-	-- nếu hết retry hoặc fail thì đánh dấu done
-	State.alreadyFought[id] = State.alreadyFought[id] or {}
-	State.alreadyFought[id][mode] = true
+	State.alreadyFought[boss.key] = State.alreadyFought[boss.key] or {}
+	State.alreadyFought[boss.key][mode] = true
 end
 
 function BossController.runAuto()
 	State.autoRunIdBoss = State.autoRunIdBoss + 1
 	local runId = State.autoRunIdBoss
+
 	State.alreadyFought = State.alreadyFought or {}
+
+	-- init state theo KEY
 	for _, boss in ipairs(BossData.List) do
-		State.alreadyFought[boss.id] = State.alreadyFought[boss.id] or {}
+		local key = boss.key
+		State.alreadyFought[key] = State.alreadyFought[key] or {}
 	end
 
 	task.spawn(function()
 		while State.autoEnabledBoss and runId == State.autoRunIdBoss do
 			local plan = {}
-			for _, boss in ipairs(BossData.List) do
-				if State.selectedBosses[boss.id] then
-					local selectedModes = State.bossSelectedModes[boss.id]
 
-					-- nếu chưa chọn mode, fallback đánh tất cả mode
+			-- build plan theo thứ tự BossData.List
+			for _, boss in ipairs(BossData.List) do
+				local key = boss.key
+
+				if State.selectedBosses[key] then
+					local selectedModes = State.bossSelectedModes[key]
+
+					-- fallback: chưa chọn thì đánh tất cả mode
 					if not selectedModes or #selectedModes == 0 then
 						selectedModes = boss.modes
 					end
 
 					local modesToFight = {}
 					for _, mode in ipairs(selectedModes) do
-						if not (State.alreadyFought[boss.id] and State.alreadyFought[boss.id][mode]) then
+						if not State.alreadyFought[key][mode] then
 							table.insert(modesToFight, mode)
 						end
 					end
 
 					if #modesToFight > 0 then
-						table.insert(plan, { id = boss.id, modes = modesToFight })
+						table.insert(plan, {
+							boss = boss,
+							modes = modesToFight
+						})
 					end
 				end
 			end
 
+			-- không còn boss nào cần đánh
 			if #plan == 0 then
 				Utils.notify("Info", "All selected bosses done", 2)
+
 				task.wait(0.5)
 				if State.sendWebhookBattle then
 					local embedDataSB = {
-						embeds = {
-							{
-								title = "⚔️ Story Boss Finished",
-								color = 0xff9933, -- màu cam
-								description = "✅ Boss defeated!",
-								footer = { text = "Auto-reported by script" },
-								timestamp = DateTime.now():ToIsoDate(),
-							},
-						},
+						embeds = {{
+							title = "⚔️ Story Boss Finished",
+							color = 0xff9933,
+							description = "✅ Boss defeated!",
+							footer = { text = "Auto-reported by script" },
+							timestamp = DateTime.now():ToIsoDate(),
+						}},
 					}
 
 					pcall(function()
 						Utils.sendDiscordMessage(HttpService:JSONEncode(embedDataSB))
 					end)
 				end
+
 				State.autoEnabledBoss = false
 			else
+				-- đánh theo đúng thứ tự data
 				for _, item in ipairs(plan) do
 					for _, mode in ipairs(item.modes) do
 						if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then
 							break
 						end
-						BossController.fightBoss(item.id, mode, runId)
+						BossController.fightBoss(item.boss, mode, runId)
 					end
 					if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then
 						break
 					end
 				end
 			end
+
 			task.wait(2)
 		end
 	end)
@@ -3407,6 +3542,12 @@ StoryBoss:Input({
 		Utils.notify("Storyline", "Max Retry set to " .. tostring(State.bossRetry))
 	end,
 })
+local function prettyName(str)
+	return str
+		:gsub("_", " ")
+		:gsub("^%l", string.upper)
+		:gsub(" %l", string.upper)
+end
 
 local StoryBossSection = StoryBoss:Section({
 	Title = "Story Boss Setting",
@@ -3417,41 +3558,50 @@ local StoryBossSection = StoryBoss:Section({
 	Opened = false,
 })
 
-for i, b in ipairs(BossData.List) do
-	local label = BossData.Names[b.id] or ("Boss " .. b.id)
+for _, b in ipairs(BossData.List) do
+	local key = b.key
+	local label = prettyName(key)
+
+	-- TOGGLE BOSS
 	StoryBossSection:Toggle({
 		Title = label,
 		Value = false,
-		Flag = "Boss_" .. b.id,
+		Flag = "Boss_" .. key,
 		Callback = function(state)
-			State.selectedBosses[b.id] = state
-			Utils.notify("Boss Select", (state and "✔ " or "✖ ") .. label, 2)
+			State.selectedBosses[key] = state
+			Utils.notify(
+				"Boss Select",
+				(state and "✔ " or "✖ ") .. label,
+				2
+			)
 		end,
 	})
+
+	-- CHỌN ĐỘ KHÓ
 	StoryBossSection:Dropdown({
-		Title = label .. " | difficulties",
+		Title = label .. " | Difficulties",
 		Values = b.modes,
-		Value = State.bossSelectedModes[b.id] or {},
+		Value = State.bossSelectedModes[key] or {},
 		Multi = true,
 		AllowNone = true,
-		Flag = "BossModes_" .. b.id,
-		Callback = function(Options)
-			State.bossSelectedModes[b.id] = Options
-			Utils.notify("Story Boss", label .. " → " .. table.concat(Options, ","), 2)
+		Flag = "BossModes_" .. key,
+		Callback = function(options)
+			State.bossSelectedModes[key] = options
 		end,
 	})
+
+	-- CHỌN TEAM
 	StoryBossSection:Dropdown({
 		Title = label .. " | Choose Team",
 		Values = BossData.TeamOptions,
-		Value = State.bossTeams[b.id],
-		Flag = "Team_" .. b.id,
+		Value = State.bossTeams[key],
+		Flag = "Team_" .. key,
 		SearchBarEnabled = true,
 		Callback = function(option)
-			-- ép kiểu về string để tránh lỗi concatenate
-			State.bossTeams[b.id] = option
-			Utils.notify("Team Changed", label .. " → " .. option, 2)
+			State.bossTeams[key] = option
 		end,
 	})
+	StoryBossSection:Space()
 end
 StoryBoss:Section({
 	Title = "Story Boss Toggle",
@@ -3461,7 +3611,7 @@ StoryBoss:Section({
 	TextSize = 15, -- Default Size
 	Opened = true,
 })
-local storybosstoggle = StoryBoss:Toggle({
+StoryBoss:Toggle({
 	Title = "Fight Selected Story Boss",
 	Value = false,
 	Flag = "AutoFightStoryBoss",
@@ -3471,7 +3621,7 @@ local storybosstoggle = StoryBoss:Toggle({
 			BossController.runAuto()
 		else
 			BossController.stopAuto()
-		end
+		end	
 	end,
 })
 
