@@ -66,7 +66,8 @@ local Net = {
 	showBattle = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("setSetting"),
 	useXpBook = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("useXpBook"),
 	buyDungeonUpgrade = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("buyDungeonUpgrade"),
-	buyStockItem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("buyChristmasStockShopItem")
+	buyStockItem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("buyChristmasStockShopItem"),
+	buyEventDailyItem = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("buyChristmasItemShopListing"),
 }
 
 -------------------------------------------------
@@ -335,14 +336,31 @@ local StockItem = {
 	"item:large_green_present",
 	"item:large_red_present",
 	"item:large_blue_present",
-	"item:x-large_green_present",
-	"item:x-large_red_present",
-	"item:x-large_blue_present",
+	"item:xlarge_green_present",
+	"item:xlarge_red_present",
+	"item:xlarge_blue_present",
 	"item:rose_oni_present",
 	"item:azure_oni_present",
 	"item:frozen_princess_present",
 	"item:the_returner_present",
 	"item:christmas_skin_present"
+}
+local DailyItem = {
+    "item:common_book",
+	"item:uncommon_book",
+	"item:rare_book",
+	"item:epic_book",
+	"item:legendary_book",
+	"item:exploration_speedup_30_min",
+	"item:exploration_speedup_1_hour",
+	"item:exploration_speedup_3_hour",
+	"item:exploration_speedup_8_hour",
+	"item:exploration_speedup_12_hour",
+	"item:exploration_speedup_24_hour",
+	"item:exploration_speedup_3_day",
+	"item:weak_festive_potion",
+	"item:strong_festive_potion",
+	"item:potent_festive_potion",
 }
 local MoonCycleData = {
 	{Name = "full_moon", DisplayName = "Full Moon"}, {Name = "snow_moon", DisplayName = "Snow Moon"},
@@ -546,6 +564,9 @@ State.autoUpgradeDungeon = State.autoUpgradeDungeon or false
 State.selectedDungeonStat = State.selectedDungeonStat or {}
 State.selectedStockItem = State.selectedStockItem or {}
 State.autoStockItem = State.autoStockItem or false
+State.selectedDailyItem = State.selectedDailyItem or {}
+State.autoDailyItem = State.autoDailyItem or false
+State.autoTradeOrnament = State.autoTradeOrnament or false
 
 -------------------------------------------------
 -- Utils
@@ -772,12 +793,21 @@ function Utils.normalize(text)
 	return text
 end
 
+local function waitWithCancel(seconds, conditionFn)
+	local elapsed = 0
+	while elapsed < seconds do
+		if not conditionFn() then
+			return false -- bị hủy
+		end
+		task.wait(1)
+		elapsed += 1
+	end
+	return true -- đợi xong
+end
 
 -------------------------------------------------
 -- Events
 -------------------------------------------------
--- Dungeon 
-
 local function IsDungeonLobbyPresent()
     for _, obj in ipairs(workspace:GetChildren()) do
         if string.match(obj.Name, "^Dungeon Lobby %d+$") then
@@ -917,7 +947,7 @@ function AutoDepositOrnament()
 					        task.wait(0.05)
 					   end
 	                   task.wait(0.1)
-					   Net.tradeOrnament:FireServer(unpack(args))
+					   if State.autoTradeOrnament then Net.tradeOrnament:FireServer(unpack(args)) end
 					   task.wait(0.1)
 				   end
 				   ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("collectSnowflakes"):FireServer()
@@ -945,31 +975,86 @@ end
 
 function AutoBuyStockItems()
 	task.spawn(function()
-	        while State.autoStockItem do 
-				   local items = State.selectedStockItem
-				   for _, item in ipairs(items) do
-					   local tier = "tier_1"
-				       if item:find("medium") then
-						   tier = "tier_2"
-					   elseif item:find("large") then
-						   tier = "tier_3"
-					   elseif item:find("x-large") then
-						   tier = "tier_4"
-					   elseif item:find("oni") or item:find("princess") or item:find("returner") or item:find("azure") then
-						   tier = "tier_5"
-					   else 
-						   tier = "tier_6"
-                       end
-	                   local args = { tier, item }
-					   for i = 1,5 do 
-						 Net.buyStockItem:FireServer(unpack(args))
-						 task.wait(0.05)
-					   end
-	                   task.wait(0.1)
-				   end
-				   task.wait(900)
+		while State.autoStockItem do
+			local items = State.selectedStockItem or {}
+
+			for _, item in ipairs(items) do
+				if not State.autoStockItem then return end
+
+				local tier = "tier_1"
+				if item:find("medium") then
+					tier = "tier_2"
+				elseif item:find("large") then
+					tier = "tier_3"
+				elseif item:find("xlarge") then
+					tier = "tier_4"
+				elseif item:find("oni")
+					or item:find("princess")
+					or item:find("returner")
+					or item:find("azure")
+					or item:find("skin") then
+					tier = "tier_5"
+				end
+
+				local args = { tier, item }
+				for i = 1, 5 do
+					if not State.autoStockItem then return end
+					Net.buyStockItem:FireServer(unpack(args))
+					task.wait(0.05)
+				end
+
+				task.wait(0.1)
 			end
-	
+
+			-- ⬇️ thay task.wait(900) bằng wait có thể hủy
+			if not waitWithCancel(600, function()
+				return State.autoStockItem
+			end) then
+				return
+			end
+		end
+	end)
+end
+
+function AutoBuyDailyItems()
+	task.spawn(function()
+		while State.autoDailyItem do
+			local items = State.selectedDailyItem or {}
+
+			for _, item in ipairs(items) do
+				if not State.autoDailyItem then return end
+				local tier = nil
+				if item:find("common_book") or item:find("speed_up_30_minute") then
+					tier = "tier_1"
+				elseif item:find("uncommon_book") or item:find("speed_up_1_hour") then
+					tier = "tier_2"
+				elseif item:find("rare_book") or item:find("speed_up_3_hour")  then
+					tier = "tier_3"
+				elseif item:find("epic_book") or item:find("weak_festive_elixir") or item:find("speed_up_8_hour") then
+					tier = "tier_4"
+				elseif item:find("legendary_book") or item:find("strong_festive") or item:find("speed_up_12_hour") then
+					tier = "tier_5"
+				elseif item:find("potent_luck_elixir")  or item:find("3_day") or item:find("24_hour") then
+					tier = "tier_6"
+				end
+
+				local args = { tier, item }
+				for i = 1, 5 do
+					if not State.autoStockItem then return end
+					Net.buyEventDailyItem:FireServer(unpack(args))
+					task.wait(0.05)
+				end
+
+				task.wait(0.1)
+			end
+
+			-- ⬇️ thay task.wait(900) bằng wait có thể hủy
+			if not waitWithCancel(6000, function()
+				return State.autoDailyItem
+			end) then
+				return
+			end
+		end
 	end)
 end
 
@@ -1460,8 +1545,6 @@ function autorankitem()
 		task.wait(3600)
 	end
 end
-
-
 -------------------------------------------------
 -- Rank Controller
 -------------------------------------------------
@@ -1777,19 +1860,36 @@ end
 -- Raid Shop
 ------------------------------------------------
 function autoraiditem()
-	while State.autoItemRaid do
-		for _, i in pairs(State.selectedRaidItem) do
-			local item = RaidItem[i]
-			local args = { item.shop, item.id, 1 }
-			for j = 1, item.amount do
-				Net.buyraiditem:FireServer(unpack(args))
-				task.wait(0.075)
+	task.spawn(function()
+		while State.autoItemRaid do
+			for _, i in ipairs(State.selectedRaidItem) do
+				if not State.autoItemRaid then return end
+
+				local item = RaidItem[i]
+				if not item then
+					warn("RaidItem not found:", i)
+					continue
+				end
+
+				local args = { item.shop, item.id, 1 }
+				for j = 1, item.amount do
+					if not State.autoItemRaid then return end
+					Net.buyraiditem:FireServer(unpack(args))
+					task.wait(0.075)
+				end
+
+				task.wait(0.5)
 			end
-			task.wait(0.5)
+
+			print("Bought All Daily Raid Item!!")
+
+			-- ⏱️ wait 1800s nhưng có thể ngắt
+			for t = 1, 1800 do
+				if not State.autoItemRaid then return end
+				task.wait(1)
+			end
 		end
-		print("Bought All Daily Raid Item!!")
-		task.wait(1800)
-	end
+	end)
 end
 -------------------------------------------------
 -- Raid Boss Controller
@@ -3284,6 +3384,18 @@ Shop:Dropdown({
 		State.selectedStockItem = option
 	end,
 })
+Shop:Dropdown({
+	Title = "Select Shop Stock Items",
+	Values = DailyItem,
+	Value = State.selectedDailyItem or {},
+	Multi = true,
+	AllowNone = false,
+	Flag = "ShopDailyItems",
+	Callback = function(option)
+		State.selectedDailyItem = option
+	end,
+})
+
 Shop:Toggle({
 	Title = "Auto Buy Shop Stock Items",
 	Value = State.autoStockItem or false,
@@ -3292,6 +3404,17 @@ Shop:Toggle({
 		State.autoStockItem = v
 		if v then
 			AutoBuyStockItems()
+		end
+	end,
+})
+Shop:Toggle({
+	Title = "Auto Buy Shop Daily Items",
+	Value = State.autoDailyItem or false,
+	Flag = "AutoBuyDailyItems",
+	Callback = function(v)
+		State.autoDailyItem = v
+		if v then
+			AutoBuyDailyItems()
 		end
 	end,
 })
@@ -3326,6 +3449,14 @@ local Ornament = Event:Tab({
 	Icon = "lucide:gift", -- optional
 })
 Ornament:Toggle({
+	Title = "Auto Trade Ornament",
+	Value = State.autoTradeOrnament or false,
+	Flag = "AutoTradeOrnament",
+	Callback = function(v)
+		State.autoTradeOrnament = v
+	end,
+})
+Ornament:Toggle({
 	Title = "Auto Deposit Ornament",
 	Value = State.autoDepositOrnament or false,
 	Flag = "AutoOrnament",
@@ -3336,6 +3467,7 @@ Ornament:Toggle({
 		end
 	end,
 })
+
 local Dungeon = Event:Tab({
 	Title = "Dungeon",
 	Icon = "lucide:door-open", -- optional
@@ -3435,7 +3567,7 @@ local Storyline = Pack:Tab({
 })
 State.storylineRetry = State.storylineRetry or 3
 
-local Input = Storyline:Input({
+ Storyline:Input({
 	Title = "Storyline Retry",
 	Desc = "Default: 3",
 	Value = "3",
@@ -3657,7 +3789,7 @@ local BattleTowerSection = BattleTower:Section({
 	Opened = false,
 })
 
-local Paragraph = BattleTowerSection:Paragraph({
+ BattleTowerSection:Paragraph({
 	Title = "Tip: ",
 	Desc = "You can select waves for every mode  in the **Bulk Wave Select Input** ",
 	Image = "rbxassetid://114289527320220",
@@ -3771,7 +3903,7 @@ local BattleTowerToggle = BattleTower:Section({
 	Opened = true,
 })
 
-local battletowertoggle = BattleTowerToggle:Toggle({
+BattleTowerToggle:Toggle({
 	Title = "Auto Fight Tower",
 	Value = false,
 	Flag = "AutoTower",
