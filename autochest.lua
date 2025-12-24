@@ -33,6 +33,10 @@ local GameAction = CFG.GameAction or "PlayAgain"
 --------------------------------------------------
 local UnitIds = {}        -- [Prefix] = {unit1, unit2}
 local AutoUpgrade = {}   -- [Prefix] = true/false
+local LastUpgradeUnit = nil          -- unit vừa được upgrade
+local UnitMaxed = {}                 -- [unitInstance] = true
+local CantAfford = false
+
 
 -- PARSE WAVE
 local function getWave()
@@ -99,6 +103,38 @@ local function placeUnit(slot, unitName, tileName)
     PlaceRemote:FireServer(unpack(args))
 end
 
+
+
+--------------------------------------------------
+-- NOTIFICATION LISTENER (INSTANCE-BASED)
+--------------------------------------------------
+local NotificationGui = PlayerGui:WaitForChild("NotificationGui")
+
+NotificationGui.DescendantAdded:Connect(function(obj)
+	if not obj:IsA("TextLabel") then return end
+	if obj.Name ~= "Content" then return end
+
+	task.wait() -- chờ text set xong
+	local text = obj.Text
+	if not text or text == "" then return end
+
+	-- ❌ Không đủ tiền
+	if text:find("cant afford") then
+		CantAfford = true
+		task.delay(7, function()
+			CantAfford = false
+		end)
+		return
+	end
+
+	-- 🚫 Max upgrade → gắn cho INSTANCE vừa upgrade
+	if text:find("isn't available") and LastUpgradeUnit then
+		UnitMaxed[LastUpgradeUnit] = true
+		LastUpgradeUnit = nil
+		return
+	end
+end)
+
 --------------------------------------------------
 -- AUTO UPGRADE (CHẠY NỀN)
 --------------------------------------------------
@@ -106,10 +142,16 @@ local upgradeCooldown = 1.25
 
 task.spawn(function()
 	while task.wait(upgradeCooldown) do
+		if CantAfford then continue end
+
 		for prefix, enabled in pairs(AutoUpgrade) do
 			if enabled and UnitIds[prefix] then
 				for _, unit in ipairs(UnitIds[prefix]) do
-					if unit and unit.Parent then
+					if unit
+						and unit.Parent
+						and not UnitMaxed[unit]
+					then
+						LastUpgradeUnit = unit -- ⭐ CỰC KỲ QUAN TRỌNG
 						UpgradeRemote:FireServer("Upgrade", unit)
 						task.wait(0.4)
 					end
@@ -134,6 +176,9 @@ task.spawn(function()
 			if wave == 1 then
 				UnitIds = {}
 				AutoUpgrade = {}
+				UnitMaxed = {}
+	           LastUpgradeUnit = nil
+	           CantAfford = false
 				print("♻️ Reset UnitIds & AutoUpgrade")
 			end
 
