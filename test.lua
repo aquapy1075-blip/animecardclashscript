@@ -2354,70 +2354,84 @@ end
 function BossController.runAuto()
 	State.autoRunIdBoss = State.autoRunIdBoss + 1
 	local runId = State.autoRunIdBoss
+
 	State.alreadyFought = State.alreadyFought or {}
+
+	-- init state theo KEY
 	for _, boss in ipairs(BossData.List) do
-		State.alreadyFought[boss.id] = State.alreadyFought[boss.id] or {}
+		local key = boss.key
+		State.alreadyFought[key] = State.alreadyFought[key] or {}
 	end
 
 	task.spawn(function()
 		while State.autoEnabledBoss and runId == State.autoRunIdBoss do
 			local plan = {}
-			for _, boss in ipairs(BossData.List) do
-				if State.selectedBosses[boss.id] then
-					local selectedModes = State.bossSelectedModes[boss.id]
 
-					-- nếu chưa chọn mode, fallback đánh tất cả mode
+			-- build plan theo thứ tự BossData.List
+			for _, boss in ipairs(BossData.List) do
+				local key = boss.key
+
+				if State.selectedBosses[key] then
+					local selectedModes = State.bossSelectedModes[key]
+
+					-- fallback: chưa chọn thì đánh tất cả mode
 					if not selectedModes or #selectedModes == 0 then
 						selectedModes = boss.modes
 					end
 
 					local modesToFight = {}
 					for _, mode in ipairs(selectedModes) do
-						if not (State.alreadyFought[boss.id] and State.alreadyFought[boss.id][mode]) then
+						if not State.alreadyFought[key][mode] then
 							table.insert(modesToFight, mode)
 						end
 					end
 
 					if #modesToFight > 0 then
-						table.insert(plan, { id = boss.id, modes = modesToFight })
+						table.insert(plan, {
+							key = key,
+							modes = modesToFight
+						})
 					end
 				end
 			end
 
+			-- không còn boss nào cần đánh
 			if #plan == 0 then
 				Utils.notify("Info", "All selected bosses done", 2)
+
 				task.wait(0.5)
 				if State.sendWebhookBattle then
 					local embedDataSB = {
-						embeds = {
-							{
-								title = "⚔️ Story Boss Finished",
-								color = 0xff9933, -- màu cam
-								description = "✅ Boss defeated!",
-								footer = { text = "Auto-reported by script" },
-								timestamp = DateTime.now():ToIsoDate(),
-							},
-						},
+						embeds = {{
+							title = "⚔️ Story Boss Finished",
+							color = 0xff9933,
+							description = "✅ Boss defeated!",
+							footer = { text = "Auto-reported by script" },
+							timestamp = DateTime.now():ToIsoDate(),
+						}},
 					}
 
 					pcall(function()
 						Utils.sendDiscordMessage(HttpService:JSONEncode(embedDataSB))
 					end)
 				end
+
 				State.autoEnabledBoss = false
 			else
+				-- đánh theo đúng thứ tự data
 				for _, item in ipairs(plan) do
 					for _, mode in ipairs(item.modes) do
 						if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then
 							break
 						end
-						BossController.fightBoss(item.id, mode, runId)
+						BossController.fightBoss(item.key, mode, runId)
 					end
 					if not State.autoEnabledBoss or runId ~= State.autoRunIdBoss then
 						break
 					end
 				end
 			end
+
 			task.wait(2)
 		end
 	end)
@@ -3549,6 +3563,7 @@ for _, b in ipairs(BossData.List) do
 			State.bossTeams[key] = option
 		end,
 	})
+	StoryBossSection:Space()
 end
 StoryBoss:Section({
 	Title = "Story Boss Toggle",
