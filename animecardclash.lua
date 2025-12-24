@@ -74,27 +74,27 @@ local Net = {
 -------------------------------------------------
 
 local BossData = {
-	Names = {
-		[365] = "Naruto", [361] = "Frieza", [408] = "Sukuna", [333] = "Titan", [351] = "Muzan",
-		[326] = "Big Mom", [494] = "Sungjinwoo", [300] = "Cid", [344] = "Celestial Sovereign",
-		[388] = "Dead King", [399] = "Ichigo", [319] = "Yhwach", [373] = "Monster 8",
-	},
-	List = {
-		{ id = 365, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 361, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 408, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 333, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 351, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 326, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 494, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 300, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 344, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 388, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 399, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 319, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-		{ id = 373, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
-	},
-	TeamOptions = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
+Names = {
+    [366] = "Naruto", [362] = "Frieza", [409] = "Sukuna", [334] = "Titan", [352] = "Muzan",
+    [327] = "Big Mom", [495] = "Sungjinwoo", [301] = "Cid", [345] = "Celestial Sovereign",
+    [389] = "Dead King", [400] = "Ichigo", [320] = "Yhwach", [374] = "Monster 8",
+},
+
+List = {
+    { id = 366, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 362, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 409, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 334, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 352, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 327, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 495, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 301, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 345, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 389, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 400, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 320, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+    { id = 374, modes = { "normal", "medium", "hard", "extreme", "nightmare", "celestial" } },
+}
 }
 
 -- Tower Data
@@ -133,57 +133,57 @@ local StorylineData = {
 	TeamOptions = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
 	Mobs = {
 		ninja_village = {
-			{id = 366, name = "unstoppable_fist"}, {id = 370, name = "copy_ninja"}, {id = 369, name = "awakened_dark_avenger"},
-			{id = 368, name = "awakened_promised_child"}, {id = 367, name = "six_paths_of_pain"}, {id = 365, name = "bijuu_beast"}
-		},
-		green_planet = {
-			{id = 358, name = "ultimate_warrior"}, {id = 362, name = "body_switcher"}, {id = 359, name = "namekian_sage"},
-			{id = 356, name = "awakened_prideful_prince"}, {id = 360, name = "awakened_earth_strongest"}, {id = 361, name = "awakened_galactic_tyrant"}
-		},
-		shibuya_station = {
-			{id = 409, name = "cursed_doll"}, {id = 412, name = "awakened_shadow_summoner"}, {id = 411, name = "cursed_fist"},
-			{id = 407, name = "rika_blessing"}, {id = 410, name = "limitless_master"}, {id = 408, name = "king_of_curses"}
-		},
-		titans_city = {
-			{id = 334, name = "survey_commander"}, {id = 336, name = "blade_warrior"}, {id = 338, name = "armored_giant"},
-			{id = 337, name = "beast_giant"}, {id = 335, name = "blade_captain"}, {id = 333, name = "combat_giant"}
-		},
-		dimensional_fortress = {
-			{id = 349, name = "thunder_demon"}, {id = 352, name = "childish_demon"}, {id = 354, name = "compass_demon"},
-			{id = 353, name = "awakened_frost_demon"}, {id = 350, name = "awaken_six_eye_slayer"}, {id = 351, name = "awaken_pale_demon_lord"}
-		},
-		candy_island = {
-			{id = 330, name = "genie_commander"}, {id = 327, name = "candy_master"}, {id = 325, name = "biscuit_warrior"},
-			{id = 329, name = "juice_queen"}, {id = 328, name = "mochi_emperor"}, {id = 326, name = "soul_queen"}
-		},
-		solo_city = {
-			{id = 492, name = "light_saintess"}, {id = 495, name = "the_goliath"}, {id = 490, name = "shadow_bear"},
-			{id = 493, name = "shadow_commander"}, {id = 491, name = "shadow_ant"}, {id = 494, name = "awakened_shadow_monarch"}
-		},
-		eminence_lookout = {
-			{id = 305, name = "eminence_accountant"}, {id = 304, name = "eminence_scout"}, {id = 302, name = "eminence_cat"},
-			{id = 301, name = "eminence_strategist"}, {id = 303, name = "eminence_commander"}, {id = 300, name = "lord_of_eminence"}
-		},
-		invaded_ninja_village = {
-            {id = 346, name = "celestial_warrior"}, {id = 342, name = "mother_of_creation"}, {id = 343, name = "celestial_fisherman"},
-            {id = 341, name = "celestial_destroyer"}, {id = 345, name = "awakened_impure_ghost"}, {id = 344, name = "celestial_sovereign"}
+    {id = 367, name = "unstoppable_fist"}, {id = 371, name = "copy_ninja"}, {id = 370, name = "awakened_dark_avenger"},
+    {id = 369, name = "awakened_promised_child"}, {id = 368, name = "six_paths_of_pain"}, {id = 366, name = "bijuu_beast"}
+},
+green_planet = {
+    {id = 359, name = "ultimate_warrior"}, {id = 363, name = "body_switcher"}, {id = 360, name = "namekian_sage"},
+    {id = 357, name = "awakened_prideful_prince"}, {id = 361, name = "awakened_earth_strongest"}, {id = 362, name = "awakened_galactic_tyrant"}
+},
+shibuya_station = {
+    {id = 410, name = "cursed_doll"}, {id = 413, name = "awakened_shadow_summoner"}, {id = 412, name = "cursed_fist"},
+    {id = 408, name = "rika_blessing"}, {id = 411, name = "limitless_master"}, {id = 409, name = "king_of_curses"}
+},
+titans_city = {
+    {id = 335, name = "survey_commander"}, {id = 337, name = "blade_warrior"}, {id = 339, name = "armored_giant"},
+    {id = 338, name = "beast_giant"}, {id = 336, name = "blade_captain"}, {id = 334, name = "combat_giant"}
+},
+dimensional_fortress = {
+    {id = 350, name = "thunder_demon"}, {id = 353, name = "childish_demon"}, {id = 355, name = "compass_demon"},
+    {id = 354, name = "awakened_frost_demon"}, {id = 351, name = "awaken_six_eye_slayer"}, {id = 352, name = "awaken_pale_demon_lord"}
+},
+candy_island = {
+    {id = 331, name = "genie_commander"}, {id = 328, name = "candy_master"}, {id = 326, name = "biscuit_warrior"},
+    {id = 330, name = "juice_queen"}, {id = 329, name = "mochi_emperor"}, {id = 327, name = "soul_queen"}
+},
+solo_city = {
+    {id = 493, name = "light_saintess"}, {id = 496, name = "the_goliath"}, {id = 491, name = "shadow_bear"},
+    {id = 494, name = "shadow_commander"}, {id = 492, name = "shadow_ant"}, {id = 495, name = "awakened_shadow_monarch"}
+},
+eminence_lookout = {
+    {id = 306, name = "eminence_accountant"}, {id = 305, name = "eminence_scout"}, {id = 303, name = "eminence_cat"},
+    {id = 302, name = "eminence_strategist"}, {id = 304, name = "eminence_commander"}, {id = 301, name = "lord_of_eminence"}
+},
+invaded_ninja_village = {
+    {id = 347, name = "celestial_warrior"}, {id = 343, name = "mother_of_creation"}, {id = 344, name = "celestial_fisherman"},
+    {id = 342, name = "celestial_destroyer"}, {id = 346, name = "awakened_impure_ghost"}, {id = 345, name = "celestial_sovereign"}
 },
 necromancer_graveyard = {
-            {id = 385, name = "beast_tamer"}, {id = 387, name = "servant_of_the_undead"}, {id = 389, name = "undead_demon"},
-            {id = 384, name = "undead_commander"}, {id = 386, name = "blood_valkyrie"}, {id = 388, name = "undead_king"}
+    {id = 386, name = "beast_tamer"}, {id = 388, name = "servant_of_the_undead"}, {id = 390, name = "undead_demon"},
+    {id = 385, name = "undead_commander"}, {id = 387, name = "blood_valkyrie"}, {id = 389, name = "undead_king"}
 },
 soul_kings_castle = {
-    {id = 396, name = "Hornet Shinigami"}, {id = 400, name = "Shinigami Strategist"}, {id = 401, name = "Shinigami Illusionist"},
-    {id = 398, name = "Fate Weaver Shinigami"}, {id = 397, name = "Shinigami Monk"}, {id = 399, name = "Substitute Shinigami"}
+    {id = 397, name = "Hornet Shinigami"}, {id = 401, name = "Shinigami Strategist"}, {id = 402, name = "Shinigami Illusionist"},
+    {id = 399, name = "Fate Weaver Shinigami"}, {id = 398, name = "Shinigami Monk"}, {id = 400, name = "Substitute Shinigami"}
 },
 empire_of_light = {
-    {id = 322, name = "The Visionary"}, {id = 318, name = "The Antithesis"}, {id = 320, name = "The X-Axis"},
-    {id = 321, name = "The Miracle"}, {id = 317, name = "The Balance"}, {id = 319, name = "Quincy King"}
+    {id = 323, name = "The Visionary"}, {id = 319, name = "The Antithesis"}, {id = 321, name = "The X-Axis"},
+    {id = 322, name = "The Miracle"}, {id = 318, name = "The Balance"}, {id = 320, name = "Quincy King"}
 },
 defense_force_base = {
-    {id = 374, name = "frostbite_sodier"}, {id = 377, name = "eightfold_slayer"}, {id = 379, name = "gun_blade_hunter"},
-    {id = 375, name = "defense_force_captain"}, {id = 378, name = "defense_force_heiress"}, {id = 376, name = "monster_10"},
-    {id = 373, name = "humanitys_weapon"}
+    {id = 375, name = "frostbite_sodier"}, {id = 378, name = "eightfold_slayer"}, {id = 380, name = "gun_blade_hunter"},
+    {id = 376, name = "defense_force_captain"}, {id = 379, name = "defense_force_heiress"}, {id = 377, name = "monster_10"},
+    {id = 374, name = "humanitys_weapon"}
 }
 	}
 }
@@ -222,12 +222,12 @@ local CursedZoneData = {
 }
 
 local RaidData = {
-	["Monster 9"] = {id = 314, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_monster_9"},
-	["Cifer"] = {id = 392, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_cifer"},
-	["Creator of Flames"] = {id = 415, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_creator_of_flames"},
-	["Sword Deity"] = {id = 311, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_sword_deity"},
-	["Shadow Dragon"] = {id = 308, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_shadow_dragon"},
-	["Eternal Dragon"] = {id = 404, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_eternal_dragon"},
+	["Monster 9"] = {id = 315, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_monster_9"},
+	["Cifer"] = {id = 393, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_cifer"},
+	["Creator of Flames"] = {id = 416, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_creator_of_flames"},
+	["Sword Deity"] = {id = 312, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_sword_deity"},
+	["Shadow Dragon"] = {id = 309, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_shadow_dragon"},
+	["Eternal Dragon"] = {id = 405, modes = {"easy", "medium", "hard", "extreme"}, teleportName = "raid_eternal_dragon"},
 }
 
 local RaidItem = {
