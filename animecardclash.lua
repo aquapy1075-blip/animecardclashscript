@@ -984,10 +984,10 @@ function AutoBuyStockItems()
 				local tier = "tier_1"
 				if item:find("medium") then
 					tier = "tier_2"
-				elseif item:find("large") then
-					tier = "tier_3"
 				elseif item:find("xlarge") then
 					tier = "tier_4"
+				elseif item:find("large") then
+					tier = "tier_3"
 				elseif item:find("oni")
 					or item:find("princess")
 					or item:find("returner")
