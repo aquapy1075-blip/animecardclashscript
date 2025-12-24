@@ -30,7 +30,9 @@ local UIS = game:GetService("UserInputService")
 
 -- Net
 local Net = {
+	
 	depositOrnament = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("depositOrnament"),
+	tradeOrnament = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("tradeOrnament"),
 	teleportmap = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("teleport"),
 	startdungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonStart"),
 	fightenemydungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonFightEnemy"),
@@ -851,6 +853,8 @@ function AutoDepositOrnament()
 					        task.wait(0.05)
 					   end
 	                   task.wait(0.1)
+					   Net.tradeOrnament:FireServer(unpack(args))
+					   task.wait(0.1)
 				   end
 				   ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("collectSnowflakes"):FireServer()
 
