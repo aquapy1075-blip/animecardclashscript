@@ -119,9 +119,9 @@ NotificationGui.DescendantAdded:Connect(function(obj)
 	if not text or text == "" then return end
 
 	-- ❌ Không đủ tiền
-	if text:find("cant afford") then
+	if text:find("can't afford") then
 		CantAfford = true
-		task.delay(7, function()
+		task.delay(3, function()
 			CantAfford = false
 		end)
 		return
