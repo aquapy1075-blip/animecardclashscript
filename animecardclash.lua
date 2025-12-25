@@ -16,6 +16,7 @@
 	local HttpService = game:GetService("HttpService")
 	local workspace = game.Workspace
 	local react = PlayerGui:WaitForChild("react")
+	local notifications = react:WaitForChild("notifications")
 	local rewardsPopup = react:WaitForChild("rewardsPopup")
 	local camera = workspace.CurrentCamera
 	local RunService = game:GetService("RunService")
@@ -30,7 +31,7 @@
 
 	-- Net
 	local Net = {
-		
+        inviteDungeon = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("dungeonInviteToTeam"),
 		depositOrnament = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("depositOrnament"),
 		tradeOrnament = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("tradeOrnament"),
 		teleportmap = ReplicatedStorage:WaitForChild("shared/network@eventDefinitions"):WaitForChild("teleport"),
@@ -501,6 +502,8 @@
 	State.teamSwap = "slot_1"
 	State.floorSwap = 100
 	State.floorRestart = 100
+	State.autoCheckPoint = State.autoCheckPoint or false
+	State.floorCheckPoint = State.floorCheckPoint or "100"
 
 	-- Raid Boss
 	State.selectedRaidBoss = State.selectedRaidBoss or "Creator of Flames"
@@ -792,8 +795,27 @@
 		text = text:gsub("%s+", "_")
 		return text
 	end
+	 function Utils.triggerConnections(signal)
+	if type(getconnections) ~= "function" then return end
+	for _, c in ipairs(getconnections(signal or {})) do
+		pcall(c.Function)
+	end
+    end
 
-	local function waitWithCancel(seconds, conditionFn)
+     function Utils.safeClick(button)
+	if not button then return false end
+	if type(getconnections) == "function" then
+		Utils.triggerConnections(button.Activated)
+		Utils.triggerConnections(button.MouseButton1Click)
+	else
+		pcall(function()
+			button:Activate()
+		end)
+	end
+	return true
+    end
+
+    function Utils.waitWithCancel(seconds, conditionFn)
 		local elapsed = 0
 		while elapsed < seconds do
 			if not conditionFn() then
@@ -808,6 +830,9 @@
 	-------------------------------------------------
 	-- Events
 	-------------------------------------------------
+	State.autoAcceptInvite = State.autoAcceptInvite or false
+	State.autoInviteDungeon = State.autoInviteDungeon or false
+
 	local function IsDungeonLobbyPresent()
 		for _, obj in ipairs(workspace:GetChildren()) do
 			if string.match(obj.Name, "^Dungeon Lobby %d+$") then
@@ -816,13 +841,19 @@
 		end
 		return false
 	end
-
 	local function AutoStartDungeonLoop()
 		task.spawn(function()
 			while State.autoStartDungeon do
 				if not IsDungeonLobbyPresent() then
-					Utils.notify("Auto Dungeon", "Starting a new dungeon in 10 seconds...", 2)
-					task.wait(10)
+					if State.autoInviteDungeon then 
+						for _, plr in ipairs(Players:GetPlayers()) do
+							  if plr == Players.LocalPlayer then continue end
+							  local args = {plr}
+                              Net.inviteDungeon:FireServer(unpack(args))
+							  task.wait(1)
+						end
+					end
+					task.wait(7.5)
 					local args = { "dungeon_christmas" }
 					Net.startdungeon:FireServer(unpack(args))
 					Utils.notify("Auto Dungeon", "Started a new dungeon!", 2)
@@ -854,8 +885,35 @@
 		return false
 	end
 
+    local function handleNotification(child)
+	if not State.autoAcceptInvite then
+		return
+	end
+	task.wait() -- đợi react render
+	local textObj =
+		child:FindFirstChild("4")
+		and child["4"]:FindFirstChild("3")
+	if not textObj or not textObj:IsA("TextLabel") then
+		return
+	end
+	local text = textObj.Text
+	if not text then return end
+	if text:find("has invited")  then
+		local btn =
+			child["4"]
+			and child["4"]:FindFirstChild("4")
+			and child["4"]["4"]:FindFirstChild("2")
+			and child["4"]["4"]["2"]:FindFirstChild("2")
+		if btn then
+			Utils.safeClick(btn)
+		end
+	end
+end
+notifications.ChildAdded:Connect(handleNotification)
+	
 
-	function AutoClearDungeon()
+
+       function AutoClearDungeon()
 		State.autoRunIdDungeon = State.autoRunIdDungeon + 1
 		local runId = State.autoRunIdDungeon
 		task.spawn(function()
@@ -996,7 +1054,7 @@
 				end
 
 				-- ⬇️ thay task.wait(900) bằng wait có thể hủy
-				if not waitWithCancel(600, function()
+				if not Utils.waitWithCancel(600, function()
 					return State.autoStockItem
 				end) then
 					return
@@ -1038,7 +1096,7 @@
 				end
 
 				-- ⬇️ thay task.wait(900) bằng wait có thể hủy
-				if not waitWithCancel(6000, function()
+				if not Utils.waitWithCancel(6000, function()
 					return State.autoDailyItem
 				end) then
 					return
@@ -2919,7 +2977,21 @@
 		Net.setPartySlot:FireServer(currentTeam)
 		local desireTeam = currentTeam
 		task.wait(0.3)
-		Net.fightInfinite:FireServer(State.selectedInfMode)
+		if State.autoCheckPoint then 
+			if State.selectedInfMode == "base" then
+				local floor = tonumber(State.floorCheckPoint)
+				floor = floor / 100
+				local args = {"base", floor}
+				Net.fightInfinite:FireServer(unpack(args))
+			else 
+				local floor = tonumber(State.floorCheckPoint)
+				floor = floor / 50 
+				local args = {State.selectedInfMode, floor}
+				Net.fightInfinite:FireServer(unpack(args))
+			end
+		else
+		       Net.fightInfinite:FireServer(State.selectedInfMode)
+		end
 		task.spawn(function()
 			while State.fightingInf and runId == State.fightingRunIdInf do
 				local success, target = pcall(function()
@@ -3470,6 +3542,22 @@
 		TextSize = 15, -- Default Size
 		Opened = true,
 	})
+	DungeonSetting:Toggle({
+		Title = "Enable Auto Invite People",
+		Value = State.autoInviteDungeon or false,
+		Flag = "AutoInviteDungeon",
+		Callback = function(v)
+				State.autoInviteDungeon = v
+		end,
+	})
+	DungeonSetting:Toggle({
+		Title = "Enable Auto Accept Invite Dungeon",
+		Value = State.autoAcceptInvite or false,
+		Flag = "AutoAcceptInvite",
+		Callback = function(v)
+			State.autoAcceptInvite = v
+		end,
+	})
 	DungeonSetting:Dropdown({
 		Title = "Dungeon Team",
 		Values = {"slot_1", "slot_2", "slot_3", "slot_4", "slot_5", "slot_6", "slot_7", "slot_8"},
@@ -3946,6 +4034,25 @@
 				end
 			end
 			Utils.notify("Inf Tower", "Mode selected: " .. InfiniteData.ModeNames[State.selectedInfMode], 2)
+		end,
+	})
+	InfiniteSetting:Input({
+        	Title = "Select Floor CheckPoint",
+		Desc = "Select if you want to check point key ",
+		Value = State.floorCheckPoint,
+		Placeholder = "Enter floor ( 50,100,150,...)",
+		Type = "Input",
+		Flag = "FloorCheckPoint",
+		Callback = function(text)
+			State.floorCheckPoint = text
+		end,
+	})
+	InfiniteSetting:Toggle({
+		Title = "Auto Use Check Point Key",
+		Value = State.autoCheckPoint,
+		Flag = "AutoCheckPoint",
+		Callback = function(state)
+			State.autoCheckPoint = state
 		end,
 	})
 	local InfiniteSwap = InfiniteTower:Section({
