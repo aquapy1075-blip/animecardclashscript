@@ -908,25 +908,7 @@ function AutoClearDungeon()
 								pcall(function()
 									Net.fightenemydungeon:FireServer(serverId)
 								end)
-								
-								-- Đợi popup combat xuất hiện
-								local waited = 0
-								local timeout = 1.5
-								while not Utils.isInBattlePopupPresent() and waited < timeout do
-									if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
-										break
-									end
-									task.wait(0.1)
-									waited = waited + 0.1
-								end
-
-								while Utils.isInBattlePopupPresent() do
-									if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
-										break
-									end
-									task.wait(0.5)
-								end
-								task.wait(0.25)
+								task.wait(0.1)
 							end
 					end
 				end
