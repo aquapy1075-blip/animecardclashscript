@@ -1393,13 +1393,12 @@ notifications.ChildAdded:Connect(handleNotification)
 
 		-- Lắng nghe khi popup thêm nội dung mới (khi nó mở)
 		popupConn = rewardsPopup["3"]["2"].ChildAdded:Connect(function()
-			local container = rewardsPopup["3"]["2"]
-			if container and #container:GetChildren() > 50 then
+			if #rewardsPopup["3"]["2"]:GetChildren() > 50 then
 				task.wait(3)
 			else
 				task.wait(1)
 			end
-			if #container:GetChildren() > 0 then Utils.pressZ() end
+			if #rewardsPopup["3"]["2"]:GetChildren() > 1 then Utils.pressZ() end
 		end)
 	end
 	function DisableDismisReward()
