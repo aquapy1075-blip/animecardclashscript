@@ -898,6 +898,9 @@
 						if not State.autoClearDungeon or runId ~= State.autoRunIdDungeon then
 							break
 						end
+						if Utils.isInBattlePopupPresent then 
+							repeat task.wait(0.05) until not Utils.isInBattlePopupPresent 
+						end
 						if string.match(mob.Name, "^completion_portal") then
 							local portalCFrame = mob.WorldPivot
 							Utils.teleport(portalCFrame)
@@ -906,7 +909,6 @@
 								local serverId = mob:GetAttribute("serverEntityId")
 								if serverId then
 									pcall(function()
-										if Utils.isInBattlePopupPresent then repeat task.wait(0.05) until not Utils.isInBattlePopupPresent end
 										Net.fightenemydungeon:FireServer(serverId)
 									end)
 									
