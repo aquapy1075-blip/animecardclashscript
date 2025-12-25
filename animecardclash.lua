@@ -934,6 +934,8 @@ notifications.ChildAdded:Connect(handleNotification)
 						Utils.notify("Auto Dungeon", "Dungeon failed detected, teleporting to lobby...", 2)
 						Net.teleportmap:FireServer("lobby")
 					end
+					local args = { "show_battles", false }
+		            Net.showBattle:FireServer(unpack(args))
 					task.wait(2.5)
 			end
 		
