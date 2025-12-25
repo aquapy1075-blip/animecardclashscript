@@ -1399,7 +1399,7 @@ notifications.ChildAdded:Connect(handleNotification)
 			else
 				task.wait(1)
 			end
-			if container:GetChildren() > 0 then Utils.pressZ() end
+			if #container:GetChildren() > 0 then Utils.pressZ() end
 		end)
 	end
 	function DisableDismisReward()
