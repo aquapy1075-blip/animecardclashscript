@@ -1394,8 +1394,10 @@ notifications.ChildAdded:Connect(handleNotification)
 			local container = rewardsPopup["3"]["2"]
 			if container and #container:GetChildren() > 50 then
 				task.wait(3)
+				if container:GetChildren() > 50 then Utils.pressZ() end
 			else
-				task.wait(1)
+				task.wait()
+				Utils.pressZ()
 			end
 			Utils.pressZ()
 		end)
