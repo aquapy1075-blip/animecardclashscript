@@ -2566,18 +2566,25 @@ notifications.ChildAdded:Connect(handleNotification)
 						end
 
 						local modesToFight = {}
-						for _, mode in ipairs(selectedModes) do
-							if not State.alreadyFought[key][mode] then
-								table.insert(modesToFight, mode)
-							end
-						end
+						if not selectedModes or #selectedModes == 0 then
+                     	for _, mode in ipairs(boss.modes) do
+		                     if not State.alreadyFought[key][mode] then
+		                          	table.insert(modesToFight, mode)
+		                     end
+	                     end
+                        else
+	                          -- nếu có chọn → vẫn giữ thứ tự boss.modes
+	                          local selectedLookup = {}
+	                          for _, m in ipairs(selectedModes) do
+	                              	selectedLookup[m] = true
+	                          end
 
-						if #modesToFight > 0 then
-							table.insert(plan, {
-								boss = boss,
-								modes = modesToFight
-							})
-						end
+	                           for _, mode in ipairs(boss.modes) do
+		                           if selectedLookup[mode] and not State.alreadyFought[key][mode] then
+		                        	table.insert(modesToFight, mode)
+	                         	   end
+	                           end
+                        end
 					end
 				end
 
