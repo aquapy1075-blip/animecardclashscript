@@ -1072,7 +1072,7 @@ notifications.ChildAdded:Connect(handleNotification)
 
 				for _, item in ipairs(items) do
 					if not State.autoDailyItem then return end
-					local tier = nil
+					local tier = "tier_1"
 					if item:find("common_book") or item:find("speed_up_30_minute") then
 						tier = "tier_1"
 					elseif item:find("uncommon_book") or item:find("speed_up_1_hour") then
@@ -1083,15 +1083,19 @@ notifications.ChildAdded:Connect(handleNotification)
 						tier = "tier_4"
 					elseif item:find("legendary_book") or item:find("strong_festive") or item:find("speed_up_12_hour") then
 						tier = "tier_5"
-					elseif item:find("potent_luck_elixir")  or item:find("3_day") or item:find("24_hour") then
+					elseif item:find("potent_festive_elixir")  or item:find("3_day") or item:find("24_hour") then
 						tier = "tier_6"
 					end
-
 					local args = { tier, item }
 					for i = 1, 20 do
 						if not State.autoStockItem then return end
 						Net.buyEventDailyItem:FireServer(unpack(args))
 						task.wait(0.05)
+						if item:find("legendary_book") then 
+							args = {"tier_6", item}
+							Net.buyEventDailyItem:FireServer(unpack(args))
+							task.wait(0.05)
+                        end
 					end
 
 					task.wait(0.1)
@@ -2555,39 +2559,42 @@ notifications.ChildAdded:Connect(handleNotification)
 
 				-- build plan theo thứ tự BossData.List
 				for _, boss in ipairs(BossData.List) do
-					local key = boss.key
+	local key = boss.key
 
-					if State.selectedBosses[key] then
-						local selectedModes = State.bossSelectedModes[key]
+	if State.selectedBosses[key] then
+		local selectedModes = State.bossSelectedModes[key]
+		local modesToFight = {}
 
-						-- fallback: chưa chọn thì đánh tất cả mode
-						if not selectedModes or #selectedModes == 0 then
-							selectedModes = boss.modes
-						end
-
-						local modesToFight = {}
-						if not selectedModes or #selectedModes == 0 then
-                     	for _, mode in ipairs(boss.modes) do
-		                     if not State.alreadyFought[key][mode] then
-		                          	table.insert(modesToFight, mode)
-		                     end
-	                     end
-                        else
-	                          -- nếu có chọn → vẫn giữ thứ tự boss.modes
-	                          local selectedLookup = {}
-	                          for _, m in ipairs(selectedModes) do
-	                              	selectedLookup[m] = true
-	                          end
-
-	                           for _, mode in ipairs(boss.modes) do
-		                           if selectedLookup[mode] and not State.alreadyFought[key][mode] then
-		                        	table.insert(modesToFight, mode)
-	                         	   end
-	                           end
-                        end
-					end
+		if not selectedModes or #selectedModes == 0 then
+			-- không chọn mode → đánh tất cả theo thứ tự data
+			for _, mode in ipairs(boss.modes) do
+				if not State.alreadyFought[key][mode] then
+					table.insert(modesToFight, mode)
 				end
+			end
+		else
+			-- có chọn → vẫn giữ thứ tự boss.modes
+			local selectedLookup = {}
+			for _, m in ipairs(selectedModes) do
+				selectedLookup[m] = true
+			end
 
+			for _, mode in ipairs(boss.modes) do
+				if selectedLookup[mode] and not State.alreadyFought[key][mode] then
+					table.insert(modesToFight, mode)
+				end
+			end
+		end
+
+		-- ❗❗❗ DÒNG M THIẾU
+		if #modesToFight > 0 then
+			table.insert(plan, {
+				boss = boss,
+				modes = modesToFight
+			})
+		end
+	end
+end
 				-- không còn boss nào cần đánh
 				if #plan == 0 then
 					Utils.notify("Info", "All selected bosses done", 2)
