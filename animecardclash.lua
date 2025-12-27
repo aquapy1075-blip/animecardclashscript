@@ -2566,14 +2566,12 @@ notifications.ChildAdded:Connect(handleNotification)
 		local modesToFight = {}
 
 		if not selectedModes or #selectedModes == 0 then
-			-- không chọn mode → đánh tất cả theo thứ tự data
 			for _, mode in ipairs(boss.modes) do
 				if not State.alreadyFought[key][mode] then
 					table.insert(modesToFight, mode)
 				end
 			end
 		else
-			-- có chọn → vẫn giữ thứ tự boss.modes
 			local selectedLookup = {}
 			for _, m in ipairs(selectedModes) do
 				selectedLookup[m] = true
@@ -2586,7 +2584,6 @@ notifications.ChildAdded:Connect(handleNotification)
 			end
 		end
 
-		-- ❗❗❗ DÒNG M THIẾU
 		if #modesToFight > 0 then
 			table.insert(plan, {
 				boss = boss,
@@ -2595,6 +2592,7 @@ notifications.ChildAdded:Connect(handleNotification)
 		end
 	end
 end
+
 				-- không còn boss nào cần đánh
 				if #plan == 0 then
 					Utils.notify("Info", "All selected bosses done", 2)
