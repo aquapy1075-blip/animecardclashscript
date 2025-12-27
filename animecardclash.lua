@@ -1092,8 +1092,7 @@ notifications.ChildAdded:Connect(handleNotification)
 						Net.buyEventDailyItem:FireServer(unpack(args))
 						task.wait(0.05)
 						if item:find("legendary_book") then 
-							args = {"tier_6", item}
-							Net.buyEventDailyItem:FireServer(unpack(args))
+							Net.buyEventDailyItem:FireServer("tier_6", item)
 							task.wait(0.05)
                         end
 					end
