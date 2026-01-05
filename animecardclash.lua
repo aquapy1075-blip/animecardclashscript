@@ -1,4 +1,5 @@
-	local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+local Version = "1.6.62" -- static version.
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/download/" .. Version .. "/main.lua"))()
 	-- Anti AFK
 	local vu = game:GetService("VirtualUser")
 	game:GetService("Players").LocalPlayer.Idled:Connect(function()
