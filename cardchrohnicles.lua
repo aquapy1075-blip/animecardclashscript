@@ -40,14 +40,15 @@ local WindUI = loadstring(game:HttpGet(
 local Window = WindUI:CreateWindow({
     Title = "Aqua Hub",
     Icon = "door-open",
-    Author = "by .aquane"
-	Folder = "CardChronicles"
+    Author = "by .aquane",
+	Folder = "CardChronicles",
     Size = UDim2.fromOffset(580, 460), -- window size
     MinSize = Vector2.new(560, 350), -- minimal window size
     MaxSize = Vector2.new(850, 560), -- maximum window size
 	Transparent = true, -- window transparency
     Theme = "Dark", -- library theme
     Resizable = true, -- the ability to rezize window
+    ToggleKey = Enum.KeyCode.V, -- key to toggle window
 	   KeySystem = { -- key system from this library
         --  ↓ DEPRECATED
         -- Key = { "1234", "5678" },
