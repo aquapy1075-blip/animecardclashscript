@@ -42,6 +42,33 @@ local Window = WindUI:CreateWindow({
     Icon = "door-open",
     Author = "by .aquane"
 	Folder = "CardChronicles"
+    Size = UDim2.fromOffset(580, 460), -- window size
+    MinSize = Vector2.new(560, 350), -- minimal window size
+    MaxSize = Vector2.new(850, 560), -- maximum window size
+	Transparent = true, -- window transparency
+    Theme = "Dark", -- library theme
+    Resizable = true, -- the ability to rezize window
+	   KeySystem = { -- key system from this library
+        --  ↓ DEPRECATED
+        -- Key = { "1234", "5678" },
+ 
+        -- ✓ use this instead:
+        KeyValidator = function(enteredKey)
+            if enteredKey == "2005" then
+                return true -- this means the key is correct
+            end
+            return false -- this is if the key is not correct 
+        end,
+ 
+        Note = "Example Key System.",
+        
+        Thumbnail = { -- the image which is located on the left. optional. it can be removed
+            Image = "rbxassetid://114289527320220",
+            Title = "AquaHub", -- optional. it can be removed
+        },
+        
+        SaveKey = true, -- automatically save and load the key.
+    },
 })
 local MyConfig = Window.ConfigManager:Config("CC")
 local BossTab = Window:Tab({
