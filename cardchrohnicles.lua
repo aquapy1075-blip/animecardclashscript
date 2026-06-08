@@ -216,19 +216,36 @@ end)
 
 
 local function HideBattle()
-	local button = safeGet(function()
-		return game:GetService("Players").LocalPlayer.PlayerGui.UI.OtherUI.BattleUI1.HideButton
-	end)
+    local battleUI = safeGet(function()
+        return game:GetService("Players")
+            .LocalPlayer
+            .PlayerGui
+            .UI
+            .OtherUI
+            .BattleUI1
+    end)
 
-	if not button then
-		return false
-	end
+    if not battleUI then
+        return false
+    end
 
-	return safeClick(button)
+    if not battleUI.Visible then
+        return false
+    end
+
+    local button = safeGet(function()
+        return battleUI.HideButton
+    end)
+
+    if not button then
+        return false
+    end
+
+    return safeClick(button)
 end
 
 task.spawn(function()
-	while task.wait(3) do
+	while task.wait(2) do
 		if AutoHideBattle then
 			HideBattle()
 		end
