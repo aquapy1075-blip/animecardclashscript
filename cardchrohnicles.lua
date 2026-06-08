@@ -1,4 +1,10 @@
 
+local VirtualUser = game:GetService("VirtualUser")
+
+game:GetService("Players").LocalPlayer.Idled:Connect(function()
+    VirtualUser:CaptureController()
+    VirtualUser:ClickButton2(Vector2.new())
+end)
 
 local function safeGet(fn)
 	local ok, result = pcall(fn)
@@ -147,6 +153,7 @@ BossTab:Toggle({
         AutoBoss = state
     end
 })
+MyConfig:Save()
 local function WaitForBossFinish(BossName, Difficulty)
     local Start = tick()
 
