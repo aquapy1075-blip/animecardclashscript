@@ -41,8 +41,9 @@ local Window = WindUI:CreateWindow({
     Title = "Aqua Hub",
     Icon = "door-open",
     Author = "by .aquane"
+	Folder = "CardChronicles"
 })
-
+local MyConfig = Window.ConfigManager:Config("CC")
 local BossTab = Window:Tab({
     Title = "Boss",
     Icon = "swords"
@@ -99,7 +100,7 @@ for _, BossName in ipairs(Bosses) do
     })
 
 end
-
+BossTab:Divider()
 BossTab:Toggle({
 	Title = "Auto Hide Battle",
 	Value = false,
