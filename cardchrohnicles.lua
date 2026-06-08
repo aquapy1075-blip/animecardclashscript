@@ -1,11 +1,4 @@
 
-local VirtualUser = game:GetService("VirtualUser")
-
-game:GetService("Players").LocalPlayer.Idled:Connect(function()
-    VirtualUser:CaptureController()
-    VirtualUser:ClickButton2(Vector2.new())
-end)
-
 local function safeGet(fn)
 	local ok, result = pcall(fn)
 	return ok and result or nil
@@ -126,7 +119,7 @@ for _, BossName in ipairs(Bosses) do
     BossTab:Dropdown({
         Title = BossName .. " Difficulty",
         Values = Difficulties,
-        Value = "base",
+        Value = "Base",
         Multi = false,
         Flag = "BossDiff_" .. BossName,
         Callback = function(selected)
@@ -153,7 +146,16 @@ BossTab:Toggle({
         AutoBoss = state
     end
 })
-MyConfig:Save()
+local Button = BossTab:Button({
+    Title = "Save Config",
+    Desc = "",
+    Locked = false,
+    Callback = function()
+        MyConfig:Save()
+    end
+})
+		
+
 local function WaitForBossFinish(BossName, Difficulty)
     local Start = tick()
 
