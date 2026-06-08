@@ -82,7 +82,8 @@ local PauseRemote = game:GetService("ReplicatedStorage").RemoteEvents.FightPause
 local Bosses = {
     "Meliodas",
     "Geto",
-	"Zeref"
+	"Zeref",
+	"WhiteBeard"
 }
 
 local Difficulties = {
