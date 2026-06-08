@@ -193,7 +193,6 @@ local function HideBattle()
 	end)
 
 	if not button then
-		warn("Hide button not found")
 		return false
 	end
 
@@ -201,7 +200,7 @@ local function HideBattle()
 end
 
 task.spawn(function()
-	while task.wait(1) do
+	while task.wait(3) do
 		if AutoHideBattle then
 			HideBattle()
 		end
