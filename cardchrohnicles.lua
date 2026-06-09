@@ -83,7 +83,7 @@ local Bosses = {
     "Meliodas",
     "Geto",
 	"Zeref",
-	"WhiteBeard"
+	"Whitebeard"
 }
 
 local Difficulties = {
