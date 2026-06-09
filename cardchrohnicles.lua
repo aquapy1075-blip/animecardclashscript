@@ -1,6 +1,20 @@
 if game.PlaceId ~= 114758508835875 then
     return
 end
+local VIM = game:GetService("VirtualInputManager")
+
+
+
+local JUMP_INTERVAL = 120
+
+task.spawn(function()
+	while true do
+		task.wait(JUMP_INTERVAL)
+		VIM:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+		task.wait(0.1)
+		VIM:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+	end
+end)
 
 local function safeGet(fn)
 	local ok, result = pcall(fn)
