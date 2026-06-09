@@ -1,3 +1,6 @@
+if game.PlaceId ~= 114758508835875 then
+    return
+end
 
 local function safeGet(fn)
 	local ok, result = pcall(fn)
@@ -95,7 +98,10 @@ local Difficulties = {
     "Chronicle"
 }
 
+
 local AutoBoss = false
+local AutoHideBattle = false
+local UseWeatherPotion = false
 local BossConfig = {}
 
 for _, BossName in ipairs(Bosses) do
@@ -137,6 +143,14 @@ BossTab:Toggle({
 		AutoHideBattle = state
 	end
 })
+BossTab:Toggle({
+	Title = "Auto Use Weather Potion When No Weather",
+	Value = false,
+	Flag = "AutoUseWeatherPotion",
+	Callback = function(state)
+		UseWeatherPotion = state
+	end
+})
 
 BossTab:Toggle({
     Title = "Auto Boss",
@@ -146,6 +160,7 @@ BossTab:Toggle({
         AutoBoss = state
     end
 })
+
 local Button = BossTab:Button({
     Title = "Save Config",
     Desc = "",
@@ -187,15 +202,16 @@ task.spawn(function()
             continue
         end
 
-        -- Dừng Infinite Mode
-        pcall(function()
-            PauseRemote:FireServer(1)
-        end)
-        
-        task.wait(2)
+        for i = 1,5 do 
+            pcall(function()
+              PauseRemote:FireServer(1)
+            end)
+            task.wait(0.5)
+		end
 
         -- Đánh các boss được bật
-        for BossName, Data in pairs(BossConfig) do
+        for _, BossName in ipairs(Bosses) do
+            local Data = BossConfig[BossName]
             if Data.Enabled then
                 pcall(function()
                     return Remote:InvokeServer(
@@ -221,7 +237,7 @@ task.spawn(function()
             Character.HumanoidRootPart.CFrame = CFrame.new(3143, 18, -228)
             
         end
-        task.wait(180)
+        task.wait(120)
     end
 end)
 
@@ -259,6 +275,25 @@ task.spawn(function()
 	while task.wait(2) do
 		if AutoHideBattle then
 			HideBattle()
+		end
+	end
+end)
+
+task.spawn(function()
+	while task.wait(30) do
+		if not UseWeatherPotion then
+			continue
+		end
+
+		local weatherName = safeGet(function()
+			return game.Players.LocalPlayer.PlayerGui.UI.MainUI.WeatherUI.WeatherName
+		end)
+
+		if weatherName and weatherName.Text == "RELEASE EVENT" then
+			game:GetService("ReplicatedStorage")
+				.RemoteEvents
+				.ItemUseRequest
+				:FireServer("weather_potion", 1)
 		end
 	end
 end)
