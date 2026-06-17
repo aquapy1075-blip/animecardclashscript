@@ -159,27 +159,6 @@ end
     end
 end)
 
-local TweenService = game:GetService("TweenService")
-
-local function TweenTo(position, speed)
-    local character = player.Character or player.CharacterAdded:Wait()
-    local hrp = character:WaitForChild("HumanoidRootPart")
-
-    local distance = (hrp.Position - position).Magnitude
-    local duration = distance / speed
-
-    local tween = TweenService:Create(
-        hrp,
-        TweenInfo.new(duration, Enum.EasingStyle.Linear),
-        {
-            CFrame = CFrame.new(position)
-        }
-    )
-
-    tween:Play()
-    tween.Completed:Wait()
-end
-
 task.spawn(function()
 
     while task.wait(0.5) do
@@ -212,7 +191,8 @@ task.spawn(function()
                 :FindFirstChild("MonsterSpawn" .. i)
 
             if spawnPoint then
-                TweenTo(spawnPoint.Position + Vector3.new(0, 3, 0), 100)
+                humanoid:MoveTo(spawnPoint.Position)
+                 task.wait(1)
             end
         end
 
