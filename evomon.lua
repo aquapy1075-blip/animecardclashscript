@@ -33,6 +33,7 @@ getgenv().Settings = {
 }
 
 local PetSpawns = {
+	Peble =  {1, 5},
 	Chirpy = {86, 89},
 	Mopebun = {17, 21},
     Lavite = {43, 47},
@@ -52,7 +53,7 @@ local SelectedPet = "Mopebun"
 
 MainTab:CreateDropdown({
     Name = "Target Pet",
-    Options = {"Mopebun", "Lavite", "Datubud", "Mudbud", "Stardrift", "Glaclide", "Chirpy", "Gulpfish", "Froslet", "Pummpaw", "Wispuff", "Spikub"},
+    Options = {"Peble", "Mopebun", "Lavite", "Datubud", "Mudbud", "Stardrift", "Glaclide", "Chirpy", "Gulpfish", "Froslet", "Pummpaw", "Wispuff", "Spikub"},
     CurrentOption = {SelectedPet},
     MultipleOptions = false,
     Callback = function(Options)
