@@ -28,6 +28,8 @@ getgenv().Settings = {
     AutoLeave = false,
     AutoCatch = false,
     AutoShiny = false,
+	LeaveIfFirstPetDead = false,
+	SelectIfFirstPetDead = false, 
 }
 
 local PetSpawns = {
@@ -40,14 +42,17 @@ local PetSpawns = {
     Glaclide = {76, 80},
     Gulpfish = {114, 118},
 	Froslet = {119, 123},
-	Pummpaw = {132, 135}
+	Pummpaw = {132, 135},
+    Wispuff = {182, 186},
+	Spikub = {192, 195}
+    
 }
 
 local SelectedPet = "Mopebun"
 
 MainTab:CreateDropdown({
     Name = "Target Pet",
-    Options = {"Mopebun", "Lavite", "Datubud", "Mudbud", "Stardrift", "Glaclide", "Chirpy", "Gulpfish", "Froslet", "Pummpaw" },
+    Options = {"Mopebun", "Lavite", "Datubud", "Mudbud", "Stardrift", "Glaclide", "Chirpy", "Gulpfish", "Froslet", "Pummpaw", "Wispuff", "Spikub"},
     CurrentOption = {SelectedPet},
     MultipleOptions = false,
     Callback = function(Options)
@@ -91,6 +96,12 @@ MainTab:CreateToggle({
         getgenv().Settings.AutoCatch = Value
     end
 })
+
+local function LeaveBattle()
+    ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
+        actionType = 8
+    })
+end
 
 local function IsShiny()
     local success, result = pcall(function()
@@ -136,18 +147,11 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
 
     else
         if getgenv().Settings.AutoLeave then
-
-      print("Not Shiny -> Leave")
-
-    ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
-        actionType = 8
-    })
-
-    elseif getgenv().Settings.AutoCatch then
-
-    print("Not Shiny -> Catch")
-
-    ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
+		      print("Not Shiny -> Leave")
+              LeaveBattle()
+        elseif getgenv().Settings.AutoCatch then
+             print("Not Shiny -> Catch")
+        ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         sourcePos = 1,
         targetPos = 1,
         actionType = 5,
@@ -160,8 +164,28 @@ end
     end
 end)
 
-task.spawn(function()
+local billboardRoot = game.Players.LocalPlayer.PlayerGui:WaitForChild("SceneUIRoot"):WaitForChild("BillboardUIRoot")
+billboardRoot.ChildAdded:Connect(function(child)
 
+    if not getgenv().Settings.LeaveIfFirstPetDead or getgenv().Settings.SelectIfFirstPetDead then
+        return
+    end
+
+    if child.Name == "SwitchPetBillboardWindow" then
+        if getgenv().Settings.SelectIfFirstPetDead then
+            print("First pet dead -> Selecting next pet")
+            local Vim = game:GetService("VirtualInputManager")
+            Vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+            Vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+        elseif getgenv().Settings.LeaveIfFirstPetDead then
+            print("First pet dead -> Leaving")
+            LeaveBattle()
+        end
+        print("Lost battle -> Leaving")
+    end
+end)
+
+task.spawn(function()
     while task.wait(0.5) do
 
         if not getgenv().Settings.AutoFarm then
