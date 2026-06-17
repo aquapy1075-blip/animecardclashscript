@@ -40,7 +40,7 @@ local PetSpawns = {
     Glaclide = {76, 80},
     Gulpfish = {114, 118},
 	Froslet = {119, 123},
-	Pummpaw = {132, 136}
+	Pummpaw = {132, 135}
 }
 
 local SelectedPet = "Mopebun"
