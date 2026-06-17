@@ -119,7 +119,7 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
         return
     end
 
-    task.wait(0.5)
+    task.wait(0.1)
 
     if IsShiny() and getgenv().Settings.AutoShiny then
 
