@@ -96,7 +96,20 @@ MainTab:CreateToggle({
         getgenv().Settings.AutoCatch = Value
     end
 })
-
+MainTab:CreateToggle({
+    Name = "Leave If First Pet Dead",
+    CurrentValue = false,
+    Callback = function(Value)
+        getgenv().Settings.LeaveIfFirstPetDead = Value
+    end
+})
+MainTab:CreateToggle({
+    Name = "Select If First Pet Dead",
+    CurrentValue = false,
+    Callback = function(Value)
+        getgenv().Settings.SelectIfFirstPetDead = Value
+    end
+})
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         actionType = 8
