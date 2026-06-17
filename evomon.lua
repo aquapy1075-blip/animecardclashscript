@@ -179,11 +179,10 @@ end)
 
 local billboardRoot = game.Players.LocalPlayer.PlayerGui:WaitForChild("SceneUIRoot"):WaitForChild("BillboardUIRoot")
 billboardRoot.ChildAdded:Connect(function(child)
-
-    if not getgenv().Settings.LeaveIfFirstPetDead or getgenv().Settings.SelectIfFirstPetDead then
+    if not getgenv().Settings.LeaveIfFirstPetDead and not getgenv().Settings.SelectIfFirstPetDead then
         return
     end
-
+    print("First pet dead settings enabled, checking for SwitchPetBillboardWindow...")
     if child.Name == "SwitchPetBillboardWindow" then
         if getgenv().Settings.SelectIfFirstPetDead then
             print("First pet dead -> Selecting next pet")
