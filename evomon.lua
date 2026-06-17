@@ -21,6 +21,13 @@ local Window = Rayfield:CreateWindow({
     }
 })
 
+local catchFrame = player.PlayerGui
+    :WaitForChild("UIPrefabs")
+    :WaitForChild("BattleCatchPetWindow")
+    :WaitForChild("MainCanvasGroup")
+    :WaitForChild("SpecialRateFrame")
+
+
 local MainTab = Window:CreateTab("AutoFarmMob", 4483362458)
 
 getgenv().Settings = {
@@ -134,11 +141,6 @@ local function IsShiny()
     return success and result
 end
 
-local catchFrame = player.PlayerGui
-    :WaitForChild("UIPrefabs")
-    :WaitForChild("BattleCatchPetWindow")
-    :WaitForChild("MainCanvasGroup")
-    :WaitForChild("SpecialRateFrame")
 
 catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
 
@@ -193,7 +195,7 @@ end
 
 task.spawn(function()
     while task.wait(0.1) do
-        if  getgenv().Settings.AutoPressE then
+        if  getgenv().Settings.AutoPressE and not catchFrame.Visible then
                     PressE()
         end
         task.wait(0.1)
