@@ -28,8 +28,8 @@ getgenv().Settings = {
     AutoLeave = false,
     AutoCatch = false,
     AutoShiny = false,
-	LeaveIfFirstPetDead = false,
-	SelectIfFirstPetDead = false, 
+    AutoPressE = false,
+    AutoPressPhim1 = false,
 }
 
 local PetSpawns = {
@@ -97,19 +97,18 @@ MainTab:CreateToggle({
     end
 })
 MainTab:CreateToggle({
-    Name = "Leave If First Pet Dead",
-    CurrentValue = false,
-    Callback = function(Value)
-        getgenv().Settings.LeaveIfFirstPetDead = Value
+    Name = "Auto Press E",
+    CurrentValue = false,   Callback = function(Value)
+        getgenv().Settings.AutoPressE = Value
     end
 })
 MainTab:CreateToggle({
-    Name = "Select If First Pet Dead",
-    CurrentValue = false,
-    Callback = function(Value)
-        getgenv().Settings.SelectIfFirstPetDead = Value
+    Name = "Auto Press 1",
+    CurrentValue = false,   Callback = function(Value)
+        getgenv().Settings.AutoPressPhim1 = Value
     end
 })
+
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         actionType = 8
@@ -177,23 +176,28 @@ end
     end
 end)
 
-local billboardRoot = game.Players.LocalPlayer.PlayerGui:WaitForChild("SceneUIRoot"):WaitForChild("BillboardUIRoot")
-billboardRoot.ChildAdded:Connect(function(child)
-    if not getgenv().Settings.LeaveIfFirstPetDead and not getgenv().Settings.SelectIfFirstPetDead then
-        return
-    end
-    print("First pet dead settings enabled, checking for SwitchPetBillboardWindow...")
-    if child.Name == "SwitchPetBillboardWindow" then
-        if getgenv().Settings.SelectIfFirstPetDead then
-            print("First pet dead -> Selecting next pet")
-            local Vim = game:GetService("VirtualInputManager")
-            Vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-            Vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-        elseif getgenv().Settings.LeaveIfFirstPetDead then
-            print("First pet dead -> Leaving")
-            LeaveBattle()
+local Vim = game:GetService("VirtualInputManager")
+
+local function PressE()
+    Vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.05)
+    Vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+local function PressPhim1()
+    Vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+    task.wait(0.05)
+    Vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+end
+
+task.spawn(function()
+    while task.wait(0.1) do
+        if  getgenv().Settings.AutoPressE then
+                    PressE()
         end
-        print("Lost battle -> Leaving")
+        task.wait(0.1)
+        if  getgenv().Settings.AutoPressPhim1 then
+                    PressPhim1()
+        end
     end
 end)
 
