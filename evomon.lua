@@ -35,7 +35,7 @@ getgenv().Settings = {
     AutoLeave = false,
     AutoCatch = false,
     AutoShiny = false,
-    AutoPressE = false,
+    AutoSelectPet = false,
     AutoPressPhim1 = false,
 }
 
@@ -106,9 +106,9 @@ MainTab:CreateToggle({
     end
 })
 MainTab:CreateToggle({
-    Name = "Auto Press E",
+    Name = "Auto Select Pet",
     CurrentValue = false,   Callback = function(Value)
-        getgenv().Settings.AutoPressE = Value
+        getgenv().Settings.AutoSelectPet = Value
     end
 })
 MainTab:CreateToggle({
@@ -192,10 +192,10 @@ local function PressPhim1()
     task.wait(0.05)
     Vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
 end
-
+local listpet = player.PlayerGui.UIPrefabs.BattlePetWindow.MainCanvasGroup.PetScrollView 
 task.spawn(function()
     while task.wait(0.1) do
-        if  getgenv().Settings.AutoPressE and not catchFrame.Visible then
+        if  getgenv().Settings.AutoSelectPet and not listpet.Visible then
                     PressE()
         end
         task.wait(0.1)
