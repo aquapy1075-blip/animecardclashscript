@@ -185,7 +185,7 @@ local Vim = game:GetService("VirtualInputManager")
 
 local function PressE()
     Vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-    task.wait(0.05)
+    task.wait(0.1)
     Vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
 end
 local function PressPhim1()
@@ -196,7 +196,7 @@ end
 local listpet = player.PlayerGui.UIPrefabs.BattlePetWindow.MainCanvasGroup.PetScrollView 
 task.spawn(function()
     while task.wait(0.1) do
-        if  getgenv().Settings.AutoSelectPet and not listpet.Visible then
+        if  getgenv().Settings.AutoSelectPet and listpet.Visible then
                     PressE()
         end
         task.wait(0.1)
