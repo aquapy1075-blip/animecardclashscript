@@ -40,6 +40,7 @@ getgenv().Settings = {
     AutoLeave = false,
     AutoCatch = false,
     AutoShiny = false,
+	AutoShinyNormalBall = false,
     AutoSelectPet = false,
     AutoPressPhim1 = false,
 }
@@ -89,10 +90,15 @@ MainTab:CreateToggle({
 MainTab:CreateToggle({
     Name = "Auto Shiny",
     CurrentValue = false,
-
     Callback = function(Value)
         getgenv().Settings.AutoShiny = Value
-        print("AutoShiny:", Value)
+    end
+})
+MainTab:CreateToggle({
+    Name = "Auto Shiny Use Normal Ball",
+    CurrentValue = false,
+    Callback = function(Value)
+        getgenv().Settings.AutoShinyNormalBall = Value
     end
 })
 
@@ -156,17 +162,25 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
 
     task.wait(0.1)
 
-    if IsShiny() and getgenv().Settings.AutoShiny then
-
-        print("Shiny Found -> Catch")
-
-        ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
+    if IsShiny() then
+		if getgenv().Settings.AutoShiny then
+           print("Shiny Found -> Catch")
+           ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
             sourcePos = 1,
             targetPos = 1,
             actionType = 5,
             itemId = 2000017
         })
-
+		elseif getgenv().Settings.AutoShiny then
+				print("Shiny Found -> Catch")
+           ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
+            sourcePos = 1,
+            targetPos = 1,
+            actionType = 5,
+            itemId = 2000016
+        })
+		end
+   
     else
         if getgenv().Settings.AutoLeave then
 		      print("Not Shiny -> Leave")
