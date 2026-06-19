@@ -171,7 +171,7 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
             actionType = 5,
             itemId = 2000017
         })
-		elseif getgenv().Settings.AutoShiny then
+		elseif getgenv().Settings.AutoShinyNormalBall then
 				print("Shiny Found -> Catch")
            ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
             sourcePos = 1,
