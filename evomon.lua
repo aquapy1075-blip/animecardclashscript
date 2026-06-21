@@ -1,6 +1,7 @@
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualUser = game:GetService("VirtualUser")
+local TweenService = game:GetService("TweenService")
 
 Players.LocalPlayer.Idled:Connect(function()
     VirtualUser:CaptureController()
@@ -45,40 +46,70 @@ getgenv().Settings = {
     AutoPressPhim1 = false,
 }
 
-local PetSpawns = {
-	Peble =  {1, 5},
-	Chirpy = {86, 89},
-	Mopebun = {17, 21},
-    Lavite = {43, 47},
-    Datubud = {54, 58},
-    Mudbud = {59, 63},
-    Stardrift = {71, 75},
-    Glaclide = {76, 80},
-    Gulpfish = {114, 118},
-	Froslet = {119, 123},
-	Pummpaw = {132, 135},
-	Chitmite = {145,149},
-	Vipip = {155,159},
-	Tarra = {160, 164},
-	Starloop = {177, 180},
-    Wispuff = {182, 186},
-	Fluffet = {190,191},
-	Spikub = {192, 195}
-    
+local PetIds = {
+    Pebble = {18},
+    Budling = {34},
+	Mopebun = {16},
+	Clampip = {31},
+	Sparkit = {21},
+	Lavite = {52},
+	Datubud = {80},
+	Mudbud = {85},
+	Stardrift = {54},
+	Glaclide = {46},
+	Chirpy = {10}, 
+	Chirplume = {11},
+	Bluebird = {26},
+	Tinkog = {84},
+	Humding = {13},
+	Flutterby = {14},
+	Gulpfish = {24},
+	Mirefish = {25},
+	Frostlet = {60},
+	Frostseer = {61},
+	Pummpaw = {78}, 
+	Pummash = {79},
+	Gempillar = {64},
+	Gempress = {65},
+	Chitmite = {49},
+	Chitgladi = {50},
+	Vipip = {37},
+	Vipour = {38},
+	Tarra = {66},
+	Tarragon = {67},
+	Starloop = {72},
+	Starmuse = {73},
+	Wispuff = {82},
+	Wispshade = {83},
+	Fluffet = {44},
+	Fluffastar = {45},
+	Spikub = {58},
+	Spikumane = {59}
 }
 
-local SelectedPet = "Mopebun"
+local PetOptions = {}
 
+for petName in pairs(PetIds) do
+    table.insert(PetOptions, petName)
+end
+
+table.sort(PetOptions)
+
+local SelectedPets = {}
 MainTab:CreateDropdown({
-    Name = "Target Pet",
-    Options = {"Peble", "Mopebun", "Lavite", "Datubud", "Mudbud", "Stardrift", "Glaclide", "Chirpy", "Gulpfish", "Froslet", "Pummpaw", "Chitmite", "Vipip", "Tarra", "Starloop", "Wispuff", "Fluffet", "Spikub"},
-    CurrentOption = {SelectedPet},
-    MultipleOptions = false,
+    Name = "Target Pets",
+    Options = PetOptions,
+    CurrentOption = {},
+    MultipleOptions = true,
     Callback = function(Options)
-        SelectedPet = typeof(Options) == "table" and Options[1] or Options
-        print("Selected Pet:", SelectedPet)
+        SelectedPets = Options
+        for _, pet in pairs(Options) do
+            print("Selected:", pet)
+        end
     end
 })
+
+
 
 MainTab:CreateToggle({
     Name = "Auto Farm",
@@ -228,42 +259,99 @@ task.spawn(function()
     end
 end)
 
+local function TweenTo(pos)
+    local character = player.Character or player.CharacterAdded:Wait()
+    local root = character:FindFirstChild("HumanoidRootPart")
+
+    if not root then
+        return
+    end
+
+    local distance = (root.Position - pos).Magnitude
+    local speed = 120
+
+    local tween = TweenService:Create(
+        root,
+        TweenInfo.new(distance / speed, Enum.EasingStyle.Linear),
+        {
+            CFrame = CFrame.new(pos)
+        }
+    )
+
+    tween:Play()
+    tween.Completed:Wait()
+end
+local function IsSelectedPet(petId)
+    for _, petName in pairs(SelectedPets) do
+        local ids = PetIds[petName]
+        if ids then
+            for _, id in ipairs(ids) do
+                if id == petId then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function GetNearestPet()
+    local char = player.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+
+    if not root then
+        return
+    end
+
+    local nearest
+    local nearestDistance = math.huge
+
+    local cache = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache
+
+    for _, pet in ipairs(cache:GetDescendants()) do
+
+        if pet:IsA("Model") then
+
+            local petId = tonumber(pet.Name:match("_(%d+)$"))
+
+            if petId and IsSelectedPet(petId) then
+
+                local part =
+                    pet.PrimaryPart
+                    or pet:FindFirstChild("HumanoidRootPart")
+                    or pet:FindFirstChildWhichIsA("BasePart")
+
+                if part then
+
+                    local distance =
+                        (root.Position - part.Position).Magnitude
+
+                    if distance < nearestDistance then
+                        nearestDistance = distance
+                        nearest = part
+                    end
+                end
+            end
+        end
+    end
+
+    return nearest
+end
+
 task.spawn(function()
+
     while task.wait(0.5) do
 
         if not getgenv().Settings.AutoFarm then
             continue
         end
 
-        local range = PetSpawns[SelectedPet]
+        local target = GetNearestPet()
 
-        if not range then
-            warn("No range found for:", SelectedPet)
-            continue
+        if target then
+            TweenTo(target.Position)
         end
 
-        local character = player.Character or player.CharacterAdded:Wait()
-        local humanoid = character:FindFirstChildOfClass("Humanoid")
-
-        if not humanoid then
-            continue
-        end
-
-        for i = range[1], range[2] do
-
-            if not getgenv().Settings.AutoFarm then
-                break
-            end
-
-            local spawnPoint = workspace.RefreshPoints.Monster
-                :FindFirstChild("MonsterSpawn" .. i)
-
-            if spawnPoint then
-                humanoid:MoveTo(spawnPoint.Position)
-                 task.wait(1)
-            end
-        end
-
-        task.wait(0.5)
     end
+
 end)
