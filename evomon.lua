@@ -62,7 +62,7 @@ local PetSpawns = {
 	Tarra = {160, 164},
 	Starloop = {177, 180},
     Wispuff = {182, 186},
-	Fluffet = {188,191},
+	Fluffet = {190,191},
 	Spikub = {192, 195}
     
 }
