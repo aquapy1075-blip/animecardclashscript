@@ -277,18 +277,22 @@ local function TeleportTo(pos)
     local root = character:FindFirstChild("HumanoidRootPart")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
 
+    if not root or not humanoid then return end
 
-    if root then
-        root.CFrame = CFrame.new(target.Position)
+    -- teleport tới gần mob (dùng pos, KHÔNG dùng target)
+    root.CFrame = CFrame.new(pos + Vector3.new(5, 0, 0))
 
-humanoid:MoveTo(root.Position + Vector3.new(3,0,0))
-task.wait(0.3)
+    task.wait(0.1)
 
-humanoid:MoveTo(root.Position + Vector3.new(-3,0,0))
-task.wait(0.3)
+    -- đi vòng nhẹ quanh mob
+    humanoid:MoveTo(root.Position + Vector3.new(3, 0, 0))
+    task.wait(0.3)
 
-humanoid:MoveTo(target.Position)
-    end
+    humanoid:MoveTo(root.Position + Vector3.new(-3, 0, 0))
+    task.wait(0.3)
+
+    -- tiến vào mob
+    humanoid:MoveTo(pos)
 end
 local function IsSelectedPet(petId)
     for _, petName in pairs(SelectedPets) do
