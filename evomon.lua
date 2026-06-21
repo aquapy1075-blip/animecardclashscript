@@ -259,8 +259,15 @@ task.spawn(function()
     end
 end)
 local function InBattle()
-    local mainBattle = player.PlayerGui.UIPrefabs.MainBattleWindow
-    local mainCatchPet = player.PlayerGui.UIPrefabs.BattleCatchPetWindow
+    local pg = player:FindFirstChild("PlayerGui")
+    if not pg then return false end
+
+    local ui = pg:FindFirstChild("UIPrefabs")
+    if not ui then return false end
+
+    local mainBattle = ui:FindFirstChild("MainBattleWindow")
+    local mainCatchPet = ui:FindFirstChild("BattleCatchPetWindow")
+
     if mainBattle and mainBattle.Enabled then
         return true
     end
