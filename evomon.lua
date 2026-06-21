@@ -278,9 +278,12 @@ local function TeleportTo(pos)
 
     if root then
         root.CFrame = CFrame.new(pos)
+
+        task.wait(0.05)
+
+        root.CFrame = root.CFrame + Vector3.new(0.1, 0, 0)
     end
 end
-
 local function IsSelectedPet(petId)
     for _, petName in pairs(SelectedPets) do
         local ids = PetIds[petName]
@@ -294,7 +297,9 @@ local function IsSelectedPet(petId)
     end
     return false
 end
-
+ if root then
+        root.CFrame = CFrame.new(pos)
+ 
 local function GetNearestPet()
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -352,11 +357,9 @@ task.spawn(function()
 
         local target = GetNearestPet()
 
-        if target then
-           TeleportTo(target.Position)
-		    task.wait(0.05)
-           root.CFrame = root.CFrame + Vector3.new(0.1, 0, 0)
-        end
+    if target then
+         TeleportTo(target.Position)
+   end
 
     end
 
