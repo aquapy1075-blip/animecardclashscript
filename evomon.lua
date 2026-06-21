@@ -275,13 +275,19 @@ end
 local function TeleportTo(pos)
     local character = player.Character or player.CharacterAdded:Wait()
     local root = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+
 
     if root then
-        root.CFrame = CFrame.new(pos)
+        root.CFrame = CFrame.new(target.Position)
 
-        task.wait(0.05)
+humanoid:MoveTo(root.Position + Vector3.new(3,0,0))
+task.wait(0.3)
 
-        root.CFrame = root.CFrame + Vector3.new(0.1, 0, 0)
+humanoid:MoveTo(root.Position + Vector3.new(-3,0,0))
+task.wait(0.3)
+
+humanoid:MoveTo(target.Position)
     end
 end
 local function IsSelectedPet(petId)
