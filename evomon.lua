@@ -93,7 +93,11 @@ for petName in pairs(PetIds) do
     table.insert(PetOptions, petName)
 end
 
-table.sort(PetOptions)
+table.sort(PetOptions, function(a, b)
+    local idA = PetIds[a] and PetIds[a][1] or math.huge
+    local idB = PetIds[b] and PetIds[b][1] or math.huge
+    return idA < idB
+end)
 
 local SelectedPets = {}
 MainTab:CreateDropdown({
@@ -102,9 +106,12 @@ MainTab:CreateDropdown({
     CurrentOption = {},
     MultipleOptions = true,
     Callback = function(Options)
-        SelectedPets = Options
-        for _, pet in pairs(Options) do
-            print("Selected:", pet)
+        SelectedPets = {}
+        for petName, isSelected in pairs(Options) do
+          if isSelected then
+            table.insert(SelectedPets, petName)
+            print("Selected:", petName)
+          end
         end
     end
 })
