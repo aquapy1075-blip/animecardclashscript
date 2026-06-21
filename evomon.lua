@@ -258,29 +258,30 @@ task.spawn(function()
         end
     end
 end)
+local function InBattle()
+    local uiPrefabs = player.PlayerGui:FindFirstChild("UIPrefabs")
+    local mainBattle = uiPrefabs:FindFirstChild("MainBattleWindow")
 
-local function TweenTo(pos)
+    if mainBattle and mainBattle.Enabled then
+        return true
+    end
+
+    if catchFrame.Visible then
+        return true
+    end
+
+    return false
+end
+
+local function TeleportTo(pos)
     local character = player.Character or player.CharacterAdded:Wait()
     local root = character:FindFirstChild("HumanoidRootPart")
 
-    if not root then
-        return
+    if root then
+        root.CFrame = CFrame.new(pos)
     end
-
-    local distance = (root.Position - pos).Magnitude
-    local speed = 120
-
-    local tween = TweenService:Create(
-        root,
-        TweenInfo.new(distance / speed, Enum.EasingStyle.Linear),
-        {
-            CFrame = CFrame.new(pos)
-        }
-    )
-
-    tween:Play()
-    tween.Completed:Wait()
 end
+
 local function IsSelectedPet(petId)
     for _, petName in pairs(SelectedPets) do
         local ids = PetIds[petName]
@@ -345,11 +346,17 @@ task.spawn(function()
         if not getgenv().Settings.AutoFarm then
             continue
         end
+		
+        if InBattle() then
+            continue
+        end
 
         local target = GetNearestPet()
 
         if target then
-            TweenTo(target.Position)
+           TeleportTo(target.Position)
+		    task.wait(0.05)
+           root.CFrame = root.CFrame + Vector3.new(0.1, 0, 0)
         end
 
     end
