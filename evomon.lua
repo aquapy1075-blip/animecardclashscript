@@ -356,7 +356,6 @@ local function GetNearestPet()
     end
 
    if nearest then
-    print("Found pet:", nearest.Parent.Name, "Distance:", nearestDistance)
    else
     print("No pet found")
 end
@@ -370,22 +369,16 @@ task.spawn(function()
         if not getgenv().Settings.AutoFarm then
             continue
         end
-
-        print("AutoFarm Running")
-
         if InBattle() then
-            print("In Battle")
             continue
         end
 
         local target = GetNearestPet()
 
         if target then
-            print("Teleporting to:", target.Parent.Name)
             TeleportTo(target.Position)
 			
         else
-            print("Target nil")
         end
 		task.wait(1.5)
     end
