@@ -340,7 +340,13 @@ local function GetNearestPet()
         end
     end
 
-    return nearest
+   if nearest then
+    print("Found pet:", nearest.Parent.Name, "Distance:", nearestDistance)
+   else
+    print("No pet found")
+end
+
+return nearest
 end
 
 task.spawn(function()
