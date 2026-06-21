@@ -59,6 +59,7 @@ local PetSpawns = {
 	Pummpaw = {132, 135},
 	Chitmite = {145,149},
 	Vipip = {155,159},
+	Tarra = {160, 164},
 	Starloop = {177, 180},
     Wispuff = {182, 186},
 	Spikub = {192, 195}
@@ -69,7 +70,7 @@ local SelectedPet = "Mopebun"
 
 MainTab:CreateDropdown({
     Name = "Target Pet",
-    Options = {"Peble", "Mopebun", "Lavite", "Datubud", "Mudbud", "Stardrift", "Glaclide", "Chirpy", "Gulpfish", "Froslet", "Pummpaw", "Chitmite", "Vipip", "Starloop", "Wispuff", "Spikub"},
+    Options = {"Peble", "Mopebun", "Lavite", "Datubud", "Mudbud", "Stardrift", "Glaclide", "Chirpy", "Gulpfish", "Froslet", "Pummpaw", "Chitmite", "Vipip", "Tarra", "Starloop", "Wispuff", "Spikub"},
     CurrentOption = {SelectedPet},
     MultipleOptions = false,
     Callback = function(Options)
