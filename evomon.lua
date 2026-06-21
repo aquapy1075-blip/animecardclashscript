@@ -259,8 +259,7 @@ task.spawn(function()
     end
 end)
 local function InBattle()
-    local uiPrefabs = player.PlayerGui:FindFirstChild("UIPrefabs")
-    local mainBattle = uiPrefabs:FindFirstChild("MainBattleWindow")
+    local mainBattle = player.PlayerGui.UIPrefabs.MainBattleWindow
 
     if mainBattle and mainBattle.Enabled then
         return true
