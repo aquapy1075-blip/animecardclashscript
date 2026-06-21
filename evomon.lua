@@ -260,12 +260,12 @@ task.spawn(function()
 end)
 local function InBattle()
     local mainBattle = player.PlayerGui.UIPrefabs.MainBattleWindow
-
+    local mainCatchPet = player.PlayerGui.UIPrefabs.BattleCatchPetWindow
     if mainBattle and mainBattle.Enabled then
         return true
     end
 
-    if catchFrame.Visible then
+    if mainCatchPet and mainCatchPet.Enabled then
         return true
     end
 
