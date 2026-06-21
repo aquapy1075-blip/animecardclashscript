@@ -297,9 +297,6 @@ local function IsSelectedPet(petId)
     end
     return false
 end
- if root then
-        root.CFrame = CFrame.new(pos)
- 
 local function GetNearestPet()
     local char = player.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -350,23 +347,26 @@ return nearest
 end
 
 task.spawn(function()
-
     while task.wait(0.5) do
 
         if not getgenv().Settings.AutoFarm then
             continue
         end
-		
+
+        print("AutoFarm Running")
+
         if InBattle() then
+            print("In Battle")
             continue
         end
 
         local target = GetNearestPet()
 
-    if target then
-         TeleportTo(target.Position)
-   end
-
+        if target then
+            print("Teleporting to:", target.Parent.Name)
+            TeleportTo(target.Position)
+        else
+            print("Target nil")
+        end
     end
-
 end)
