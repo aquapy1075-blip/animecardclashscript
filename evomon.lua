@@ -365,8 +365,10 @@ task.spawn(function()
         if target then
             print("Teleporting to:", target.Parent.Name)
             TeleportTo(target.Position)
+			
         else
             print("Target nil")
         end
+		task.wait(1.5)
     end
 end)
