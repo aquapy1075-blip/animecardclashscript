@@ -2,7 +2,7 @@ local Players = game:GetService("Players")
 local UIS = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local enabled = false
+local enabled = true
 local uid
 
 for _,tbl in pairs(getgc(true)) do
