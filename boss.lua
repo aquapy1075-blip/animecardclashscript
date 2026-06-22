@@ -14,7 +14,7 @@ for _,tbl in pairs(getgc(true)) do
         break
     end
 end
-
+print("UID =", uid)
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
 
@@ -29,7 +29,7 @@ task.spawn(function()
         if enabled and uid then
             ReplicatedStorage.Remote.Battle.ReqEnterNpcBattle:FireServer(
                 10009,
-                900006,
+                9000006,
                 uid
             )
         end
