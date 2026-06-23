@@ -40,7 +40,8 @@ getgenv().Settings = {
     AutoFarm = false,
     AutoLeave = false,
     AutoCatch = false,
-    AutoShiny = false,
+	AutoShinyPrimBall = false,
+    AutoShinyKingBall = false,
 	AutoShinyNormalBall = false,
     AutoSelectPet = false,
     AutoPressPhim1 = false,
@@ -99,10 +100,8 @@ MainTab:CreateDropdown({
     Options = PetOptions,
     CurrentOption = {},
     MultipleOptions = true,
-
     Callback = function(Options)
         SelectedPets = {}
-
         for _, petName in ipairs(Options) do
             table.insert(SelectedPets, petName)
             print("Selected:", petName)
@@ -123,10 +122,17 @@ MainTab:CreateToggle({
 })
 
 MainTab:CreateToggle({
-    Name = "Auto Shiny",
+    Name = "Auto Shiny Prim Ball",
     CurrentValue = false,
     Callback = function(Value)
-        getgenv().Settings.AutoShiny = Value
+        getgenv().Settings.AutoShinyPrimBall = Value
+    end
+})
+MainTab:CreateToggle({
+    Name = "Auto Shiny King Ball",
+    CurrentValue = false,
+    Callback = function(Value)
+        getgenv().Settings.AutoShinyKingBall = Value
     end
 })
 MainTab:CreateToggle({
@@ -198,8 +204,16 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     task.wait(0.1)
 
     if IsShiny() then
-		if getgenv().Settings.AutoShiny then
+		if getgenv().Settings.AutoShinyPrimBall then
            print("Shiny Found -> Catch")
+           ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
+            sourcePos = 1,
+            targetPos = 1,
+            actionType = 5,
+            itemId = 2000018
+        })
+	   elseif getgenv().Settings.AutoShinyKingBall then
+				print("Shiny Found -> Catch")
            ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
             sourcePos = 1,
             targetPos = 1,
@@ -235,30 +249,6 @@ end
     end
 end)
 
-local Vim = game:GetService("VirtualInputManager")
-
-local function PressE()
-    Vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-    task.wait(0.1)
-    Vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-end
-local function PressPhim1()
-    Vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-    task.wait(0.05)
-    Vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-end
-local listpet = player.PlayerGui.UIPrefabs.BattlePetWindow.MainCanvasGroup.PetScrollView 
-task.spawn(function()
-    while task.wait(0.1) do
-        if  getgenv().Settings.AutoSelectPet and listpet.Visible then
-                    PressE()
-        end
-        task.wait(0.1)
-        if  getgenv().Settings.AutoPressPhim1 then
-                    PressPhim1()
-        end
-    end
-end)
 local function InBattle()
     local pg = player:FindFirstChild("PlayerGui")
     if not pg then return false end
@@ -279,6 +269,32 @@ local function InBattle()
 
     return false
 end
+
+local Vim = game:GetService("VirtualInputManager")
+
+local function PressE()
+    Vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.1)
+    Vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+local function PressPhim1()
+    Vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+    task.wait(0.05)
+    Vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+end
+local listpet = player.PlayerGui.UIPrefabs.BattlePetWindow.MainCanvasGroup.PetScrollView 
+task.spawn(function()
+    while task.wait(0.1) do
+        if  getgenv().Settings.AutoSelectPet and listpet.Visible and not InBattle() then
+                    PressE()
+        end
+        task.wait(0.1)
+        if  getgenv().Settings.AutoPressPhim1 then
+                    PressPhim1()
+        end
+    end
+end)
+
 
 local function TeleportTo(pos)
     local character = player.Character or player.CharacterAdded:Wait()
