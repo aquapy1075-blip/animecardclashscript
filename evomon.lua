@@ -58,6 +58,7 @@ local PetIds = {
 	Mudbud = {85},
 	Stardrift = {54},
 	Glaclide = {46},
+	Glacone = {47},
 	Chirpy = {10}, 
 	Chirplume = {11},
 	Bluebird = {26},
