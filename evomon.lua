@@ -643,8 +643,6 @@ local function GetPP(skillIndex)
 
     local current,max = text:match("(%d+)%s*/%s*(%d+)")
 
-    print("PP:", text, current, max)
-
     return tonumber(current), tonumber(max)
 end
 local function PressSkill(skillNumber)
@@ -657,8 +655,6 @@ local function PressSkill(skillNumber)
 
     local key = keyMap[skillNumber]
     if not key then return end
-
-    print("Pressing Skill:", skillNumber)
 
     Vim:SendKeyEvent(true,key,false,game)
     task.wait(0.05)
@@ -707,9 +703,6 @@ if battleState and not LastBattleState then
     StartPP[1] = select(1, GetPP(3))
     StartPP[2] = select(1, GetPP(4))
     StartPP[3] = select(1, GetPP(5))
-
-    print("Battle Started")
-    print(StartPP[1], StartPP[2], StartPP[3])
 end
 
 LastBattleState = battleState
