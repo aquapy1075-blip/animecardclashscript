@@ -75,8 +75,8 @@ local BossIds = {
     ["Murk Wood"] = {10016, 9000010},
     ["Nether Land"] = {10017, 9000011},
     ["Rocky Ridge"] = {10019, 9000012},
-    ["Flying Territory"] = {10020, 9000013},
-    ["Thunder Cliff"] = {10021, 9000014},
+    ["Flying Territory"] = {10020, 9000014},
+    ["Thunder Cliff"] = {10021, 9000013},
 }
 local PetIds = {
     Pebble = {18},
@@ -699,7 +699,7 @@ end
 
 local LastUltimateEnergy = 0
 
-while task.wait(0.05) do
+while task.wait(0.3) do
    local battleState = BattleWindow.Enabled
 
 if battleState and not LastBattleState then
