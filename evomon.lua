@@ -447,11 +447,13 @@ local function InBattle()
 
     local mainBattle = ui:FindFirstChild("MainBattleWindow")
     local mainCatchPet = ui:FindFirstChild("BattleCatchPetWindow")
-
+    local entercombat = ui.PVPEnterWindow
     if mainBattle and mainBattle.Enabled then
         return true
     end
-
+    if entercombat and entercombat.Enabled then
+		return true
+	end
     if mainCatchPet and mainCatchPet.Enabled then
         return true
     end
@@ -726,27 +728,12 @@ end
     -- ưu tiên tuyệt đối Ultimate
     if getgenv().Settings.AutoUltimate and UltimateReady() then
 
-        local text = player.PlayerGui.UIPrefabs.MainBattleWindow
-            .MainCanvasGroup
-            .PetSkillFrame
-            .UltimateSkillButton
-            .UltimatePPFrame
-            .UltimateEnergyNeedText.Text
-
-        text = text:gsub("<.->","")
-
-       local current = tonumber(
-         text:match("(%d+)%s*/")
-       )
-
-        if current ~= LastUltimateEnergy then
-            LastUltimateEnergy = current
-
             print("ULT READY -> CAST")
 
-            PressSkill(4)
-
-            task.wait(0.3)
+            repeat
+               PressSkill(4)
+               task.wait(0.05)
+            until not UltimateReady()
         end
 
         continue
