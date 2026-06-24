@@ -10,6 +10,16 @@ player.Idled:Connect(function()
     VirtualUser:ClickButton2(Vector2.new())
 end)
 
+local window = player.PlayerGui:WaitForChild("UIPrefabs"):WaitForChild("PVPEnterWindow")
+local button = window.MainCanvasGroup:WaitForChild("LeadBtn")
+
+window:GetPropertyChangedSignal("Enabled"):Connect(function()
+    if window.Enabled then
+        pcall(function()
+            firesignal(button.MouseButton1Click)
+        end)
+    end
+end)
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({
     Title = "Aqua Hub", -- window title
