@@ -45,7 +45,22 @@ getgenv().Settings = {
 	AutoShinyNormalBall = false,
     AutoSelectPet = false,
     AutoPressPhim1 = false,
-    AutoBoss = false
+    AutoBoss = false,
+	AutoSkill = false,
+	 AutoUltimate = false
+}
+local SkillPriority = {
+    "Skill 1",
+    "Skill 2",
+    "Skill 3"
+}
+local Priority1 = "Skill 1"
+local Priority2 = "Skill 2"
+local Priority3 = "Skill 3"
+local SkillUses = {
+    [1] = 0,
+    [2] = 0,
+    [3] = 0
 }
 local BossIds = {
     ["Verdant Valley"] = {10001, 9000001},
@@ -131,6 +146,12 @@ local BossTab = Window:Tab({
     Icon = "skull"
 })
 
+local SkillTab = Window:Tab({
+    Title = "Auto Skill",
+    Icon = "zap"
+})
+
+
 local MiscTab = Window:Tab({
     Title = "Misc",
     Icon = "settings"
@@ -184,6 +205,71 @@ BossTab:Toggle({
     end
 })
 
+SkillTab:Toggle({
+    Title = "Auto Skill",
+    Value = false,
+    Callback = function(v)
+        getgenv().Settings.AutoSkill = v
+    end
+})
+
+SkillTab:Dropdown({
+    Title = "Priority 1",
+    Values = SkillPriority,
+    Value = "Skill 1",
+    Callback = function(v)
+        Priority1 = v
+    end
+})
+
+SkillTab:Dropdown({
+    Title = "Priority 2",
+    Values = SkillPriority,
+    Value = "Skill 2",
+    Callback = function(v)
+        Priority2 = v
+    end
+})
+
+SkillTab:Dropdown({
+    Title = "Priority 3",
+    Values = SkillPriority,
+    Value = "Skill 3",
+    Callback = function(v)
+        Priority3 = v
+    end
+})
+
+SkillTab:Input({
+    Title = "Skill 1 Uses",
+    Placeholder = "0 = infinite",
+    Callback = function(v)
+        SkillUses[1] = tonumber(v) or 0
+    end
+})
+
+SkillTab:Input({
+    Title = "Skill 2 Uses",
+    Placeholder = "0 = infinite",
+    Callback = function(v)
+        SkillUses[2] = tonumber(v) or 0
+    end
+})
+
+SkillTab:Input({
+    Title = "Skill 3 Uses",
+    Placeholder = "0 = infinite",
+    Callback = function(v)
+        SkillUses[3] = tonumber(v) or 0
+    end
+})
+SkillTab:Toggle({
+    Title = "Auto Ultimate",
+    Value = false,
+    Callback = function(v)
+        getgenv().Settings.AutoUltimate = v
+    end
+})
 MiscTab:Toggle({
     Title = "Auto Leave",
     Value = false,
@@ -538,3 +624,140 @@ task.spawn(function()
         end
     end
 end)
+
+local function GetPP(skillIndex)
+
+    local text = player.PlayerGui.UIPrefabs.MainBattleWindow
+        .MainCanvasGroup
+        .PetSkillFrame
+        .PetNormalSkillScrollView
+        :GetChildren()[skillIndex]
+        .ItemFrame
+        .SkillButton
+        .PPFrame
+        .SkillPPText.Text
+
+    text = text:gsub("<.->", "")
+
+    local current,max = text:match("(%d+)%s*/%s*(%d+)")
+
+    print("PP:", text, current, max)
+
+    return tonumber(current), tonumber(max)
+end
+local function PressSkill(skillNumber)
+    local keyMap = {
+        [1] = Enum.KeyCode.One,
+        [2] = Enum.KeyCode.Two,
+        [3] = Enum.KeyCode.Three,
+        [4] = Enum.KeyCode.Four
+    }
+
+    local key = keyMap[skillNumber]
+    if not key then return end
+
+    print("Pressing Skill:", skillNumber)
+
+    Vim:SendKeyEvent(true,key,false,game)
+    task.wait(0.05)
+    Vim:SendKeyEvent(false,key,false,game)
+end
+
+local function UltimateReady()
+
+    local text = player.PlayerGui.UIPrefabs.MainBattleWindow
+        .MainCanvasGroup
+        .PetSkillFrame
+        .UltimateSkillButton
+        .UltimatePPFrame
+        .UltimateEnergyNeedText.Text
+
+    text = text:gsub("<.->","")
+
+    local current,max = text:match("(%d+)%s*/%s*(%d+)")
+
+    current = tonumber(current)
+    max = tonumber(max)
+
+    if not current or not max then
+        return false
+    end
+
+    return current >= max
+end
+
+local BattleWindow = player.PlayerGui.UIPrefabs.MainBattleWindow
+
+local StartPP = {}
+local LastBattleState = false
+
+local function SkillNameToNumber(name)
+    return tonumber(name:match("%d"))
+end
+
+local LastUltimateEnergy = 0
+
+while task.wait(0.05) do
+
+    if not getgenv().Settings.AutoSkill then
+        continue
+    end
+
+    if not BattleWindow.Enabled then
+        continue
+    end
+
+    -- ưu tiên tuyệt đối Ultimate
+    if getgenv().Settings.AutoUltimate and UltimateReady() then
+
+        local text = player.PlayerGui.UIPrefabs.MainBattleWindow
+            .MainCanvasGroup
+            .PetSkillFrame
+            .UltimateSkillButton
+            .UltimatePPFrame
+            .UltimateEnergyNeedText.Text
+
+        text = text:gsub("<.->","")
+
+        local current = tonumber(text:match("(%d+)/"))
+
+        if current ~= LastUltimateEnergy then
+            LastUltimateEnergy = current
+
+            print("ULT READY -> CAST")
+
+            PressSkill(4)
+
+            task.wait(0.3)
+        end
+
+        continue
+    end
+
+    -- skill thường
+    local Priorities = {
+        SkillNameToNumber(Priority1),
+        SkillNameToNumber(Priority2),
+        SkillNameToNumber(Priority3)
+    }
+
+    for _, skillNum in ipairs(Priorities) do
+
+        local guiIndex = skillNum + 2
+
+        local currentPP = select(1, GetPP(guiIndex))
+
+        if currentPP and StartPP[skillNum] then
+
+            local used = StartPP[skillNum] - currentPP
+            local limit = SkillUses[skillNum]
+
+            if limit == 0 or used < limit then
+
+                PressSkill(skillNum)
+
+                break
+            end
+        end
+    end
+end
