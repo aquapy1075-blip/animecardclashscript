@@ -698,7 +698,23 @@ end
 local LastUltimateEnergy = 0
 
 while task.wait(0.05) do
+   local battleState = BattleWindow.Enabled
 
+if battleState and not LastBattleState then
+
+    StartPP[1] = select(1, GetPP(3))
+    StartPP[2] = select(1, GetPP(4))
+    StartPP[3] = select(1, GetPP(5))
+
+    print("Battle Started")
+    print(StartPP[1], StartPP[2], StartPP[3])
+end
+
+LastBattleState = battleState
+
+if not battleState then
+    continue
+end
     if not getgenv().Settings.AutoSkill then
         continue
     end
@@ -719,7 +735,9 @@ while task.wait(0.05) do
 
         text = text:gsub("<.->","")
 
-        local current = tonumber(text:match("(%d+)/"))
+       local current = tonumber(
+         text:match("(%d+)%s*/")
+       )
 
         if current ~= LastUltimateEnergy then
             LastUltimateEnergy = current
