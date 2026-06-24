@@ -242,20 +242,33 @@ MiscTab:Toggle({
     end
 })
 
+local function FindNpc22()
+    local cache = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache
+
+    for _, obj in ipairs(cache:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "Npc22" then
+            return obj
+        end
+    end
+end
 Utility:Button({
     Title = "Teleport To Travelling Merchant",
     Callback = function()
-        local npc = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache["1050"]:FindFirstChild("Npc22")
 
-        if npc then
-            local part =
-                npc.PrimaryPart
-                or npc:FindFirstChild("HumanoidRootPart")
-                or npc:FindFirstChildWhichIsA("BasePart")
+        local npc = FindNpc22()
 
-            if part then
-                root.CFrame = part.CFrame + Vector3.new(0, 3, 0)
-            end
+        if not npc then
+            warn("Npc22 not found")
+            return
+        end
+
+        local root = game.Players.LocalPlayer.Character
+            and game.Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+        local hrp = npc:FindFirstChild("HumanoidRootPart")
+
+        if root and hrp then
+            root.CFrame = hrp.CFrame + Vector3.new(0,3,0)
         end
     end
 })
