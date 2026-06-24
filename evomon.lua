@@ -428,6 +428,8 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     elseif getgenv().Settings.AutoCatch then
         print("Shiny Found -> AutoCatch")
         Catch(2000016)
+	elseif getgenv().Settings.AutoLeave then
+		LeaveBattle()
     end
 
 else
