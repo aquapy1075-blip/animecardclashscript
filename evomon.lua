@@ -9,22 +9,21 @@ Players.LocalPlayer.Idled:Connect(function()
 end)
 local player = Players.LocalPlayer
 
-local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
-
-local Window = Rayfield:CreateWindow({
-    Name = "EvoMon",
-    Icon = 114289527320220,
-    LoadingTitle = "AquaHub",
-    LoadingSubtitle = "by Thanh",
-    ShowText = "AquaHub",
-    Theme = "Ocean",
-    ToggleUIKeybind = "K",
-
-    ConfigurationSaving = {
-        Enabled = true,
-        FolderName = "Evomon",
-        FileName = "evomonfile"
-    }
+local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
+local Window = WindUI:CreateWindow({
+    Title = "Aqua Hub", -- window title
+    Icon = "door-open", -- lucide icon or "rbxassetid://" or URL. optional
+    Author = "by aquane", -- window subtitle. optional
+    Folder = "aquahub",
+    Size = UDim2.fromOffset(580, 460), -- window size
+    MinSize = Vector2.new(560, 350), -- minimal window size
+    MaxSize = Vector2.new(850, 560),
+    Transparent = true,
+    Theme = "Dark",
+    Resizable = true, -- the ability to rezize window
+    SideBarWidth = 200, -- sidebar (tabs) width
+    HideSearchBar = true, -- hide search bar
+    ScrollBarEnabled = false,
 })
 
 local catchFrame = player.PlayerGui
@@ -34,7 +33,6 @@ local catchFrame = player.PlayerGui
     :WaitForChild("SpecialRateFrame")
 
 
-local MainTab = Window:CreateTab("AutoFarmMob", 4483362458)
 
 getgenv().Settings = {
     AutoFarm = false,
@@ -45,8 +43,24 @@ getgenv().Settings = {
 	AutoShinyNormalBall = false,
     AutoSelectPet = false,
     AutoPressPhim1 = false,
+    AutoBoss = false
 }
-
+local BossIds = {
+    ["Verdant Valley"] = {10001, 9000001},
+    ["Petal Pond"] = {10002, 9000002},
+    ["Lava Crag"] = {10004, 9000003},
+    ["Amber Acres"] = {10005, 9000004},
+    ["Shiver Snows"] = {10008, 9000005},
+    ["Raven Ridge"] = {10009, 9000006},
+    ["Silent Sands"] = {10011, 9000007},
+    ["Crystal Cascade"] = {10012, 9000008},
+    ["Canyon Oasis"] = {10014, 9000009},
+    ["Murk Wood"] = {10016, 9000010},
+    ["Nether Land"] = {10017, 9000011},
+    ["Rocky Ridge"] = {10019, 9000012},
+    ["Flying Territory"] = {10020, 9000013},
+    ["Thunder Cliff"] = {10021, 9000014},
+}
 local PetIds = {
     Pebble = {18},
     Budling = {34},
@@ -96,11 +110,35 @@ end
 table.sort(PetOptions)
 
 local SelectedPets = {}
-MainTab:CreateDropdown({
-    Name = "Target Pets",
-    Options = PetOptions,
-    CurrentOption = {},
-    MultipleOptions = true,
+local BossOptions = {}
+for bossName in pairs(BossIds) do
+    table.insert(BossOptions, bossName)
+end
+table.sort(BossOptions)
+
+local SelectedBoss = nil
+
+
+local MainTab = Window:Tab({
+    Title = "Mobs",
+    Icon = "swords"
+})
+
+local BossTab = Window:Tab({
+    Title = "Bosses",
+    Icon = "skull"
+})
+
+local MiscTab = Window:Tab({
+    Title = "Misc",
+    Icon = "settings"
+})
+
+MainTab:Dropdown({
+    Title = "Target Pets",
+    Values = PetOptions,
+    Multi = true,
+    Flag = "TargetPets",
     Callback = function(Options)
         SelectedPets = {}
         for _, petName in ipairs(Options) do
@@ -112,66 +150,92 @@ MainTab:CreateDropdown({
 
 
 
-MainTab:CreateToggle({
-    Name = "Auto Farm",
-    CurrentValue = false,
-
+MainTab:Toggle({
+    Title = "Auto Farm Mons",
+    Value = false,
+    Flag = "AutoFarmMons",
     Callback = function(Value)
         getgenv().Settings.AutoFarm = Value
         print("AutoFarm:", Value)
     end
 })
 
-MainTab:CreateToggle({
-    Name = "Auto Shiny Prim Ball",
-    CurrentValue = false,
-    Callback = function(Value)
-        getgenv().Settings.AutoShinyPrimBall = Value
+BossTab:Dropdown({
+    Title = "Select Boss",
+    Values = BossOptions,
+    Multi = false,
+    Flag = "SelectBoss",
+    Callback = function(Boss)
+        SelectedBoss = Boss
+        print("Selected Boss:", Boss)
     end
 })
-MainTab:CreateToggle({
-    Name = "Auto Shiny King Ball",
-    CurrentValue = false,
+BossTab:Toggle({
+    Title = "Auto Boss",
+    Value = false,
+    Flag = "AutoBoss",
     Callback = function(Value)
-        getgenv().Settings.AutoShinyKingBall = Value
-    end
-})
-MainTab:CreateToggle({
-    Name = "Auto Shiny Use Normal Ball",
-    CurrentValue = false,
-    Callback = function(Value)
-        getgenv().Settings.AutoShinyNormalBall = Value
+        getgenv().Settings.AutoBoss = Value
     end
 })
 
-MainTab:CreateToggle({
-    Name = "Auto Leave",
-    CurrentValue = false,
-
+MiscTab:Toggle({
+    Title = "Auto Leave",
+    Value = false,
+    Flag = "AutoLeave",
     Callback = function(Value)
         getgenv().Settings.AutoLeave = Value
     end
 })
-MainTab:CreateToggle({
-    Name = "Auto Catch",
-    CurrentValue = false,
+MiscTab:Toggle({
+    Title = "Auto Catch",
+    Value = false,
+    Flag = "AutoCatch",
     Callback = function(Value)
         getgenv().Settings.AutoCatch = Value
     end
 })
-MainTab:CreateToggle({
-    Name = "Auto Select Pet",
-    CurrentValue = false,   Callback = function(Value)
+MiscTab:Toggle({
+    Title = "Auto Select Pet",
+    Value = false,
+    Flag = "AutoSelectPet",
+    Callback = function(Value)
         getgenv().Settings.AutoSelectPet = Value
     end
 })
-MainTab:CreateToggle({
-    Name = "Auto Press 1",
-    CurrentValue = false,   Callback = function(Value)
+MiscTab:Toggle({
+    Title = "Auto Press 1",
+    Value = false,
+    Flag = "AutoPressPhim1",
+    Callback = function(Value)
         getgenv().Settings.AutoPressPhim1 = Value
     end
 })
 
+MiscTab:Toggle({
+    Title = "Auto Shiny Prim Ball",
+    Value = false,
+    Flag = "AutoShinyPrimBall",
+    Callback = function(Value)
+        getgenv().Settings.AutoShinyPrimBall = Value
+    end
+})
+MiscTab:Toggle({
+    Title = "Auto Shiny King Ball",
+    Value = false,
+    Flag = "AutoShinyKingBall",
+    Callback = function(Value)
+        getgenv().Settings.AutoShinyKingBall = Value
+    end
+})
+MiscTab:Toggle({
+    Title = "Auto Shiny Use Normal Ball",
+    Value = false,
+    Flag = "AutoShinyNormalBall",
+    Callback = function(Value)
+        getgenv().Settings.AutoShinyNormalBall = Value
+    end
+})
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         actionType = 8
@@ -386,6 +450,9 @@ task.spawn(function()
         if not getgenv().Settings.AutoFarm then
             continue
         end
+        if getgenv().Settings.AutoBoss then
+            continue
+        end
         if InBattle() then
             continue
         end
@@ -398,5 +465,49 @@ task.spawn(function()
         else
         end
 		task.wait(1.5)
+    end
+end)
+
+
+local function GetSelectedPetUID()
+    for _, tbl in pairs(getgc(true)) do
+        if type(tbl) == "table"
+        and rawget(tbl, "petUid")
+        and rawget(tbl, "isSelected") == true then
+            return tbl.petUid
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(3) do
+
+        if not getgenv().Settings.AutoBoss then
+            continue
+        end
+
+        if InBattle() then
+            continue
+        end
+
+        if not SelectedBoss then
+            continue
+        end
+
+        local uid = GetSelectedPetUID()
+
+        if not uid then
+            continue
+        end
+
+        local bossData = BossIds[SelectedBoss]
+
+        if bossData then
+            ReplicatedStorage.Remote.Battle.ReqEnterNpcBattle:FireServer(
+                bossData[1],
+                bossData[2],
+                uid
+            )
+        end
     end
 end)
