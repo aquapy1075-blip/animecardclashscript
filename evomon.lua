@@ -726,18 +726,21 @@ end
     end
 
     -- ưu tiên tuyệt đối Ultimate
-    if getgenv().Settings.AutoUltimate and UltimateReady() then
+if getgenv().Settings.AutoUltimate and UltimateReady() then
 
-            print("ULT READY -> CAST")
+    print("ULT READY -> CAST")
 
-            repeat
-               PressSkill(4)
-               task.wait(0.05)
-            until not UltimateReady()
+    for i = 1,20 do
+        if not UltimateReady() then
+            break
         end
 
-        continue
+        PressSkill(4)
+        task.wait(0.1)
     end
+
+    continue
+end
 
     -- skill thường
     local Priorities = {
