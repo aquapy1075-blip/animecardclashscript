@@ -2,12 +2,13 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualUser = game:GetService("VirtualUser")
 local TweenService = game:GetService("TweenService")
-
-Players.LocalPlayer.Idled:Connect(function()
+local player = Players.LocalPlayer
+local character = player.Character or player.CharacterAdded:Wait()
+local root = character:FindFirstChild("HumanoidRootPart")
+player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
 end)
-local player = Players.LocalPlayer
 
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({
@@ -15,6 +16,7 @@ local Window = WindUI:CreateWindow({
     Icon = "door-open", -- lucide icon or "rbxassetid://" or URL. optional
     Author = "by aquane", -- window subtitle. optional
     Folder = "aquahub",
+    ToggleKey = Enum.KeyCode.K, -- key to toggle window. optional
     Size = UDim2.fromOffset(580, 460), -- window size
     MinSize = Vector2.new(560, 350), -- minimal window size
     MaxSize = Vector2.new(850, 560),
@@ -133,7 +135,10 @@ local MiscTab = Window:Tab({
     Title = "Misc",
     Icon = "settings"
 })
-
+local Utility = Window:Tab({
+    Title = "Utility",
+    Icon = "tool"
+})
 MainTab:Dropdown({
     Title = "Target Pets",
     Values = PetOptions,
@@ -236,6 +241,16 @@ MiscTab:Toggle({
         getgenv().Settings.AutoShinyNormalBall = Value
     end
 })
+
+Utility:Button({
+    Title = "Teleport To Travelling Merchant",
+    Callback = function()
+            local npc = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache["1050"]:FindFirstChild("Npc22")
+            local part = npc.PrimaryPart or npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChildWhichIsA("BasePart")
+                root.CFrame = part.CFrame + Vector3.new(0, 3, 0)     
+})
+
+
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         actionType = 8
@@ -344,16 +359,16 @@ local function PressE()
 end
 local function PressPhim1()
     Vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-    task.wait(0.05)
+    task.wait(0.1)
     Vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
 end
 local listpet = player.PlayerGui.UIPrefabs.BattlePetWindow.MainCanvasGroup.PetScrollView 
 task.spawn(function()
-    while task.wait(0.1) do
+    while task.wait(0.2) do
         if  getgenv().Settings.AutoSelectPet and listpet.Visible and not InBattle() then
                     PressE()
         end
-        task.wait(0.1)
+        task.wait(0.2)
         if  getgenv().Settings.AutoPressPhim1 then
                     PressPhim1()
         end
@@ -362,25 +377,14 @@ end)
 
 
 local function TeleportTo(pos)
-    local character = player.Character or player.CharacterAdded:Wait()
-    local root = character:FindFirstChild("HumanoidRootPart")
     local humanoid = character:FindFirstChildOfClass("Humanoid")
-
     if not root or not humanoid then return end
-
-    -- teleport tới gần mob (dùng pos, KHÔNG dùng target)
     root.CFrame = CFrame.new(pos + Vector3.new(5, 0, 0))
-
     task.wait(0.1)
-
-    -- đi vòng nhẹ quanh mob
     humanoid:MoveTo(root.Position + Vector3.new(3, 0, 0))
-    task.wait(0.3)
-
+    task.wait(0.1)
     humanoid:MoveTo(root.Position + Vector3.new(-3, 0, 0))
-    task.wait(0.3)
-
-    -- tiến vào mob
+    task.wait(0.1)
     humanoid:MoveTo(pos)
 end
 local function IsSelectedPet(petId)
