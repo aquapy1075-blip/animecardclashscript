@@ -393,6 +393,14 @@ local function IsShiny()
     return success and result
 end
 
+local function Catch(ballId)
+    ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
+        sourcePos = 1,
+        targetPos = 1,
+        actionType = 5,
+        itemId = ballId
+    })
+end
 
 catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
 
@@ -402,50 +410,38 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
 
     task.wait(0.1)
 
+
     if IsShiny() then
-		if getgenv().Settings.AutoShinyPrimBall then
-           print("Shiny Found -> Catch")
-           ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
-            sourcePos = 1,
-            targetPos = 1,
-            actionType = 5,
-            itemId = 2000018
-        })
-	   elseif getgenv().Settings.AutoShinyKingBall then
-				print("Shiny Found -> Catch")
-           ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
-            sourcePos = 1,
-            targetPos = 1,
-            actionType = 5,
-            itemId = 2000017
-        })
-		elseif getgenv().Settings.AutoShinyNormalBall then
-				print("Shiny Found -> Catch")
-           ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
-            sourcePos = 1,
-            targetPos = 1,
-            actionType = 5,
-            itemId = 2000016
-        })
-		end
-   
-    else
-        if getgenv().Settings.AutoLeave then
-		      print("Not Shiny -> Leave")
-              LeaveBattle()
-        elseif getgenv().Settings.AutoCatch then
-             print("Not Shiny -> Catch")
-        ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
-        sourcePos = 1,
-        targetPos = 1,
-        actionType = 5,
-        itemId = 2000016
-    })
+
+    if getgenv().Settings.AutoShinyPrimBall then
+        print("Shiny Found -> Catch Prim Ball")
+        Catch(2000018)
+
+    elseif getgenv().Settings.AutoShinyKingBall then
+        print("Shiny Found -> Catch King Ball")
+        Catch(2000017)
+
+    elseif getgenv().Settings.AutoShinyNormalBall then
+        print("Shiny Found -> Catch Normal Ball")
+        Catch(2000016)
+
+    elseif getgenv().Settings.AutoCatch then
+        print("Shiny Found -> AutoCatch")
+        Catch(2000016)
+    end
+
+else
+
+    if getgenv().Settings.AutoLeave then
+        print("Not Shiny -> Leave")
+        LeaveBattle()
+
+    elseif getgenv().Settings.AutoCatch then
+        print("Not Shiny -> Catch")
+        Catch(2000016)
+    end
 
 end
-       
-
-    end
 end)
 
 local function InBattle()
@@ -629,7 +625,7 @@ task.spawn(function()
 
         if bossData then
             ReplicatedStorage.Remote.Battle.ReqEnterNpcBattle:FireServer(
-                bossData[1],
+                10009,
                 bossData[2],
                 uid
             )
