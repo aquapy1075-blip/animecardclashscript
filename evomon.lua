@@ -245,9 +245,19 @@ MiscTab:Toggle({
 Utility:Button({
     Title = "Teleport To Travelling Merchant",
     Callback = function()
-            local npc = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache["1050"]:FindFirstChild("Npc22")
-            local part = npc.PrimaryPart or npc:FindFirstChild("HumanoidRootPart") or npc:FindFirstChildWhichIsA("BasePart")
-                root.CFrame = part.CFrame + Vector3.new(0, 3, 0)     
+        local npc = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache["1050"]:FindFirstChild("Npc22")
+
+        if npc then
+            local part =
+                npc.PrimaryPart
+                or npc:FindFirstChild("HumanoidRootPart")
+                or npc:FindFirstChildWhichIsA("BasePart")
+
+            if part then
+                root.CFrame = part.CFrame + Vector3.new(0, 3, 0)
+            end
+        end
+    end
 })
 
 
