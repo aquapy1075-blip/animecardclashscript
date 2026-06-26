@@ -496,99 +496,51 @@ task.spawn(function()
 end)
 
 
-local function TeleportTo(pos)
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
-    if not root or not humanoid then return end
-    root.CFrame = CFrame.new(pos + Vector3.new(5, 0, 0))
-    task.wait(0.1)
-    humanoid:MoveTo(root.Position + Vector3.new(3, 0, 0))
-    task.wait(0.1)
-    humanoid:MoveTo(root.Position + Vector3.new(-3, 0, 0))
-    task.wait(0.1)
-    humanoid:MoveTo(pos)
-end
-local function IsSelectedPet(petId)
-    for _, petName in pairs(SelectedPets) do
+local function GetPetUID()
+    for _, petName in ipairs(SelectedPets) do
         local ids = PetIds[petName]
+
         if ids then
             for _, id in ipairs(ids) do
-                if id == petId then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-local function GetNearestPet()
-    local char = player.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
+                local configId = 1000000 + id
 
-    if not root then
-        return
-    end
+                for _, tbl in ipairs(getgc(true)) do
+                    if type(tbl) == "table"
+                    and rawget(tbl, "configId") == configId
+                    and rawget(tbl, "areaId") ~= nil
+                    and rawget(tbl, "uid") ~= nil then
 
-    local nearest
-    local nearestDistance = math.huge
-
-    local cache = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache
-
-    for _, pet in ipairs(cache:GetDescendants()) do
-
-        if pet:IsA("Model") then
-
-            local petId = tonumber(pet.Name:match("_(%d+)$"))
-
-            if petId and IsSelectedPet(petId) then
-
-                local part =
-                    pet.PrimaryPart
-                    or pet:FindFirstChild("HumanoidRootPart")
-                    or pet:FindFirstChildWhichIsA("BasePart")
-
-                if part then
-
-                    local distance =
-                        (root.Position - part.Position).Magnitude
-
-                    if distance < nearestDistance then
-                        nearestDistance = distance
-                        nearest = part
+                        return tbl.uid
                     end
                 end
             end
         end
     end
-
-   if nearest then
-   else
-    print("No pet found")
 end
 
-return nearest
-end
 
 task.spawn(function()
-    while task.wait(0.5) do
+    while task.wait() do
 
         if not getgenv().Settings.AutoFarm then
             continue
         end
+
         if getgenv().Settings.AutoBoss then
             continue
         end
+
         if InBattle() then
             continue
         end
 
-        local target = GetNearestPet()
+        local uid = GetPetUID()
 
-        if target then
-            TeleportTo(target.Position)
-			
-        else
+        if uid then
+            ReplicatedStorage.Remote.Battle.ReqEnterPetBattle:FireServer(uid)
         end
-		task.wait(1.5)
+
+        task.wait(3)
     end
 end)
 
