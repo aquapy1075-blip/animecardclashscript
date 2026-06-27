@@ -612,11 +612,10 @@ local function GetPP(skillIndex)
         .ItemFrame
         .SkillButton
         .PPFrame
-        .SkillPPText.Text
+        .SkillPPText
+        .ContentText
 
-    text = text:gsub("<.->", "")
-
-    local current,max = text:match("(%d+)%s*/%s*(%d+)")
+    local current, max = text:match("(%d+)%s*/%s*(%d+)")
 
     return tonumber(current), tonumber(max)
 end
@@ -637,25 +636,13 @@ local function PressSkill(skillNumber)
 end
 
 local function UltimateReady()
-
-    local text = player.PlayerGui.UIPrefabs.MainBattleWindow
-        .MainCanvasGroup
-        .PetSkillFrame
-        .UltimateSkillButton
-        .UltimatePPFrame
-        .UltimateEnergyNeedText.Text
-
-    text = text:gsub("<.->","")
-
-    local current,max = text:match("(%d+)%s*/%s*(%d+)")
-
+    local text = player.PlayerGui.UIPrefabs.MainBattleWindow.MainCanvasGroup.PetSkillFrame.UltimateSkillButton.UltimatePPFrame.UltimateEnergyNeedText.ContentText
+    local current, max = text:match("(%d+)%s*/%s*(%d+)")
     current = tonumber(current)
     max = tonumber(max)
-
     if not current or not max then
         return false
     end
-
     return current >= max
 end
 
