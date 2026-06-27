@@ -749,8 +749,8 @@ task.spawn(function()
 
 end)
 
+local released = {}
 local function AutoReleasePet()
-    local released = {}
 
     for _, tbl in pairs(getgc(true)) do
         if type(tbl) == "table" then
