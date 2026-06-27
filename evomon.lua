@@ -681,73 +681,73 @@ end
 
 local LastUltimateEnergy = 0
 
-while task.wait(0.3) do
-   local battleState = BattleWindow.Enabled
+task.spawn(function()
 
-if battleState and not LastBattleState then
+    while task.wait(0.3) do
 
-    StartPP[1] = select(1, GetPP(3))
-    StartPP[2] = select(1, GetPP(4))
-    StartPP[3] = select(1, GetPP(5))
-end
+        local battleState = BattleWindow.Enabled
 
-LastBattleState = battleState
-
-if not battleState then
-    continue
-end
-    if not getgenv().Settings.AutoSkill then
-        continue
-    end
-
-    if not BattleWindow.Enabled then
-        continue
-    end
-
-    -- ưu tiên tuyệt đối Ultimate
-if getgenv().Settings.AutoUltimate and UltimateReady() then
-
-    print("ULT READY -> CAST")
-
-    for i = 1,20 do
-        if not UltimateReady() then
-            break
+        if battleState and not LastBattleState then
+            StartPP[1] = select(1, GetPP(3))
+            StartPP[2] = select(1, GetPP(4))
+            StartPP[3] = select(1, GetPP(5))
         end
 
-        PressSkill(4)
-        task.wait(0.1)
-    end
+        LastBattleState = battleState
 
-    continue
-end
+        if not battleState then
+            continue
+        end
 
-    -- skill thường
-    local Priorities = {
-        SkillNameToNumber(Priority1),
-        SkillNameToNumber(Priority2),
-        SkillNameToNumber(Priority3)
-    }
+        if not getgenv().Settings.AutoSkill then
+            continue
+        end
 
-    for _, skillNum in ipairs(Priorities) do
+        if not BattleWindow.Enabled then
+            continue
+        end
 
-        local guiIndex = skillNum + 2
+        if getgenv().Settings.AutoUltimate and UltimateReady() then
 
-        local currentPP = select(1, GetPP(guiIndex))
+            print("ULT READY -> CAST")
 
-        if currentPP and StartPP[skillNum] then
+            for i = 1,20 do
+                if not UltimateReady() then
+                    break
+                end
 
-            local used = StartPP[skillNum] - currentPP
-            local limit = SkillUses[skillNum]
+                PressSkill(4)
+                task.wait(0.1)
+            end
 
-            if limit == 0 or used < limit then
+            continue
+        end
 
-                PressSkill(skillNum)
+        local Priorities = {
+            SkillNameToNumber(Priority1),
+            SkillNameToNumber(Priority2),
+            SkillNameToNumber(Priority3)
+        }
 
-                break
+        for _, skillNum in ipairs(Priorities) do
+
+            local guiIndex = skillNum + 2
+            local currentPP = select(1, GetPP(guiIndex))
+
+            if currentPP and StartPP[skillNum] then
+
+                local used = StartPP[skillNum] - currentPP
+                local limit = SkillUses[skillNum]
+
+                if limit == 0 or used < limit then
+                    PressSkill(skillNum)
+                    break
+                end
             end
         end
     end
-end
+
+end)
 
 local function AutoReleasePet()
     local released = {}
