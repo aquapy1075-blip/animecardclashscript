@@ -344,6 +344,7 @@ MiscTab:Input({
     Placeholder = "Ex: Pebble",
     Callback = function(text)
         ReleasePetName = text
+	     print("Input:", "["..text.."]")
     end
 })
 MiscTab:Toggle({
@@ -751,7 +752,7 @@ end
 local function AutoReleasePet()
     local released = {}
 
-    for _, tbl in ipairs(getgc(true)) do
+    for _, tbl in pairs(getgc(true)) do
         if type(tbl) == "table" then
 
             local uid = rawget(tbl, "uuid")
