@@ -59,8 +59,11 @@ getgenv().Settings = {
 	AutoSkill = false,
 	AutoUltimate = false,
 	AutoRelease = false,
+	AutoSummonBoss = false
 }
 local ReleasePetName = ""
+local SelectedSummonPet = nil
+
 local SkillPriority = {
     "Skill 1",
     "Skill 2",
@@ -132,6 +135,34 @@ local PetIds = {
 	Spikumane = {59}
 }
 
+
+local petNames = {
+    "Bubblade",
+    "Blazmane",
+    "Leafblade",
+    "Pebgolem",
+    "Glacitadel",
+    "Mopillow",
+    "Chirphantom",
+    "Volcrest",
+    "Pummash",
+    "Tinkor",
+    "Twirlby",
+    "Viparch",
+    "Starmuse",
+    "Spikumane",
+    "Tarragon",
+    "Wispshade",
+}
+
+local SummonpetId = {}
+
+local startId = 14018
+
+for i, name in ipairs(petNames) do
+    SummonpetId[name] = startId + (i - 1)
+end
+
 local PetOptions = {}
 for petName in pairs(PetIds) do 
 	table.insert(PetOptions, petName)
@@ -157,6 +188,10 @@ local BossTab = Window:Tab({
     Title = "Bosses",
     Icon = "skull"
 })
+local SummonTab = Window:Tab({
+    Title = "Summon",
+    Icon = "egg"
+})
 
 local SkillTab = Window:Tab({
     Title = "Auto Skill",
@@ -170,7 +205,7 @@ local MiscTab = Window:Tab({
 })
 local Utility = Window:Tab({
     Title = "Utility",
-    Icon = "tool"
+    Icon = "list"
 })
 MainTab:Dropdown({
     Title = "Target Pets",
@@ -215,6 +250,25 @@ BossTab:Toggle({
         getgenv().Settings.AutoBoss = Value
     end
 })
+
+SummonTab:Dropdown({
+    Title = "Select Summon Boss",
+    Values = petNames,
+    Multi = false,
+    Flag = "SelectSummonBoss",
+    Callback = function(Boss)
+        SelectedSummonPet = Boss
+    end
+})
+SummonTab:Toggle({
+    Title = "Auto Summon Boss",
+    Value = false,
+    Flag = "AutoSummonBoss",
+    Callback = function(Value)
+        getgenv().Settings.AutoSummonBoss = Value
+    end
+})
+
 
 SkillTab:Toggle({
     Title = "Auto Skill",
@@ -557,6 +611,30 @@ task.spawn(function()
     end
 end)
 
+local function SummonPet(petId)
+    local args = {
+        petId,
+        13000006
+    }
+
+    
+     ReplicatedStorage.Remote.Battle.ReqEnterNpcBattle:FireServer(unpack(args))
+end
+
+task.spawn(function()
+    while task.wait(4) do
+       if not getgenv().Settings.AutoSummonBoss or not SelectedSummonPet or InBattle() or window.Enabled then
+            continue
+       end
+        local petId = SummonpetId[SelectedSummonPet]
+        if not petId then
+            warn("Invalid pet selected")
+            continue
+        end
+
+        SummonPet(petId)
+    end
+end)
 
 
 local function GetSelectedPetUID()
