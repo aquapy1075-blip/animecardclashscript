@@ -205,7 +205,6 @@ BossTab:Dropdown({
     Flag = "SelectBoss",
     Callback = function(Boss)
         SelectedBoss = Boss
-        print("Selected Boss:", Boss)
     end
 })
 BossTab:Toggle({
@@ -344,7 +343,6 @@ MiscTab:Input({
     Placeholder = "Ex: Pebble",
     Callback = function(text)
         ReleasePetName = text
-	     print("Input:", "["..text.."]")
     end
 })
 MiscTab:Toggle({
@@ -393,23 +391,48 @@ local function LeaveBattle()
     })
 end
 
+
+local Vim = game:GetService("VirtualInputManager")
+
+local function PressE()
+    Vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+    task.wait(0.1)
+    Vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+end
+local function PressPhim1()
+    Vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
+    task.wait(0.1)
+    Vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
+end
+local listpet = player.PlayerGui.UIPrefabs.BattlePetWindow.MainCanvasGroup.PetScrollView 
+task.spawn(function()
+    while task.wait(0.2) do
+        if  getgenv().Settings.AutoSelectPet and listpet.Visible and not InBattle() then
+                    PressE()
+        end
+        task.wait(0.2)
+        if  getgenv().Settings.AutoPressPhim1 then
+                    PressPhim1()
+        end
+    end
+end)
+
+
 local function IsShiny()
     local success, result = pcall(function()
-        local text = player.PlayerGui
-            .UIPrefabs
+        local label = player.PlayerGui.UIPrefabs
             .BattleCatchPetWindow
             .MainCanvasGroup
             .SpecialRateFrame
             .ShinyInfoFrame
-            .ShinyPityText
-            .Text
-        print(text)
-        return text and text:find("%-%-")
+            .CurBallShinyChanceText
+
+        local text = label.ContentText
+        return text and text:find("Shiny:%s*%-%-") ~= nil
     end)
 
     return success and result
 end
-
 local function Catch(ballId)
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         sourcePos = 1,
@@ -441,23 +464,13 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     elseif getgenv().Settings.AutoShinyNormalBall then
         print("Shiny Found -> Catch Normal Ball")
         Catch(2000016)
-
-    elseif getgenv().Settings.AutoCatch then
-        print("Shiny Found -> AutoCatch")
-        Catch(2000016)
-	elseif getgenv().Settings.AutoLeave then
-		print("Leave Battle")
-		LeaveBattle()
     end
-
 else
 
     if getgenv().Settings.AutoLeave then
-        print("Not Shiny -> Leave")
         LeaveBattle()
 
     elseif getgenv().Settings.AutoCatch then
-        print("Not Shiny -> Catch")
         Catch(2000016)
     end
 
@@ -486,31 +499,6 @@ local function InBattle()
 
     return false
 end
-
-local Vim = game:GetService("VirtualInputManager")
-
-local function PressE()
-    Vim:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-    task.wait(0.1)
-    Vim:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-end
-local function PressPhim1()
-    Vim:SendKeyEvent(true, Enum.KeyCode.One, false, game)
-    task.wait(0.1)
-    Vim:SendKeyEvent(false, Enum.KeyCode.One, false, game)
-end
-local listpet = player.PlayerGui.UIPrefabs.BattlePetWindow.MainCanvasGroup.PetScrollView 
-task.spawn(function()
-    while task.wait(0.2) do
-        if  getgenv().Settings.AutoSelectPet and listpet.Visible and not InBattle() then
-                    PressE()
-        end
-        task.wait(0.2)
-        if  getgenv().Settings.AutoPressPhim1 then
-                    PressPhim1()
-        end
-    end
-end)
 
 
 local function GetRandomPetUID()
@@ -545,7 +533,7 @@ end
 
 
 task.spawn(function()
-    while task.wait() do
+    while task.wait(1) do
 
         if not getgenv().Settings.AutoFarm then
             continue
@@ -568,6 +556,7 @@ task.spawn(function()
         task.wait(3)
     end
 end)
+
 
 
 local function GetSelectedPetUID()
