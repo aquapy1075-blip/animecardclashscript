@@ -57,8 +57,10 @@ getgenv().Settings = {
     AutoPressPhim1 = false,
     AutoBoss = false,
 	AutoSkill = false,
-	 AutoUltimate = false
+	AutoUltimate = false,
+	AutoRelease = false,
 }
+local ReleasePetName = ""
 local SkillPriority = {
     "Skill 1",
     "Skill 2",
@@ -335,6 +337,20 @@ MiscTab:Toggle({
     Flag = "AutoShinyNormalBall",
     Callback = function(Value)
         getgenv().Settings.AutoShinyNormalBall = Value
+    end
+})
+MiscTab:Input({
+    Title = "Release Pet Name",
+    Placeholder = "Ex: Pebble",
+    Callback = function(text)
+        ReleasePetName = text
+    end
+})
+MiscTab:Toggle({
+    Title = "Auto Release",
+    Value = false,
+    Callback = function(v)
+        getgenv().Settings.AutoRelease = v
     end
 })
 
@@ -731,3 +747,42 @@ end
         end
     end
 end
+
+local function AutoReleasePet()
+    local released = {}
+
+    for _, tbl in ipairs(getgc(true)) do
+        if type(tbl) == "table" then
+
+            local uid = rawget(tbl, "petUid")
+            local name = rawget(tbl, "name") or rawget(tbl, "petName")
+            local level = rawget(tbl, "level")
+            local locked = rawget(tbl, "locked")
+
+            if uid
+                and name == ReleasePetName
+                and level == 1
+                and locked == false
+                and not released[uid] then
+
+                released[uid] = true
+
+                print("Release:", name, uid)
+
+                ReplicatedStorage.Remote.Pet.ReqRemovePets:InvokeServer({
+                    uid
+                })
+
+                task.wait(0.2)
+            end
+        end
+    end
+end
+
+task.spawn(function()
+    while task.wait(2) do
+        if getgenv().Settings.AutoRelease then
+            AutoReleasePet()
+        end
+    end
+end)
