@@ -496,7 +496,9 @@ task.spawn(function()
 end)
 
 
-local function GetPetUID()
+local function GetRandomPetUID()
+    local candidates = {}
+
     for _, petName in ipairs(SelectedPets) do
         local ids = PetIds[petName]
 
@@ -510,12 +512,18 @@ local function GetPetUID()
                     and rawget(tbl, "areaId") ~= nil
                     and rawget(tbl, "uid") ~= nil then
 
-                        return tbl.uid
+                        table.insert(candidates, tbl.uid)
                     end
                 end
             end
         end
     end
+
+    if #candidates == 0 then
+        return nil
+    end
+
+    return candidates[math.random(#candidates)]
 end
 
 
@@ -534,7 +542,7 @@ task.spawn(function()
             continue
         end
 
-        local uid = GetPetUID()
+        local uid = GetRandomPetUID()
 
         if uid then
             ReplicatedStorage.Remote.Battle.ReqEnterPetBattle:FireServer(uid)
