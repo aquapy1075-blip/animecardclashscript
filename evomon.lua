@@ -754,7 +754,7 @@ local function AutoReleasePet()
     for _, tbl in ipairs(getgc(true)) do
         if type(tbl) == "table" then
 
-            local uid = rawget(tbl, "petUid")
+            local uid = rawget(tbl, "uuid")
             local name = rawget(tbl, "name") or rawget(tbl, "petName")
             local level = rawget(tbl, "level")
             local locked = rawget(tbl, "locked")
