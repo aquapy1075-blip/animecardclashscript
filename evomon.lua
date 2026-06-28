@@ -700,11 +700,6 @@ task.spawn(function()
         if not SelectedBoss then
             continue
         end
-
-        if not uid then
-            continue
-        end
-
         local bossData = BossIds[SelectedBoss]
 
         if bossData then
