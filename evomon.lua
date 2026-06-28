@@ -637,15 +637,54 @@ task.spawn(function()
 end)
 
 
-local function GetSelectedPetUID()
-    for _, tbl in pairs(getgc(true)) do
+local SelectedPetTable
+local SelectedPetUID
+
+local function FindSelectedPet()
+    for _, tbl in ipairs(getgc(true)) do
         if type(tbl) == "table"
         and rawget(tbl, "petUid")
-        and rawget(tbl, "isSelected") == true then
-            return tbl.petUid
+        and rawget(tbl, "isSelected") ~= nil then
+
+            if tbl.isSelected then
+                SelectedPetTable = tbl
+                SelectedPetUID = tbl.petUid
+                print("Found:", SelectedPetUID)
+                return true
+            end
         end
     end
+
+    SelectedPetTable = nil
+    SelectedPetUID = nil
+    return false
 end
+task.spawn(function()
+
+    while true do
+        task.wait(1)
+
+        if not getgenv().Settings.AutoBoss then
+            continue
+        end
+
+        -- Chưa có pet thì scan
+        if not SelectedPetTable then
+            FindSelectedPet()
+            continue
+        end
+
+        -- Nếu pet cũ vẫn đang selected thì không làm gì cả
+        if SelectedPetTable.isSelected then
+            continue
+        end
+
+        -- Pet cũ bị bỏ chọn -> scan lại
+        print("Selected changed, rescanning...")
+        FindSelectedPet()
+    end
+
+end)
 
 task.spawn(function()
     while task.wait(3) do
@@ -662,8 +701,6 @@ task.spawn(function()
             continue
         end
 
-        local uid = GetSelectedPetUID()
-
         if not uid then
             continue
         end
@@ -674,7 +711,7 @@ task.spawn(function()
             ReplicatedStorage.Remote.Battle.ReqEnterNpcBattle:FireServer(
                 10009,
                 bossData[2],
-                uid
+                SelectedPetUID
             )
         end
     end
