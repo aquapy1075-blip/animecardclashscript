@@ -59,10 +59,14 @@ getgenv().Settings = {
 	AutoSkill = false,
 	AutoUltimate = false,
 	AutoRelease = false,
-	AutoSummonBoss = false
+	AutoSummonBoss = false,
+	AutoSelectUpgrade = false,
+    AutoReplay = false,
 }
 local ReleasePetName = ""
 local SelectedSummonPet = nil
+local SelectedUpgrade = 1
+
 
 local SkillPriority = {
     "Skill 1",
@@ -192,12 +196,15 @@ local SummonTab = Window:Tab({
     Title = "Summon",
     Icon = "egg"
 })
+local DungeonTab = Window:Tab({
+    Title = "Dungeon",
+    Icon = "castle"
+})
 
 local SkillTab = Window:Tab({
     Title = "Auto Skill",
     Icon = "zap"
 })
-
 
 local MiscTab = Window:Tab({
     Title = "Misc",
@@ -266,6 +273,35 @@ SummonTab:Toggle({
     Flag = "AutoSummonBoss",
     Callback = function(Value)
         getgenv().Settings.AutoSummonBoss = Value
+    end
+})
+DungeonTab:Dropdown({
+    Title = "Upgrade",
+    Values = {
+        "Upgrade 1",
+        "Upgrade 2",
+        "Upgrade 3"
+    },
+    Multi = false,
+    Value = "Upgrade 1",
+    Callback = function(v)
+        SelectedUpgrade = tonumber(v:match("%d")) or 1
+    end
+})
+
+DungeonTab:Toggle({
+    Title = "Auto Select Upgrade",
+    Value = false,
+    Callback = function(v)
+        getgenv().Settings.AutoSelectUpgrade = v
+    end
+})
+
+DungeonTab:Toggle({
+    Title = "Auto Replay",
+    Value = false,
+    Callback = function(v)
+        getgenv().Settings.AutoReplay = v
     end
 })
 
@@ -710,6 +746,52 @@ task.spawn(function()
             )
         end
     end
+end)
+
+local BuffWindow = player.PlayerGui.UIPrefabs.BuffGainSelectWindow
+
+BuffWindow:GetPropertyChangedSignal("Enabled"):Connect(function()
+
+    if not BuffWindow.Enabled then
+        return
+    end
+
+    if not getgenv().Settings.AutoSelectUpgrade then
+        return
+    end
+
+    task.wait(3.5)
+
+    local index = SelectedUpgrade + 2 -- 1->3, 2->4, 3->5
+    local btn = BuffWindow:GetChildren()[index]
+
+    if btn then
+        firesignal(btn.MouseButton1Click)
+        print("Selected Upgrade:", SelectedUpgrade)
+    end
+end)
+local DungeonResultWindow = player.PlayerGui.UIPrefabs.DungeonResultWindow
+
+DungeonResultWindow:GetPropertyChangedSignal("Enabled"):Connect(function()
+
+    if not DungeonResultWindow.Enabled then
+        return
+    end
+
+    if not getgenv().Settings.AutoReplay then
+        return
+    end
+
+    task.wait(3)
+
+    local button = DungeonResultWindow.MainCanvasGroup
+        .BtnsCanvasGroup
+        .ReplayButtonFrame
+        .ReplayButton
+
+    firesignal(button.MouseButton1Click)
+
+    print("Replay clicked")
 end)
 
 local function GetPP(skillIndex)
