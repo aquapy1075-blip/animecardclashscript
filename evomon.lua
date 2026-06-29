@@ -760,7 +760,7 @@ BuffWindow:GetPropertyChangedSignal("Enabled"):Connect(function()
         return
     end
 
-    task.wait(3.5)
+    task.wait(2.75)
 
     local index = SelectedUpgrade + 2 -- 1->3, 2->4, 3->5
     local btn = BuffWindow:GetChildren()[index]
