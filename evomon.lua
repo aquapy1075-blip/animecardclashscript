@@ -62,6 +62,8 @@ getgenv().Settings = {
 	AutoSummonBoss = false,
 	AutoSelectUpgrade = false,
     AutoReplay = false,
+	AutoQuest = false,
+	AutoSkipAnimation = false,
 }
 local ReleasePetName = ""
 local SelectedSummonPet = nil
@@ -471,6 +473,13 @@ Utility:Button({
         if root and hrp then
             root.CFrame = hrp.CFrame + Vector3.new(0,3,0)
         end
+    end
+})
+Utility:Toggle({
+    Title = "Auto Quest Dusk Town",
+    Value = false,
+    Callback = function(v)
+        getgenv().Settings.AutoQuest = v
     end
 })
 
@@ -959,3 +968,38 @@ task.spawn(function()
         end
     end
 end)
+
+local function AutoQuest()
+    pcall(function()
+        game:GetService("ReplicatedStorage")
+            .Remote.Task.ReqCompleteTask:InvokeServer(7001101)
+
+        game:GetService("ReplicatedStorage")
+            .Remote.Dialogue.ReqReceiveDialogueTask:InvokeServer(200042, 7001101)
+    end)
+end
+
+task.spawn(function()
+    while task.wait(5) do
+        if getgenv().Settings.AutoQuest then
+            AutoQuest()
+        end
+    end
+end)
+local target
+
+for _, m in ipairs(getloadedmodules()) do
+    if m.Name == "CaptureFlowV2Module" then
+        target = require(m)
+        break
+    end
+end
+
+if target and target.start then
+    target.start = function(data, callback)
+        if typeof(callback) == "function" then
+            task.defer(callback)
+        end
+        return 0
+    end
+end
