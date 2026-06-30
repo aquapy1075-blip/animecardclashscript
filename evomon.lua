@@ -723,7 +723,7 @@ task.spawn(function()
 end)
 
 task.spawn(function()
-    while task.wait(3) do
+    while task.wait(1.5) do
 
         if not getgenv().Settings.AutoBoss then
             continue
