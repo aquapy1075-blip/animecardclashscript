@@ -554,6 +554,10 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     elseif getgenv().Settings.AutoShinyNormalBall then
         print("Shiny Found -> Catch Normal Ball")
         Catch(2000016)
+	elseif getgenv().Settings.AutoLeave then
+        LeaveBattle()
+    elseif getgenv().Settings.AutoCatch then
+        Catch(2000016)
     end
 else
 
