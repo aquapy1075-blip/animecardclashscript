@@ -50,9 +50,7 @@ getgenv().Settings = {
     AutoFarm = false,
     AutoLeave = false,
     AutoCatch = false,
-	AutoShinyPrimBall = false,
-    AutoShinyKingBall = false,
-	AutoShinyNormalBall = false,
+	AutoShiny = false,
     AutoSelectPet = false,
     AutoPressPhim1 = false,
     AutoBoss = false,
@@ -68,7 +66,8 @@ getgenv().Settings = {
 local ReleasePetName = ""
 local SelectedSummonPet = nil
 local SelectedUpgrade = 1
-
+local SelectedCatchBall = 2000016 -- default: advanced ball
+local SelectedShinyBall = 2000018 -- default: primastic
 
 local SkillPriority = {
     "Skill 1",
@@ -389,6 +388,26 @@ MiscTab:Toggle({
         getgenv().Settings.AutoCatch = Value
     end
 })
+MiscTab:Dropdown({
+    Title = "Select Catch Ball",
+    Values = {
+        "Normal Ball",
+        "Advanced Ball",
+        "King Ball",
+        "Primastic Ball"
+    },
+    Value = "Advanced Ball",
+    Callback = function(v)
+        local map = {
+            ["Normal Ball"] = 2000015,
+            ["Advanced Ball"] = 2000016,
+            ["King Ball"] = 2000017,
+            ["Primastic Ball"] = 2000018
+        }
+
+        SelectedCatchBall = map[v] or 2000016
+    end
+})
 MiscTab:Toggle({
     Title = "Auto Select Pet",
     Value = false,
@@ -406,28 +425,33 @@ MiscTab:Toggle({
     end
 })
 
+
 MiscTab:Toggle({
-    Title = "Auto Shiny Prim Ball",
+    Title = "Auto Catch Shiny",
     Value = false,
-    Flag = "AutoShinyPrimBall",
+    Flag = "AutoShiny",
     Callback = function(Value)
-        getgenv().Settings.AutoShinyPrimBall = Value
+        getgenv().Settings.AutoShiny = Value
     end
 })
-MiscTab:Toggle({
-    Title = "Auto Shiny King Ball",
-    Value = false,
-    Flag = "AutoShinyKingBall",
-    Callback = function(Value)
-        getgenv().Settings.AutoShinyKingBall = Value
-    end
-})
-MiscTab:Toggle({
-    Title = "Auto Shiny Use Normal Ball",
-    Value = false,
-    Flag = "AutoShinyNormalBall",
-    Callback = function(Value)
-        getgenv().Settings.AutoShinyNormalBall = Value
+MiscTab:Dropdown({
+    Title = "Shiny Catch Ball",
+    Values = {
+        "Normal Ball",
+        "Advanced Ball",
+        "King Ball",
+        "Primastic Ball"
+    },
+    Value = "Primastic Ball",
+    Callback = function(v)
+        local map = {
+            ["Normal Ball"] = 2000015,
+            ["Advanced Ball"] = 2000016,
+            ["King Ball"] = 2000017,
+            ["Primastic Ball"] = 2000018
+        }
+
+        SelectedShinyBall = map[v] or 2000018
     end
 })
 MiscTab:Input({
@@ -549,37 +573,29 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
 
     task.wait(0.1)
 
-
+    -- ⭐ SHINY LOGIC
     if IsShiny() then
-
-    if getgenv().Settings.AutoShinyPrimBall then
-        print("Shiny Found -> Catch Prim Ball")
-        Catch(2000018)
-
-    elseif getgenv().Settings.AutoShinyKingBall then
-        print("Shiny Found -> Catch King Ball")
-        Catch(2000017)
-
-    elseif getgenv().Settings.AutoShinyNormalBall then
-        print("Shiny Found -> Catch Normal Ball")
-        Catch(2000016)
-	elseif getgenv().Settings.AutoLeave then
-        LeaveBattle()
-    elseif getgenv().Settings.AutoCatch then
-        Catch(2000016)
+        if getgenv().Settings.AutoShiny then
+            print("Shiny Found -> Catch Ball:", SelectedShinyBall)
+            Catch(SelectedShinyBall)
+        else
+            print("Shiny Found -> Leaving battle")
+            LeaveBattle()
+        end
+        return
     end
-else
 
+    -- 🟦 NORMAL LOGIC
     if getgenv().Settings.AutoLeave then
         LeaveBattle()
-
-    elseif getgenv().Settings.AutoCatch then
-        Catch(2000016)
+        return
     end
 
-end
+    if getgenv().Settings.AutoCatch then
+        print("Normal Catch Ball:", SelectedCatchBall)
+        Catch(SelectedCatchBall)
+    end
 end)
-
 local function InBattle()
     local pg = player:FindFirstChild("PlayerGui")
     if not pg then return false end
@@ -973,14 +989,17 @@ local function AutoQuest()
     pcall(function()
         game:GetService("ReplicatedStorage")
             .Remote.Task.ReqCompleteTask:InvokeServer(7001101)
-
-        game:GetService("ReplicatedStorage")
+		 game:GetService("ReplicatedStorage")
+            .Remote.Task.ReqCompleteTask:InvokeServer(7001031)
+		  game:GetService("ReplicatedStorage")
+            .Remote.Dialogue.ReqReceiveDialogueTask:InvokeServer(200035, 7001031)
+          game:GetService("ReplicatedStorage")
             .Remote.Dialogue.ReqReceiveDialogueTask:InvokeServer(200042, 7001101)
     end)
 end
 
 task.spawn(function()
-    while task.wait(5) do
+    while task.wait(7) do
         if getgenv().Settings.AutoQuest then
             AutoQuest()
         end
