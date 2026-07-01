@@ -500,7 +500,7 @@ Utility:Button({
     end
 })
 Utility:Toggle({
-    Title = "Auto Quest Dusk Town",
+    Title = "Auto Quest",
     Value = false,
     Callback = function(v)
         getgenv().Settings.AutoQuest = v
