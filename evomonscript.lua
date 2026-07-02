@@ -597,7 +597,7 @@ local ConfigNameInput = ConfigTab:Input({
 
 ConfigTab:Space()
 
-Config:Button({
+ConfigTab:Button({
     Title = "Set as Auto Load Config",
     Desc = "Auto loads the selected config next time",
     Locked = false,
