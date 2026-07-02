@@ -750,7 +750,11 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     if IsShiny() then
         if getgenv().Settings.AutoShiny then
             print("Shiny Found -> Catch Ball:", SelectedShinyBall)
-            Catch(SelectedShinyBall)
+		    while catchFrame.Visible do 
+                 Catch(SelectedShinyBall)
+				 task.wait(0.5)
+				end
+			
         else
             print("Shiny Found -> Leaving battle")
             LeaveBattle()
@@ -765,7 +769,10 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     end
 
     if getgenv().Settings.AutoCatch then
-        Catch(SelectedCatchBall)
+		while catchFrame.Visible do 
+             Catch(SelectedCatchBall)
+			task.wait(0.5)
+			end
     end
 end)
 local function InBattle()
