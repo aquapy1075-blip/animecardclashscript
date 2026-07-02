@@ -9,7 +9,14 @@ player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
 end)
+local BattleRemote = ReplicatedStorage:WaitForChild("Remote"):WaitForChild("Battle")
+local ReqAutoBattle = BattleRemote:FindFirstChild("ReqAutoBattle")
 
+local BattleBindable = ReplicatedStorage:FindFirstChild("Bindable")
+    and ReplicatedStorage.Bindable:FindFirstChild("Battle")
+
+local ClientBattleStart = BattleBindable
+    and BattleBindable:FindFirstChild("ClientBattleStart")
 local window = player.PlayerGui:WaitForChild("UIPrefabs"):WaitForChild("PVPEnterWindow")
 local button = window.MainCanvasGroup:WaitForChild("LeadBtn")
 
@@ -62,6 +69,8 @@ getgenv().Settings = {
     AutoReplay = false,
 	AutoQuest = false,
 	AutoSkipAnimation = false,
+	AutoCombat = false,
+	MaxBattleSpeed = false
 }
 local ReleasePetName = ""
 local SelectedSummonPet = nil
@@ -547,6 +556,31 @@ Utility:Toggle({
         getgenv().Settings.AutoQuest = v
     end
 })
+Utility:Toggle({
+    Title = "Enable Auto Combat",
+    Value = false,
+    Flag = "AutoCombat",
+    Callback = function(v)
+        getgenv().Settings.AutoCombat = v
+
+        if v then
+            if InBattle then
+                if InBattle() then
+                    task.wait(0.3)
+                    EnableAutoCombat()
+                end
+            end
+        else
+            if ReqAutoBattle then
+                pcall(function()
+                    ReqAutoBattle:InvokeServer(false)
+                end)
+                print("Auto Combat disabled")
+            end
+        end
+    end
+})
+
 local ConfigManager = Window.ConfigManager
 local ConfigName = "default"
 
@@ -1222,3 +1256,30 @@ if target and target.start then
         return 0
     end
 end
+
+local function EnableAutoCombat()
+    if not ReqAutoBattle then
+        warn("ReqAutoBattle not found")
+        return
+    end
+
+    pcall(function()
+        ReqAutoBattle:InvokeServer(true)
+    end)
+end
+
+if ClientBattleStart then
+    ClientBattleStart.Event:Connect(function()
+        task.wait(0.5)
+
+        if not getgenv().Settings.AutoCombat then
+            return
+        end
+
+        EnableAutoCombat()
+    end)
+else
+    warn("ClientBattleStart not found")
+end
+
+
