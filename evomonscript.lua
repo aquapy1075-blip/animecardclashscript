@@ -228,12 +228,9 @@ local Utility = Window:Tab({
     Title = "Utility",
     Icon = "list"
 })
-local ConfigTab = Window:Tab({
-			Title = "Config Usage",
-			Icon = "solar:folder-with-files-bold",
-			IconColor = Purple,
-			IconShape = nil,
-			Border = true,
+local Config = Window:Tab({
+	Title = "Config",
+	Icon = "solar:folder-with-files-bold",
 })
 -- Main
 MainTab:Dropdown({
@@ -587,17 +584,34 @@ Utility:Toggle({
 local ConfigManager = Window.ConfigManager
 local ConfigName = "default"
 
-local ConfigNameInput = ConfigTab:Input({
-    Title = "Config Name",
-    Icon = "file-cog",
-    Callback = function(value)
-        ConfigName = value
-    end,
+local ConfigDropdown = Config:Dropdown({
+    Title = "Select Config",
+    Desc = "Select your configuration",
+    Values = Configs,
+    Value = "",
+    Callback = function(option) 
+        SelectedConfig = option
+    end
 })
-
-ConfigTab:Space()
-
-ConfigTab:Button({
+Config:Button({
+    Title = "Overwrite Config",
+    Desc = "Overwrite selected config",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
+        MyConfig:Save()
+    end
+})
+Config:Button({
+    Title = "Load Config",
+    Desc = "Loads selected config",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
+        MyConfig:Load()
+    end
+})
+Config:Button({
     Title = "Set as Auto Load Config",
     Desc = "Auto loads the selected config next time",
     Locked = false,
@@ -606,81 +620,27 @@ ConfigTab:Button({
         MyConfig:SetAutoLoad(true)
     end
 })
-
-ConfigTab:Space()
-
-local AllConfigs = ConfigManager:AllConfigs()
-local DefaultValue = table.find(AllConfigs, ConfigName) and ConfigName or nil
-for i, v in next, AllConfigs do
-    local MyConfig = ConfigManager:CreateConfig(v)
-
-    if MyConfig.AutoLoad then
-        print("Auto loading config:", v)
-        MyConfig:Load()
-        break
+Config:Input({
+    Title = "Enter config name",
+    Desc = "Enter configuration name",
+    Value = "Default",
+    InputIcon = "bird",
+    Type = "Input", -- or "Textarea"
+    Placeholder = "Enter text...",
+    Callback = function(input)
+        ConfigName = input
     end
-end
-
-local AllConfigsDropdown = ConfigTab:Dropdown({
-    Title = "All Configs",
-    Desc = "Select existing configs",
-    Values = AllConfigs,
-    Value = DefaultValue,
-    Callback = function(value)
-        ConfigName = value
-        ConfigNameInput:Set(value)
-
-        AutoLoadToggle:Set(ConfigManager:GetConfig(ConfigName).AutoLoad or false)
-    end,
 })
-
-ConfigTab:Space()
-
-ConfigTab:Button({
+Config:Button({
     Title = "Save Config",
-    Icon = "",
-    Justify = "Center",
+    Desc = "Saves your settings as config name",
+    Locked = false,
     Callback = function()
-        Window.CurrentConfig = ConfigManager:Config(ConfigName)
-        if Window.CurrentConfig:Save() then
-            WindUI:Notify({
-                Title = "Config Saved",
-                Desc = "Config '" .. ConfigName .. "' saved",
-                Icon = "check",
-            })
-        end
-
-        AllConfigsDropdown:Refresh(ConfigManager:AllConfigs())
-    end,
-})
-
-ConfigTab:Space()
-
-ConfigTab:Button({
-    Title = "Load Config",
-    Icon = "",
-    Justify = "Center",
-    Callback = function()
-        Window.CurrentConfig = ConfigManager:CreateConfig(ConfigName)
-        if Window.CurrentConfig:Load() then
-            WindUI:Notify({
-                Title = "Config Loaded",
-                Desc = "Config '" .. ConfigName .. "' loaded",
-                Icon = "refresh-cw",
-            })
-        end
-    end,
-})
-
-ConfigTab:Space()
-
-ConfigTab:Button({
-    Title = "Print AutoLoad Configs",
-    Icon = "",
-    Justify = "Center",
-    Callback = function()
-        print(HttpService:JSONDecode(ConfigManager:GetAutoLoadConfigs()))
-    end,
+        local MyConfig = ConfigManager:CreateConfig(ConfigName)
+        MyConfig:Save()
+        table.insert(Configs, MyConfig)
+        ConfigDropdown:Refresh(Configs)
+    end
 })
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
