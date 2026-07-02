@@ -614,18 +614,30 @@ Config:Button({
 })
 
 function ConfigManager:SetExclusiveAutoLoad(targetName)
-    for _, config in pairs(ConfigManager.Configs) do
-        if config.AutoLoad and config ~= ConfigManager.Configs[targetName] then
-            config.AutoLoad = false
-            config:Save()
+    local HttpService = game:GetService("HttpService")
+
+    for _, name in ipairs(ConfigManager:AllConfigs()) do
+        local path = ConfigManager.Path .. name .. ".json"
+
+        if isfile(path) then
+            local ok, data = pcall(function()
+                return HttpService:JSONDecode(readfile(path))
+            end)
+
+            if ok and type(data) == "table" then
+                data.__autoload = (name == targetName)
+
+                writefile(path, HttpService:JSONEncode(data))
+            end
+        end
+
+        local cfg = ConfigManager.Configs[name]
+        if type(cfg) == "table" then
+            cfg.AutoLoad = (name == targetName)
         end
     end
 
-    local target = ConfigManager.Configs[targetName]
-    if target then
-        target.AutoLoad = true
-        target:Save()
-    end
+    print("Exclusive AutoLoad set:", targetName)
 end
 Config:Button({
     Title = "Set as Auto Load Config",
