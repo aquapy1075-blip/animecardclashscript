@@ -719,7 +719,6 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     end
 
     if getgenv().Settings.AutoCatch then
-        print("Normal Catch Ball:", SelectedCatchBall)
         Catch(SelectedCatchBall)
     end
 end)
@@ -760,13 +759,11 @@ local function FindMobList()
     local bestList
     local bestValid = 0
     local bestTotal = 0
-    local bestAlive = 0
 
     for _, tbl in ipairs(getgc(true)) do
         if type(tbl) == "table" then
             local total = 0
             local valid = 0
-            local alive = 0
 
             for _, v in pairs(tbl) do
                 total += 1
@@ -774,75 +771,32 @@ local function FindMobList()
                     break
                 end
 
-                if IsMob(v) then
+                if IsMob(v)
+                and rawget(v, "aliveState") == 1
+                and rawget(v, "_isDestroyed") == false then
                     valid += 1
-
-                    if TargetConfigIds[rawget(v, "configId")]
-                    and rawget(v, "aliveState") == 1
-                    and rawget(v, "_isDestroyed") == false then
-                        alive += 1
-                    end
                 end
             end
 
             if total >= 50
             and total <= 1000
             and valid >= 20
-            and alive > 0
             and valid > bestValid then
                 bestList = tbl
                 bestValid = valid
                 bestTotal = total
-                bestAlive = alive
             end
         end
     end
 
-    if bestList then
+  if bestList then
     print("MobList found:", bestTotal, "valid:", bestValid)
-
-    local visited = {}
-
-    local function FindPath(tbl, path)
-        if visited[tbl] then
-            return false
-        end
-        visited[tbl] = true
-
-        for k, v in pairs(tbl) do
-            if v == bestList then
-                print("========== BESTLIST FOUND ==========")
-                print("Path :", path)
-                print("Key  :", k)
-                print("Parent:", tbl)
-                print("====================================")
-            elseif type(v) == "table" then
-                FindPath(v, path .. "." .. tostring(k))
-            end
-        end
-    end
-
-    for _, tbl in ipairs(getgc(true)) do
-        if type(tbl) == "table" then
-            FindPath(tbl, "GC")
-        end
-    end
-
     return bestList
 end
-
-
     warn("MobList not found")
     return nil
 end
-
 MobList = FindMobList()
-
-if MobList then
-    print("MobList OK")
-else
-    warn("MobList NOT FOUND")
-end
 
 local function GetRandomPetUID()
     if not MobList then
@@ -1203,9 +1157,6 @@ local function AutoReleasePet()
         and (pet.name == ReleasePetName or pet.petName == ReleasePetName) then
 
             released[uid] = true
-
-            print("Release:", pet.name or pet.petName, uid)
-
             ReplicatedStorage.Remote.Pet.ReqRemovePets:InvokeServer({uid})
 
             task.wait(0.2)
