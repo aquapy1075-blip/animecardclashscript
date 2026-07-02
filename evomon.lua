@@ -182,7 +182,9 @@ end
 table.sort(BossOptions)
 
 local SelectedBoss = nil
-
+local ConfigManager = Window.ConfigManager
+local myConfig = ConfigManager:CreateConfig("evomonconfig")
+myConfig:Load()
 
 local MainTab = Window:Tab({
     Title = "Mobs",
@@ -215,6 +217,7 @@ local Utility = Window:Tab({
     Title = "Utility",
     Icon = "list"
 })
+-- Main
 MainTab:Dropdown({
     Title = "Target Pets",
     Values = PetOptions,
@@ -229,8 +232,6 @@ MainTab:Dropdown({
     end
 })
 
-
-
 MainTab:Toggle({
     Title = "Auto Farm Mons",
     Value = false,
@@ -241,6 +242,7 @@ MainTab:Toggle({
     end
 })
 
+-- Boss
 BossTab:Dropdown({
     Title = "Select Boss",
     Values = BossOptions,
@@ -250,6 +252,7 @@ BossTab:Dropdown({
         SelectedBoss = Boss
     end
 })
+
 BossTab:Toggle({
     Title = "Auto Boss",
     Value = false,
@@ -259,6 +262,7 @@ BossTab:Toggle({
     end
 })
 
+-- Summon
 SummonTab:Dropdown({
     Title = "Select Summon Boss",
     Values = petNames,
@@ -268,6 +272,7 @@ SummonTab:Dropdown({
         SelectedSummonPet = Boss
     end
 })
+
 SummonTab:Toggle({
     Title = "Auto Summon Boss",
     Value = false,
@@ -276,6 +281,8 @@ SummonTab:Toggle({
         getgenv().Settings.AutoSummonBoss = Value
     end
 })
+
+-- Dungeon
 DungeonTab:Dropdown({
     Title = "Upgrade",
     Values = {
@@ -285,6 +292,7 @@ DungeonTab:Dropdown({
     },
     Multi = false,
     Value = "Upgrade 1",
+    Flag = "DungeonUpgrade",
     Callback = function(v)
         SelectedUpgrade = tonumber(v:match("%d")) or 1
     end
@@ -293,6 +301,7 @@ DungeonTab:Dropdown({
 DungeonTab:Toggle({
     Title = "Auto Select Upgrade",
     Value = false,
+    Flag = "AutoSelectUpgrade",
     Callback = function(v)
         getgenv().Settings.AutoSelectUpgrade = v
     end
@@ -301,15 +310,17 @@ DungeonTab:Toggle({
 DungeonTab:Toggle({
     Title = "Auto Replay",
     Value = false,
+    Flag = "AutoReplay",
     Callback = function(v)
         getgenv().Settings.AutoReplay = v
     end
 })
 
-
+-- Skill
 SkillTab:Toggle({
     Title = "Auto Skill",
     Value = false,
+    Flag = "AutoSkill",
     Callback = function(v)
         getgenv().Settings.AutoSkill = v
     end
@@ -319,6 +330,7 @@ SkillTab:Dropdown({
     Title = "Priority 1",
     Values = SkillPriority,
     Value = "Skill 1",
+    Flag = "Priority1",
     Callback = function(v)
         Priority1 = v
     end
@@ -328,6 +340,7 @@ SkillTab:Dropdown({
     Title = "Priority 2",
     Values = SkillPriority,
     Value = "Skill 2",
+    Flag = "Priority2",
     Callback = function(v)
         Priority2 = v
     end
@@ -337,6 +350,7 @@ SkillTab:Dropdown({
     Title = "Priority 3",
     Values = SkillPriority,
     Value = "Skill 3",
+    Flag = "Priority3",
     Callback = function(v)
         Priority3 = v
     end
@@ -345,6 +359,7 @@ SkillTab:Dropdown({
 SkillTab:Input({
     Title = "Skill 1 Uses",
     Placeholder = "0 = infinite",
+    Flag = "Skill1Uses",
     Callback = function(v)
         SkillUses[1] = tonumber(v) or 0
     end
@@ -353,6 +368,7 @@ SkillTab:Input({
 SkillTab:Input({
     Title = "Skill 2 Uses",
     Placeholder = "0 = infinite",
+    Flag = "Skill2Uses",
     Callback = function(v)
         SkillUses[2] = tonumber(v) or 0
     end
@@ -361,17 +377,22 @@ SkillTab:Input({
 SkillTab:Input({
     Title = "Skill 3 Uses",
     Placeholder = "0 = infinite",
+    Flag = "Skill3Uses",
     Callback = function(v)
         SkillUses[3] = tonumber(v) or 0
     end
 })
+
 SkillTab:Toggle({
     Title = "Auto Ultimate",
     Value = false,
+    Flag = "AutoUltimate",
     Callback = function(v)
         getgenv().Settings.AutoUltimate = v
     end
 })
+
+-- Misc
 MiscTab:Toggle({
     Title = "Auto Leave",
     Value = false,
@@ -380,6 +401,7 @@ MiscTab:Toggle({
         getgenv().Settings.AutoLeave = Value
     end
 })
+
 MiscTab:Toggle({
     Title = "Auto Catch",
     Value = false,
@@ -388,6 +410,7 @@ MiscTab:Toggle({
         getgenv().Settings.AutoCatch = Value
     end
 })
+
 MiscTab:Dropdown({
     Title = "Select Catch Ball",
     Values = {
@@ -397,6 +420,7 @@ MiscTab:Dropdown({
         "Primastic Ball"
     },
     Value = "Advanced Ball",
+    Flag = "CatchBall",
     Callback = function(v)
         local map = {
             ["Normal Ball"] = 2000015,
@@ -408,6 +432,7 @@ MiscTab:Dropdown({
         SelectedCatchBall = map[v] or 2000016
     end
 })
+
 MiscTab:Toggle({
     Title = "Auto Select Pet",
     Value = false,
@@ -416,6 +441,7 @@ MiscTab:Toggle({
         getgenv().Settings.AutoSelectPet = Value
     end
 })
+
 MiscTab:Toggle({
     Title = "Auto Press 1",
     Value = false,
@@ -425,7 +451,6 @@ MiscTab:Toggle({
     end
 })
 
-
 MiscTab:Toggle({
     Title = "Auto Catch Shiny",
     Value = false,
@@ -434,6 +459,7 @@ MiscTab:Toggle({
         getgenv().Settings.AutoShiny = Value
     end
 })
+
 MiscTab:Dropdown({
     Title = "Shiny Catch Ball",
     Values = {
@@ -443,6 +469,7 @@ MiscTab:Dropdown({
         "Primastic Ball"
     },
     Value = "Primastic Ball",
+    Flag = "ShinyCatchBall",
     Callback = function(v)
         local map = {
             ["Normal Ball"] = 2000015,
@@ -454,34 +481,29 @@ MiscTab:Dropdown({
         SelectedShinyBall = map[v] or 2000018
     end
 })
+
 MiscTab:Input({
     Title = "Release Pet Name",
     Placeholder = "Ex: Pebble",
+    Flag = "ReleasePetName",
     Callback = function(text)
         ReleasePetName = text
     end
 })
+
 MiscTab:Toggle({
     Title = "Auto Release",
     Value = false,
+    Flag = "AutoRelease",
     Callback = function(v)
         getgenv().Settings.AutoRelease = v
     end
 })
 
-local function FindNpc22()
-    local cache = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache
-
-    for _, obj in ipairs(cache:GetDescendants()) do
-        if obj:IsA("Model") and obj.Name == "Npc22" then
-            return obj
-        end
-    end
-end
+-- Utility
 Utility:Button({
     Title = "Teleport To Travelling Merchant",
     Callback = function()
-
         local npc = FindNpc22()
 
         if not npc then
@@ -495,13 +517,21 @@ Utility:Button({
         local hrp = npc:FindFirstChild("HumanoidRootPart")
 
         if root and hrp then
-            root.CFrame = hrp.CFrame + Vector3.new(0,3,0)
+            root.CFrame = hrp.CFrame + Vector3.new(0, 3, 0)
         end
     end
 })
+Utility:Button({
+    Title = "Save Config",
+    Callback = function()
+       myConfig:Save()
+    end
+})
+
 Utility:Toggle({
     Title = "Auto Quest",
     Value = false,
+    Flag = "AutoQuest",
     Callback = function(v)
         getgenv().Settings.AutoQuest = v
     end
