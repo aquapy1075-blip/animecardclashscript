@@ -584,7 +584,7 @@ Utility:Toggle({
 local ConfigManager = Window.ConfigManager
 local ConfigName = "default"
 local Configs = ConfigManager:AllConfigs()
-local SelectedConfig
+
 local ConfigDropdown = Config:Dropdown({
     Title = "Select Config",
     Desc = "Select your configuration",
@@ -612,17 +612,28 @@ Config:Button({
         MyConfig:Load()
     end
 })
+
+function ConfigManager:SetExclusiveAutoLoad(targetName)
+    for _, config in pairs(ConfigManager.Configs) do
+        if config.AutoLoad and config ~= ConfigManager.Configs[targetName] then
+            config.AutoLoad = false
+            config:Save()
+        end
+    end
+
+    local target = ConfigManager.Configs[targetName]
+    if target then
+        target.AutoLoad = true
+        target:Save()
+    end
+end
 Config:Button({
     Title = "Set as Auto Load Config",
     Desc = "Auto loads the selected config next time",
     Locked = false,
     Callback = function()
-        local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
-        MyConfig:SetAutoLoad(true)
-		Window.CurrentConfig = ConfigManager:Config(SelectedConfig)
-		print(SelectedConfig)
-		Window.CurrentConfig:SetAutoLoad(true)
-    end
+        ConfigManager:SetExclusiveAutoLoad(SelectedConfig)
+end
 })
 Config:Input({
     Title = "Enter config name",
