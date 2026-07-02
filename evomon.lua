@@ -1026,6 +1026,8 @@ local function AutoQuest()
           game:GetService("ReplicatedStorage")
             .Remote.Dialogue.ReqReceiveDialogueTask:InvokeServer(200042, 7001101)
     end)
+	task.wait(0.5)
+	ReplicatedStorage.Remote.Task.ReqCompleteTask:InvokeServer({ 8000082 })
 end
 
 task.spawn(function()
