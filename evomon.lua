@@ -756,82 +756,81 @@ local function IsMob(v)
         and rawget(v, "areaId") ~= nil
 end
 
-local function ScoreMobList(tbl)
-    local total = 0
-    local valid = 0
-
-    for _, v in pairs(tbl) do
-        total += 1
-
-        if IsMob(v) then
-            valid += 1
-        end
-
-        if total > 1000 then
-            return 0, total, valid -- loại table quá lớn như getgc root
-        end
-    end
-
-    if valid >= 50 and valid / total >= 0.5 then
-        return valid, total, valid
-    end
-
-    return 0, total, valid
-end
-
 local function FindMobList()
-    local targetMob
+    local bestList
+    local bestValid = 0
+    local bestTotal = 0
+    local bestAlive = 0
 
     for _, tbl in ipairs(getgc(true)) do
-        if IsMob(tbl) then
-            targetMob = tbl
-            break
-        end
-    end
+        if type(tbl) == "table" then
+            local total = 0
+            local valid = 0
+            local alive = 0
 
-    if not targetMob then
-        warn("Target mob not found")
-        return nil
-    end
+            for _, v in pairs(tbl) do
+                total += 1
+                if total > 1000 then
+                    break
+                end
 
-    local visited = {}
-    local bestList
-    local bestScore = 0
-    local bestTotal = 0
+                if IsMob(v) then
+                    valid += 1
 
-    local function Scan(tbl)
-        if visited[tbl] then
-            return
-        end
-        visited[tbl] = true
-
-        for _, v in pairs(tbl) do
-            if v == targetMob then
-                local score, total = ScoreMobList(tbl)
-
-                if score > bestScore then
-                    bestScore = score
-                    bestTotal = total
-                    bestList = tbl
+                    if TargetConfigIds[rawget(v, "configId")]
+                    and rawget(v, "aliveState") == 1
+                    and rawget(v, "_isDestroyed") == false then
+                        alive += 1
+                    end
                 end
             end
 
-            if type(v) == "table" then
-                Scan(v)
+            if total >= 50
+            and total <= 1000
+            and valid >= 20
+            and alive > 0
+            and valid > bestValid then
+                bestList = tbl
+                bestValid = valid
+                bestTotal = total
+                bestAlive = alive
+            end
+        end
+    end
+
+    if bestList then
+    print("MobList found:", bestTotal, "valid:", bestValid)
+
+    local visited = {}
+
+    local function FindPath(tbl, path)
+        if visited[tbl] then
+            return false
+        end
+        visited[tbl] = true
+
+        for k, v in pairs(tbl) do
+            if v == bestList then
+                print("========== BESTLIST FOUND ==========")
+                print("Path :", path)
+                print("Key  :", k)
+                print("Parent:", tbl)
+                print("====================================")
+            elseif type(v) == "table" then
+                FindPath(v, path .. "." .. tostring(k))
             end
         end
     end
 
     for _, tbl in ipairs(getgc(true)) do
         if type(tbl) == "table" then
-            Scan(tbl)
+            FindPath(tbl, "GC")
         end
     end
 
-    if bestList then
-        print("MobList cached! Entries:", bestTotal, "Valid mobs:", bestScore)
-        return bestList
-    end
+    return bestList
+end
+
 
     warn("MobList not found")
     return nil
@@ -861,12 +860,13 @@ local function GetRandomPetUID()
             local uid = rawget(mob, "uid")
             local aliveState = rawget(mob, "aliveState")
 
-            if TargetConfigIds[configId]
-            and uid
-            and aliveState == 1
-            and not badUIDs[uid] then
-                candidates[#candidates + 1] = mob
-            end
+           if TargetConfigIds[configId]
+and uid
+and aliveState == 1
+and rawget(mob, "_isDestroyed") == false
+and not badUIDs[uid] then
+    candidates[#candidates + 1] = mob
+end
         end
     end
 
