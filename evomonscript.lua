@@ -584,7 +584,7 @@ Utility:Toggle({
 local ConfigManager = Window.ConfigManager
 local ConfigName = "default"
 local Configs = ConfigManager:AllConfigs()
-
+local SelectedConfig
 local ConfigDropdown = Config:Dropdown({
     Title = "Select Config",
     Desc = "Select your configuration",
