@@ -1028,6 +1028,8 @@ local function AutoQuest()
     end)
 	task.wait(0.5)
 	ReplicatedStorage.Remote.Task.ReqCompleteTask:InvokeServer({ 8000082 })
+	task.wait(0.5)
+	ReplicatedStorage.Remote.Task.ReqCompleteTask:InvokeServer({ 8000081 })
 end
 
 task.spawn(function()
