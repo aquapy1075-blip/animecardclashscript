@@ -573,6 +573,15 @@ ConfigTab:Space()
 
 local AllConfigs = ConfigManager:AllConfigs()
 local DefaultValue = table.find(AllConfigs, ConfigName) and ConfigName or nil
+for i, v in next, AllConfigs do
+    local MyConfig = ConfigManager:CreateConfig(v)
+
+    if MyConfig.AutoLoad then
+        print("Auto loading config:", v)
+        MyConfig:Load()
+        break
+    end
+end
 
 local AllConfigsDropdown = ConfigTab:Dropdown({
     Title = "All Configs",
