@@ -619,6 +619,9 @@ Config:Button({
     Callback = function()
         local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
         MyConfig:SetAutoLoad(true)
+		Window.CurrentConfig = ConfigManager:Config(SelectedConfig)
+		print(SelectedConfig)
+		Window.CurrentConfig:SetAutoLoad(true)
     end
 })
 Config:Input({
