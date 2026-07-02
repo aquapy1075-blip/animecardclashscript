@@ -548,93 +548,102 @@ Utility:Toggle({
     end
 })
 local ConfigManager = Window.ConfigManager
-		local ConfigName = "default"
+local ConfigName = "default"
 
-		local ConfigNameInput = ConfigTab:Input({
-			Title = "Config Name",
-			Icon = "file-cog",
-			Callback = function(value)
-				ConfigName = value
-			end,
-		})
+local ConfigNameInput = ConfigTab:Input({
+    Title = "Config Name",
+    Icon = "file-cog",
+    Callback = function(value)
+        ConfigName = value
+    end,
+})
 
-		ConfigTab:Space()
+ConfigTab:Space()
 
-		 local AutoLoadToggle = ConfigTab:Toggle({
-		   Title = "Enable Auto Load to Selected Config",
-		    Value = false,
-		    Callback = function(v)
-		        Window.CurrentConfig:SetAutoLoad(v)
-		    end
-	      })
+local AutoLoadToggle = ConfigTab:Toggle({
+    Title = "Enable Auto Load to Selected Config",
+    Value = false,
+	Flag = "autoloadconfig",
+    Callback = function(v)
+        Window.CurrentConfig:SetAutoLoad(v)
+    end
+})
 
-		ConfigTab:Space()
+ConfigTab:Space()
 
-		local AllConfigs = ConfigManager:AllConfigs()
-		local DefaultValue = table.find(AllConfigs, ConfigName) and ConfigName or nil
+local AllConfigs = ConfigManager:AllConfigs()
+local DefaultValue = table.find(AllConfigs, ConfigName) and ConfigName or nil
+for i, v in next, AllConfigs do
+    local MyConfig = ConfigManager:CreateConfig(v)
 
-		local AllConfigsDropdown = ConfigTab:Dropdown({
-			Title = "All Configs",
-			Desc = "Select existing configs",
-			Values = AllConfigs,
-			Value = DefaultValue,
-			Callback = function(value)
-				ConfigName = value
-				ConfigNameInput:Set(value)
+    if MyConfig.AutoLoad then
+        print("Auto loading config:", v)
+        MyConfig:Load()
+        break
+    end
+end
 
-				AutoLoadToggle:Set(ConfigManager:GetConfig(ConfigName).AutoLoad or false)
-			end,
-		})
+local AllConfigsDropdown = ConfigTab:Dropdown({
+    Title = "All Configs",
+    Desc = "Select existing configs",
+    Values = AllConfigs,
+    Value = DefaultValue,
+    Callback = function(value)
+        ConfigName = value
+        ConfigNameInput:Set(value)
 
-		ConfigTab:Space()
+        AutoLoadToggle:Set(ConfigManager:GetConfig(ConfigName).AutoLoad or false)
+    end,
+})
 
-		ConfigTab:Button({
-			Title = "Save Config",
-			Icon = "",
-			Justify = "Center",
-			Callback = function()
-				Window.CurrentConfig = ConfigManager:Config(ConfigName)
-				if Window.CurrentConfig:Save() then
-					WindUI:Notify({
-						Title = "Config Saved",
-						Desc = "Config '" .. ConfigName .. "' saved",
-						Icon = "check",
-					})
-				end
+ConfigTab:Space()
 
-				AllConfigsDropdown:Refresh(ConfigManager:AllConfigs())
-			end,
-		})
+ConfigTab:Button({
+    Title = "Save Config",
+    Icon = "",
+    Justify = "Center",
+    Callback = function()
+        Window.CurrentConfig = ConfigManager:Config(ConfigName)
+        if Window.CurrentConfig:Save() then
+            WindUI:Notify({
+                Title = "Config Saved",
+                Desc = "Config '" .. ConfigName .. "' saved",
+                Icon = "check",
+            })
+        end
 
-		ConfigTab:Space()
+        AllConfigsDropdown:Refresh(ConfigManager:AllConfigs())
+    end,
+})
 
-		ConfigTab:Button({
-			Title = "Load Config",
-			Icon = "",
-			Justify = "Center",
-			Callback = function()
-				Window.CurrentConfig = ConfigManager:CreateConfig(ConfigName)
-				if Window.CurrentConfig:Load() then
-					WindUI:Notify({
-						Title = "Config Loaded",
-						Desc = "Config '" .. ConfigName .. "' loaded",
-						Icon = "refresh-cw",
-					})
-				end
-			end,
-		})
+ConfigTab:Space()
 
-		ConfigTab:Space()
+ConfigTab:Button({
+    Title = "Load Config",
+    Icon = "",
+    Justify = "Center",
+    Callback = function()
+        Window.CurrentConfig = ConfigManager:CreateConfig(ConfigName)
+        if Window.CurrentConfig:Load() then
+            WindUI:Notify({
+                Title = "Config Loaded",
+                Desc = "Config '" .. ConfigName .. "' loaded",
+                Icon = "refresh-cw",
+            })
+        end
+    end,
+})
 
-		ConfigTab:Button({
-			Title = "Print AutoLoad Configs",
-			Icon = "",
-			Justify = "Center",
-			Callback = function()
-				print(HttpService:JSONDecode(ConfigManager:GetAutoLoadConfigs()))
-			end,
-		})
+ConfigTab:Space()
 
+ConfigTab:Button({
+    Title = "Print AutoLoad Configs",
+    Icon = "",
+    Justify = "Center",
+    Callback = function()
+        print(HttpService:JSONDecode(ConfigManager:GetAutoLoadConfigs()))
+    end,
+})
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         actionType = 8
@@ -719,7 +728,6 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     end
 
     if getgenv().Settings.AutoCatch then
-        print("Normal Catch Ball:", SelectedCatchBall)
         Catch(SelectedCatchBall)
     end
 end)
@@ -756,94 +764,48 @@ local function IsMob(v)
         and rawget(v, "areaId") ~= nil
 end
 
-local function ScoreMobList(tbl)
-    local total = 0
-    local valid = 0
-
-    for _, v in pairs(tbl) do
-        total += 1
-
-        if IsMob(v) then
-            valid += 1
-        end
-
-        if total > 1000 then
-            return 0, total, valid -- loại table quá lớn như getgc root
-        end
-    end
-
-    if valid >= 50 and valid / total >= 0.5 then
-        return valid, total, valid
-    end
-
-    return 0, total, valid
-end
-
 local function FindMobList()
-    local targetMob
-
-    for _, tbl in ipairs(getgc(true)) do
-        if IsMob(tbl) then
-            targetMob = tbl
-            break
-        end
-    end
-
-    if not targetMob then
-        warn("Target mob not found")
-        return nil
-    end
-
-    local visited = {}
     local bestList
-    local bestScore = 0
+    local bestValid = 0
     local bestTotal = 0
-
-    local function Scan(tbl)
-        if visited[tbl] then
-            return
-        end
-        visited[tbl] = true
-
-        for _, v in pairs(tbl) do
-            if v == targetMob then
-                local score, total = ScoreMobList(tbl)
-
-                if score > bestScore then
-                    bestScore = score
-                    bestTotal = total
-                    bestList = tbl
-                end
-            end
-
-            if type(v) == "table" then
-                Scan(v)
-            end
-        end
-    end
 
     for _, tbl in ipairs(getgc(true)) do
         if type(tbl) == "table" then
-            Scan(tbl)
+            local total = 0
+            local valid = 0
+
+            for _, v in pairs(tbl) do
+                total += 1
+                if total > 1000 then
+                    break
+                end
+
+                if IsMob(v)
+                and rawget(v, "aliveState") == 1
+                and rawget(v, "_isDestroyed") == false then
+                    valid += 1
+                end
+            end
+
+            if total >= 50
+            and total <= 1000
+            and valid >= 20
+            and valid > bestValid then
+                bestList = tbl
+                bestValid = valid
+                bestTotal = total
+            end
         end
     end
 
-    if bestList then
-        print("MobList cached! Entries:", bestTotal, "Valid mobs:", bestScore)
-        return bestList
-    end
-
+  if bestList then
+    print("MobList found:", bestTotal, "valid:", bestValid)
+    return bestList
+end
     warn("MobList not found")
     return nil
 end
-
 MobList = FindMobList()
-
-if MobList then
-    print("MobList OK")
-else
-    warn("MobList NOT FOUND")
-end
 
 local function GetRandomPetUID()
     if not MobList then
@@ -861,12 +823,13 @@ local function GetRandomPetUID()
             local uid = rawget(mob, "uid")
             local aliveState = rawget(mob, "aliveState")
 
-            if TargetConfigIds[configId]
-            and uid
-            and aliveState == 1
-            and not badUIDs[uid] then
-                candidates[#candidates + 1] = mob
-            end
+           if TargetConfigIds[configId]
+and uid
+and aliveState == 1
+and rawget(mob, "_isDestroyed") == false
+and not badUIDs[uid] then
+    candidates[#candidates + 1] = mob
+end
         end
     end
 
@@ -1203,9 +1166,6 @@ local function AutoReleasePet()
         and (pet.name == ReleasePetName or pet.petName == ReleasePetName) then
 
             released[uid] = true
-
-            print("Release:", pet.name or pet.petName, uid)
-
             ReplicatedStorage.Remote.Pet.ReqRemovePets:InvokeServer({uid})
 
             task.wait(0.2)
