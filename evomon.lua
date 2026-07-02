@@ -560,15 +560,15 @@ local ConfigManager = Window.ConfigManager
 
 		ConfigTab:Space()
 
-		-- local AutoLoadToggle = ConfigTab:Toggle({
-		--     Title = "Enable Auto Load to Selected Config",
-		--     Value = false,
-		--     Callback = function(v)
-		--         Window.CurrentConfig:SetAutoLoad(v)
-		--     end
-		-- })
+		 local AutoLoadToggle = ConfigTab:Toggle({
+		   Title = "Enable Auto Load to Selected Config",
+		    Value = false,
+		    Callback = function(v)
+		        Window.CurrentConfig:SetAutoLoad(v)
+		    end
+		
 
-		-- ConfigTab:Space()
+		ConfigTab:Space()
 
 		local AllConfigs = ConfigManager:AllConfigs()
 		local DefaultValue = table.find(AllConfigs, ConfigName) and ConfigName or nil
@@ -582,7 +582,7 @@ local ConfigManager = Window.ConfigManager
 				ConfigName = value
 				ConfigNameInput:Set(value)
 
-				--AutoLoadToggle:Set(ConfigManager:GetConfig(ConfigName).AutoLoad or false)
+				AutoLoadToggle:Set(ConfigManager:GetConfig(ConfigName).AutoLoad or false)
 			end,
 		})
 
