@@ -216,7 +216,7 @@ local Utility = Window:Tab({
     Title = "Utility",
     Icon = "list"
 })
-local ConfigTab = ConfigUsageSection:Tab({
+local ConfigTab = Window:Tab({
 			Title = "Config Usage",
 			Icon = "solar:folder-with-files-bold",
 			IconColor = Purple,
