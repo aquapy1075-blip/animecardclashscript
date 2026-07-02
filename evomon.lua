@@ -222,7 +222,7 @@ local ConfigTab = Window:Tab({
 			IconColor = Purple,
 			IconShape = nil,
 			Border = true,
-		})
+})
 -- Main
 MainTab:Dropdown({
     Title = "Target Pets",
@@ -566,7 +566,7 @@ local ConfigManager = Window.ConfigManager
 		    Callback = function(v)
 		        Window.CurrentConfig:SetAutoLoad(v)
 		    end
-		
+	      })
 
 		ConfigTab:Space()
 
