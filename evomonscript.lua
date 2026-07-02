@@ -934,8 +934,9 @@ local SelectedPetUID
 local function FindSelectedPet()
     for _, tbl in ipairs(getgc(true)) do
         if type(tbl) == "table"
-        and rawget(tbl, "petUid")
-        and rawget(tbl, "isSelected") ~= nil then
+        and rawget(tbl, "petUid") ~= nil 
+        and rawget(tbl, "isSelected") ~= nil 
+		and rawget(tbl, "level") != nil then
 
             if tbl.isSelected then
                 SelectedPetTable = tbl
