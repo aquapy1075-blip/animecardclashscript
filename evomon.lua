@@ -175,6 +175,7 @@ end
 table.sort(PetOptions)
 
 local SelectedPets = {}
+local TargetConfigIds = {}
 local BossOptions = {}
 for bossName in pairs(BossIds) do
     table.insert(BossOptions, bossName)
@@ -182,9 +183,7 @@ end
 table.sort(BossOptions)
 
 local SelectedBoss = nil
-local ConfigManager = Window.ConfigManager
-local myConfig = ConfigManager:CreateConfig("evomonconfig")
-myConfig:Load()
+
 
 local MainTab = Window:Tab({
     Title = "Mobs",
@@ -217,6 +216,10 @@ local Utility = Window:Tab({
     Title = "Utility",
     Icon = "list"
 })
+local Config = Window:Tab({
+    Title = "Config",
+    Icon = "file"
+})
 -- Main
 MainTab:Dropdown({
     Title = "Target Pets",
@@ -224,9 +227,20 @@ MainTab:Dropdown({
     Multi = true,
     Flag = "TargetPets",
     Callback = function(Options)
+
         SelectedPets = {}
+        TargetConfigIds = {}
+
         for _, petName in ipairs(Options) do
             table.insert(SelectedPets, petName)
+
+            local ids = PetIds[petName]
+            if ids then
+                for _, id in ipairs(ids) do
+                    TargetConfigIds[1000000 + id] = true
+                end
+            end
+
             print("Selected:", petName)
         end
     end
@@ -521,12 +535,6 @@ Utility:Button({
         end
     end
 })
-Utility:Button({
-    Title = "Save Config",
-    Callback = function()
-       myConfig:Save()
-    end
-})
 
 Utility:Toggle({
     Title = "Auto Quest",
@@ -536,7 +544,64 @@ Utility:Toggle({
         getgenv().Settings.AutoQuest = v
     end
 })
-
+local ConfigDropdown = Config:Dropdown({
+    Title = "Select Config",
+    Desc = "Select your configuration",
+    Values = Configs,
+    Value = "",
+    Callback = function(option) 
+        SelectedConfig = option
+    end
+})
+Config:Button({
+    Title = "Overwrite Config",
+    Desc = "Overwrite selected config",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
+        MyConfig:Save()
+    end
+})
+Config:Button({
+    Title = "Load Config",
+    Desc = "Loads selected config",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
+        MyConfig:Load()
+    end
+})
+Config:Button({
+    Title = "Set as Auto Load Config",
+    Desc = "Auto loads the selected config next time",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
+        MyConfig:SetAutoLoad(true)
+    end
+})
+Config:Input({
+    Title = "Enter config name",
+    Desc = "Enter configuration name",
+    Value = "Default",
+    InputIcon = "bird",
+    Type = "Input", -- or "Textarea"
+    Placeholder = "Enter text...",
+    Callback = function(input)
+        ConfigName = input
+    end
+})
+Config:Button({
+    Title = "Save Config",
+    Desc = "Saves your settings as config name",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(ConfigName)
+        MyConfig:Save()
+        table.insert(Configs, MyConfig)
+        ConfigDropdown:Refresh(Configs)
+    end
+})
 
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
@@ -649,41 +714,142 @@ local function InBattle()
     return false
 end
 
+local MobList
+local badUIDs = {}
+
+local function IsMob(v)
+    return type(v) == "table"
+        and rawget(v, "uid") ~= nil
+        and rawget(v, "configId") ~= nil
+        and rawget(v, "areaId") ~= nil
+end
+
+local function ScoreMobList(tbl)
+    local total = 0
+    local valid = 0
+
+    for _, v in pairs(tbl) do
+        total += 1
+
+        if IsMob(v) then
+            valid += 1
+        end
+
+        if total > 1000 then
+            return 0, total, valid -- loại table quá lớn như getgc root
+        end
+    end
+
+    if valid >= 50 and valid / total >= 0.5 then
+        return valid, total, valid
+    end
+
+    return 0, total, valid
+end
+
+local function FindMobList()
+    local targetMob
+
+    for _, tbl in ipairs(getgc(true)) do
+        if IsMob(tbl) then
+            targetMob = tbl
+            break
+        end
+    end
+
+    if not targetMob then
+        warn("Target mob not found")
+        return nil
+    end
+
+    local visited = {}
+    local bestList
+    local bestScore = 0
+    local bestTotal = 0
+
+    local function Scan(tbl)
+        if visited[tbl] then
+            return
+        end
+        visited[tbl] = true
+
+        for _, v in pairs(tbl) do
+            if v == targetMob then
+                local score, total = ScoreMobList(tbl)
+
+                if score > bestScore then
+                    bestScore = score
+                    bestTotal = total
+                    bestList = tbl
+                end
+            end
+
+            if type(v) == "table" then
+                Scan(v)
+            end
+        end
+    end
+
+    for _, tbl in ipairs(getgc(true)) do
+        if type(tbl) == "table" then
+            Scan(tbl)
+        end
+    end
+
+    if bestList then
+        print("MobList cached! Entries:", bestTotal, "Valid mobs:", bestScore)
+        return bestList
+    end
+
+    warn("MobList not found")
+    return nil
+end
+
+MobList = FindMobList()
+
+if MobList then
+    print("MobList OK")
+else
+    warn("MobList NOT FOUND")
+end
 
 local function GetRandomPetUID()
+    if not MobList then
+        MobList = FindMobList()
+        if not MobList then
+            return nil
+        end
+    end
+
     local candidates = {}
 
-    for _, petName in ipairs(SelectedPets) do
-        local ids = PetIds[petName]
+    for _, mob in pairs(MobList) do
+        if IsMob(mob) then
+            local configId = rawget(mob, "configId")
+            local uid = rawget(mob, "uid")
+            local aliveState = rawget(mob, "aliveState")
 
-        if ids then
-            for _, id in ipairs(ids) do
-                local configId = 1000000 + id
-
-                for _, tbl in ipairs(getgc(true)) do
-                    if type(tbl) == "table"
-                    and rawget(tbl, "configId") == configId
-                    and rawget(tbl, "areaId") ~= nil
-                    and rawget(tbl, "uid") ~= nil then
-
-                        table.insert(candidates, tbl.uid)
-                    end
-                end
+            if TargetConfigIds[configId]
+            and uid
+            and aliveState == 1
+            and not badUIDs[uid] then
+                candidates[#candidates + 1] = mob
             end
         end
     end
 
     if #candidates == 0 then
+        badUIDs = {}
+        MobList = FindMobList()
         return nil
     end
 
-    return candidates[math.random(#candidates)]
+    local mob = candidates[math.random(#candidates)]
+    return mob.uid
 end
-
 
 task.spawn(function()
     while task.wait(1) do
-
         if not getgenv().Settings.AutoFarm then
             continue
         end
@@ -699,6 +865,7 @@ task.spawn(function()
         local uid = GetRandomPetUID()
 
         if uid then
+            badUIDs[uid] = true
             ReplicatedStorage.Remote.Battle.ReqEnterPetBattle:FireServer(uid)
         end
 
@@ -977,38 +1144,45 @@ task.spawn(function()
 end)
 
 local released = {}
+local Root
+
+for _, tbl in ipairs(getgc(true)) do
+    if type(tbl) == "table" and rawget(tbl, "PetStorage") then
+        Root = tbl
+        break
+    end
+end
+
+assert(Root, "Root not found")
+
+local PetList = Root.PetStorage.playerPetData.petList
+
 local function AutoReleasePet()
+    for uid in pairs(released) do
+        if not PetList[uid] then
+            released[uid] = nil
+        end
+    end
 
-    for _, tbl in pairs(getgc(true)) do
-        if type(tbl) == "table" then
+    for uid, pet in pairs(PetList) do
+        if not released[uid]
+        and pet.level == 1
+        and pet.locked == false
+        and (pet.name == ReleasePetName or pet.petName == ReleasePetName) then
 
-            local uid = rawget(tbl, "uuid")
-            local name = rawget(tbl, "name") or rawget(tbl, "petName")
-            local level = rawget(tbl, "level")
-            local locked = rawget(tbl, "locked")
+            released[uid] = true
 
-            if uid
-                and name == ReleasePetName
-                and level == 1
-                and locked == false
-                and not released[uid] then
+            print("Release:", pet.name or pet.petName, uid)
 
-                released[uid] = true
+            ReplicatedStorage.Remote.Pet.ReqRemovePets:InvokeServer({uid})
 
-                print("Release:", name, uid)
-
-                ReplicatedStorage.Remote.Pet.ReqRemovePets:InvokeServer({
-                    uid
-                })
-
-                task.wait(0.2)
-            end
+            task.wait(0.2)
         end
     end
 end
 
 task.spawn(function()
-    while task.wait(2) do
+    while task.wait(3) do
         if getgenv().Settings.AutoRelease then
             AutoReleasePet()
         end
@@ -1025,11 +1199,11 @@ local function AutoQuest()
             .Remote.Dialogue.ReqReceiveDialogueTask:InvokeServer(200035, 7001031)
           game:GetService("ReplicatedStorage")
             .Remote.Dialogue.ReqReceiveDialogueTask:InvokeServer(200042, 7001101)
+		  game:GetService("ReplicatedStorage")
+            .Remote.Task.ReqCompleteTask:InvokeServer(8000082)
+		  game:GetService("ReplicatedStorage")
+            .Remote.Task.ReqCompleteTask:InvokeServer(8000081)
     end)
-	task.wait(0.5)
-	ReplicatedStorage.Remote.Task.ReqCompleteTask:InvokeServer({ 8000082 })
-	task.wait(0.5)
-	ReplicatedStorage.Remote.Task.ReqCompleteTask:InvokeServer({ 8000081 })
 end
 
 task.spawn(function()
