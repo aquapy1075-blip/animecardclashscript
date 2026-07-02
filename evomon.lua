@@ -549,114 +549,92 @@ Utility:Toggle({
 })
 local ConfigManager = Window.ConfigManager
 local ConfigName = "default"
-task.defer(function()
-    task.wait(1)
 
-    local autoLoads = ConfigManager:AllConfigs()
+local ConfigNameInput = ConfigTab:Input({
+    Title = "Config Name",
+    Icon = "file-cog",
+    Callback = function(value)
+        ConfigName = value
+    end,
+})
 
-    for _, name in ipairs(autoLoads) do
-        local cfg = ConfigManager:GetConfig(name)
+ConfigTab:Space()
 
-        if cfg and cfg.AutoLoad then
-            ConfigName = name
-            Window.CurrentConfig = ConfigManager:CreateConfig(name)
-
-            if Window.CurrentConfig:Load() then
-                print("Auto loaded config:", name)
-            else
-                warn("Auto load failed:", name)
-            end
-
-            break
-        end
+local AutoLoadToggle = ConfigTab:Toggle({
+    Title = "Enable Auto Load to Selected Config",
+    Value = false,
+	Flag = "autoloadconfig",
+    Callback = function(v)
+        Window.CurrentConfig:SetAutoLoad(v)
     end
-end)
+})
 
-		local ConfigNameInput = ConfigTab:Input({
-			Title = "Config Name",
-			Icon = "file-cog",
-			Callback = function(value)
-				ConfigName = value
-			end,
-		})
+ConfigTab:Space()
 
-		ConfigTab:Space()
+local AllConfigs = ConfigManager:AllConfigs()
+local DefaultValue = table.find(AllConfigs, ConfigName) and ConfigName or nil
 
-		 local AutoLoadToggle = ConfigTab:Toggle({
-		   Title = "Enable Auto Load to Selected Config",
-		    Value = false,
-		    Callback = function(v)
-		        Window.CurrentConfig:SetAutoLoad(v)
-		    end
-	      })
+local AllConfigsDropdown = ConfigTab:Dropdown({
+    Title = "All Configs",
+    Desc = "Select existing configs",
+    Values = AllConfigs,
+    Value = DefaultValue,
+    Callback = function(value)
+        ConfigName = value
+        ConfigNameInput:Set(value)
 
-		ConfigTab:Space()
+        AutoLoadToggle:Set(ConfigManager:GetConfig(ConfigName).AutoLoad or false)
+    end,
+})
 
-		local AllConfigs = ConfigManager:AllConfigs()
-		local DefaultValue = table.find(AllConfigs, ConfigName) and ConfigName or nil
+ConfigTab:Space()
 
-		local AllConfigsDropdown = ConfigTab:Dropdown({
-			Title = "All Configs",
-			Desc = "Select existing configs",
-			Values = AllConfigs,
-			Value = DefaultValue,
-			Callback = function(value)
-				ConfigName = value
-				ConfigNameInput:Set(value)
+ConfigTab:Button({
+    Title = "Save Config",
+    Icon = "",
+    Justify = "Center",
+    Callback = function()
+        Window.CurrentConfig = ConfigManager:Config(ConfigName)
+        if Window.CurrentConfig:Save() then
+            WindUI:Notify({
+                Title = "Config Saved",
+                Desc = "Config '" .. ConfigName .. "' saved",
+                Icon = "check",
+            })
+        end
 
-				AutoLoadToggle:Set(ConfigManager:GetConfig(ConfigName).AutoLoad or false)
-			end,
-		})
+        AllConfigsDropdown:Refresh(ConfigManager:AllConfigs())
+    end,
+})
 
-		ConfigTab:Space()
+ConfigTab:Space()
 
-		ConfigTab:Button({
-			Title = "Save Config",
-			Icon = "",
-			Justify = "Center",
-			Callback = function()
-				Window.CurrentConfig = ConfigManager:Config(ConfigName)
-				if Window.CurrentConfig:Save() then
-					WindUI:Notify({
-						Title = "Config Saved",
-						Desc = "Config '" .. ConfigName .. "' saved",
-						Icon = "check",
-					})
-				end
+ConfigTab:Button({
+    Title = "Load Config",
+    Icon = "",
+    Justify = "Center",
+    Callback = function()
+        Window.CurrentConfig = ConfigManager:CreateConfig(ConfigName)
+        if Window.CurrentConfig:Load() then
+            WindUI:Notify({
+                Title = "Config Loaded",
+                Desc = "Config '" .. ConfigName .. "' loaded",
+                Icon = "refresh-cw",
+            })
+        end
+    end,
+})
 
-				AllConfigsDropdown:Refresh(ConfigManager:AllConfigs())
-			end,
-		})
+ConfigTab:Space()
 
-		ConfigTab:Space()
-
-		ConfigTab:Button({
-			Title = "Load Config",
-			Icon = "",
-			Justify = "Center",
-			Callback = function()
-				Window.CurrentConfig = ConfigManager:CreateConfig(ConfigName)
-				if Window.CurrentConfig:Load() then
-					WindUI:Notify({
-						Title = "Config Loaded",
-						Desc = "Config '" .. ConfigName .. "' loaded",
-						Icon = "refresh-cw",
-					})
-				end
-			end,
-		})
-
-		ConfigTab:Space()
-
-		ConfigTab:Button({
-			Title = "Print AutoLoad Configs",
-			Icon = "",
-			Justify = "Center",
-			Callback = function()
-				print(HttpService:JSONDecode(ConfigManager:GetAutoLoadConfigs()))
-			end,
-		})
-
+ConfigTab:Button({
+    Title = "Print AutoLoad Configs",
+    Icon = "",
+    Justify = "Center",
+    Callback = function()
+        print(HttpService:JSONDecode(ConfigManager:GetAutoLoadConfigs()))
+    end,
+})
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         actionType = 8
