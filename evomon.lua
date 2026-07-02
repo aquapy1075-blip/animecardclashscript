@@ -586,9 +586,10 @@ Utility:Toggle({
     Flag = "MaxBattleSpeed",
     Callback = function(v)
         getgenv().Settings.MaxBattleSpeed = v
-
         if v then
             ApplyMaxBattleSpeed()
+        else
+            RestoreBattleSpeed()
         end
     end
 })
@@ -1294,6 +1295,48 @@ else
     warn("ClientBattleStart not found")
 end
 
+local BattleSpeedPatched = false
+local BattleSpeedBackup = {}
+
+local function BackupSet(tbl, key, value)
+    if tbl and tbl[key] ~= nil then
+        BattleSpeedBackup[tbl] = BattleSpeedBackup[tbl] or {}
+
+        if BattleSpeedBackup[tbl][key] == nil then
+            BattleSpeedBackup[tbl][key] = tbl[key]
+        end
+
+        tbl[key] = value
+    end
+end
+
+local function PatchNumberTable(tbl, value)
+    if type(tbl) ~= "table" then return end
+
+    BattleSpeedBackup[tbl] = BattleSpeedBackup[tbl] or {}
+
+    for k, v in pairs(tbl) do
+        if type(v) == "number" then
+            if BattleSpeedBackup[tbl][k] == nil then
+                BattleSpeedBackup[tbl][k] = v
+            end
+
+            tbl[k] = value
+        end
+    end
+end
+
+local function GetLoadedModuleByName(name)
+    for _, m in ipairs(getloadedmodules()) do
+        if m.Name == name then
+            local ok, result = pcall(require, m)
+            if ok then
+                return result
+            end
+        end
+    end
+end
+
 local function ApplyMaxBattleSpeed()
     if BattleSpeedPatched then
         return
@@ -1301,93 +1344,63 @@ local function ApplyMaxBattleSpeed()
 
     BattleSpeedPatched = true
 
-    local mult = 10
-
     task.spawn(function()
-        local ScriptFolder = ReplicatedStorage:FindFirstChild("Script")
-        if not ScriptFolder then
-            warn("Script folder not found")
-            return
-        end
+        local CC = GetLoadedModuleByName("BattleChoreoConst")
 
-        -- BattleChoreoConst
-        local ChoreoConstModule = ScriptFolder
-            :FindFirstChild("BattleChoreo")
-            and ScriptFolder.BattleChoreo:FindFirstChild("Basic")
-            and ScriptFolder.BattleChoreo.Basic:FindFirstChild("BattleChoreoConst")
+        if type(CC) == "table" then
+            BackupSet(CC, "DefaultActionWaitTime", 0.01)
+            BackupSet(CC, "SettleNodeWaitTime", 0.01)
+            BackupSet(CC, "StartBattleBeforeChoreographyDelayTime", 0.01)
+            BackupSet(CC, "FirstRoundEmptyActionResultsAnimationCompleteDelay", 0.01)
+            BackupSet(CC, "ForceSwitchAnimationCompleteDelay", 0.01)
+            BackupSet(CC, "OpeningThrowBallPreDelay", 0)
+            BackupSet(CC, "OpeningThrowBallPostDelay", 0)
 
-        if ChoreoConstModule then
-            local success, CC = pcall(require, ChoreoConstModule)
+            PatchNumberTable(CC.ActionWaitTimeByType, 0.01)
+            PatchNumberTable(CC.SettleNodeWaitTimeByType, 0.01)
 
-            if success and type(CC) == "table" then
-                if type(CC.DefaultActionWaitTime) == "number" then
-                    CC.DefaultActionWaitTime = CC.DefaultActionWaitTime / mult
-                end
-
-                if type(CC.SettleNodeWaitTime) == "number" then
-                    CC.SettleNodeWaitTime = CC.SettleNodeWaitTime / mult
-                end
-
-                if type(CC.StartBattleBeforeChoreographyDelayTime) == "number" then
-                    CC.StartBattleBeforeChoreographyDelayTime = CC.StartBattleBeforeChoreographyDelayTime / mult
-                end
-
-                if type(CC.FirstRoundEmptyActionResultsAnimationCompleteDelay) == "number" then
-                    CC.FirstRoundEmptyActionResultsAnimationCompleteDelay = 0.05
-                end
-
-                if type(CC.ForceSwitchAnimationCompleteDelay) == "number" then
-                    CC.ForceSwitchAnimationCompleteDelay = 0.05
-                end
-
-                if type(CC.OpeningThrowBallPreDelay) == "number" then
-                    CC.OpeningThrowBallPreDelay = 0.01
-                end
-
-                if type(CC.OpeningThrowBallPostDelay) == "number" then
-                    CC.OpeningThrowBallPostDelay = 0.01
-                end
-
-                if type(CC.ActionWaitTimeByType) == "table" then
-                    for k, v in pairs(CC.ActionWaitTimeByType) do
-                        if type(v) == "number" then
-                            CC.ActionWaitTimeByType[k] = v / mult
-                        end
-                    end
-                end
-
-                if type(CC.SettleNodeWaitTimeByType) == "table" then
-                    for k, v in pairs(CC.SettleNodeWaitTimeByType) do
-                        if type(v) == "number" then
-                            CC.SettleNodeWaitTimeByType[k] = v / mult
-                        end
-                    end
-                end
-
-                print("Max battle speed applied: x10")
-            end
+            print("BattleChoreoConst patched")
         else
-            warn("BattleChoreoConst not found")
+            warn("BattleChoreoConst not loaded")
         end
 
-        -- SkillPerformanceCfg
-        local SkillCfgModule = ScriptFolder
-            :FindFirstChild("Pet")
-            and ScriptFolder.Pet:FindFirstChild("Cfg")
-            and ScriptFolder.Pet.Cfg:FindFirstChild("SkillPerformanceCfg")
+        local SC = GetLoadedModuleByName("SkillPerformanceCfg")
 
-        if SkillCfgModule then
-            local success, SC = pcall(require, SkillCfgModule)
-
-            if success and type(SC) == "table" then
-                for _, data in pairs(SC) do
-                    if type(data) == "table" and type(data.finishWaitTime) == "number" then
-                        data.finishWaitTime = math.max(50, math.floor(data.finishWaitTime / mult))
-                    end
+        if type(SC) == "table" then
+            for _, data in pairs(SC) do
+                if type(data) == "table" then
+                    BackupSet(data, "finishWaitTime", 1)
+                    BackupSet(data, "startWaitTime", 1)
+                    BackupSet(data, "hitWaitTime", 1)
+                    BackupSet(data, "moveWaitTime", 1)
+                    BackupSet(data, "waitTime", 1)
                 end
             end
+
+            print("SkillPerformanceCfg patched")
         else
-            warn("SkillPerformanceCfg not found")
+            warn("SkillPerformanceCfg not loaded")
         end
+
+        print("Max battle speed applied")
     end)
+end
+
+local function RestoreBattleSpeed()
+    if not BattleSpeedPatched then
+        return
+    end
+
+    BattleSpeedPatched = false
+
+    for tbl, values in pairs(BattleSpeedBackup) do
+        if type(tbl) == "table" then
+            for k, v in pairs(values) do
+                tbl[k] = v
+            end
+        end
+    end
+
+    BattleSpeedBackup = {}
+    print("Battle speed restored")
 end
