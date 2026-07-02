@@ -548,7 +548,29 @@ Utility:Toggle({
     end
 })
 local ConfigManager = Window.ConfigManager
-		local ConfigName = "default"
+local ConfigName = "default"
+task.defer(function()
+    task.wait(1)
+
+    local autoLoads = ConfigManager:AllConfigs()
+
+    for _, name in ipairs(autoLoads) do
+        local cfg = ConfigManager:GetConfig(name)
+
+        if cfg and cfg.AutoLoad then
+            ConfigName = name
+            Window.CurrentConfig = ConfigManager:CreateConfig(name)
+
+            if Window.CurrentConfig:Load() then
+                print("Auto loaded config:", name)
+            else
+                warn("Auto load failed:", name)
+            end
+
+            break
+        end
+    end
+end)
 
 		local ConfigNameInput = ConfigTab:Input({
 			Title = "Config Name",
