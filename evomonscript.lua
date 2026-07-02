@@ -936,7 +936,7 @@ local function FindSelectedPet()
         if type(tbl) == "table"
         and rawget(tbl, "petUid") ~= nil 
         and rawget(tbl, "isSelected") ~= nil 
-		and rawget(tbl, "level") != nil then
+		and rawget(tbl, "level") ~= nil then
 
             if tbl.isSelected then
                 SelectedPetTable = tbl
@@ -1282,5 +1282,3 @@ if ClientBattleStart then
 else
     warn("ClientBattleStart not found")
 end
-
-
