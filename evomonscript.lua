@@ -583,6 +583,7 @@ Utility:Toggle({
 
 local ConfigManager = Window.ConfigManager
 local ConfigName = "default"
+local Configs = ConfigManager:AllConfigs()
 
 local ConfigDropdown = Config:Dropdown({
     Title = "Select Config",
@@ -642,6 +643,12 @@ Config:Button({
         ConfigDropdown:Refresh(Configs)
     end
 })
+for i, v in next, Configs do
+    local MyConfig = ConfigManager:CreateConfig(v)
+    if MyConfig.AutoLoad then
+        MyConfig:Load()
+    end
+end
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         actionType = 8
