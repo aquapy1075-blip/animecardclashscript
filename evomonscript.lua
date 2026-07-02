@@ -597,12 +597,13 @@ local ConfigNameInput = ConfigTab:Input({
 
 ConfigTab:Space()
 
-local AutoLoadToggle = ConfigTab:Toggle({
-    Title = "Enable Auto Load to Selected Config",
-    Value = false,
-	Flag = "autoloadconfig",
-    Callback = function(v)
-        Window.CurrentConfig:SetAutoLoad(v)
+Config:Button({
+    Title = "Set as Auto Load Config",
+    Desc = "Auto loads the selected config next time",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
+        MyConfig:SetAutoLoad(true)
     end
 })
 
