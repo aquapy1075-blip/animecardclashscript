@@ -9,7 +9,14 @@ player.Idled:Connect(function()
     VirtualUser:CaptureController()
     VirtualUser:ClickButton2(Vector2.new())
 end)
+local BattleRemote = ReplicatedStorage:WaitForChild("Remote"):WaitForChild("Battle")
+local ReqAutoBattle = BattleRemote:FindFirstChild("ReqAutoBattle")
 
+local BattleBindable = ReplicatedStorage:FindFirstChild("Bindable")
+    and ReplicatedStorage.Bindable:FindFirstChild("Battle")
+
+local ClientBattleStart = BattleBindable
+    and BattleBindable:FindFirstChild("ClientBattleStart")
 local window = player.PlayerGui:WaitForChild("UIPrefabs"):WaitForChild("PVPEnterWindow")
 local button = window.MainCanvasGroup:WaitForChild("LeadBtn")
 
@@ -62,6 +69,8 @@ getgenv().Settings = {
     AutoReplay = false,
 	AutoQuest = false,
 	AutoSkipAnimation = false,
+	AutoCombat = false,
+	MaxBattleSpeed = false
 }
 local ReleasePetName = ""
 local SelectedSummonPet = nil
@@ -547,6 +556,43 @@ Utility:Toggle({
         getgenv().Settings.AutoQuest = v
     end
 })
+Utility:Toggle({
+    Title = "Enable Auto Combat",
+    Value = false,
+    Flag = "AutoCombat",
+    Callback = function(v)
+        getgenv().Settings.AutoCombat = v
+
+        if v then
+            if InBattle then
+                if InBattle() then
+                    task.wait(0.3)
+                    EnableAutoCombat()
+                end
+            end
+        else
+            if ReqAutoBattle then
+                pcall(function()
+                    ReqAutoBattle:InvokeServer(false)
+                end)
+                print("Auto Combat disabled")
+            end
+        end
+    end
+})
+Utility:Toggle({
+    Title = "Enable Max Speed",
+    Value = false,
+    Flag = "MaxBattleSpeed",
+    Callback = function(v)
+        getgenv().Settings.MaxBattleSpeed = v
+
+        if v then
+            ApplyMaxBattleSpeed()
+        end
+    end
+})
+
 local ConfigManager = Window.ConfigManager
 local ConfigName = "default"
 
@@ -1221,4 +1267,127 @@ if target and target.start then
         end
         return 0
     end
+end
+
+local function EnableAutoCombat()
+    if not ReqAutoBattle then
+        warn("ReqAutoBattle not found")
+        return
+    end
+
+    pcall(function()
+        ReqAutoBattle:InvokeServer(true)
+    end)
+end
+
+if ClientBattleStart then
+    ClientBattleStart.Event:Connect(function()
+        task.wait(0.5)
+
+        if not getgenv().Settings.AutoCombat then
+            return
+        end
+
+        EnableAutoCombat()
+    end)
+else
+    warn("ClientBattleStart not found")
+end
+
+local function ApplyMaxBattleSpeed()
+    if BattleSpeedPatched then
+        return
+    end
+
+    BattleSpeedPatched = true
+
+    local mult = 10
+
+    task.spawn(function()
+        local ScriptFolder = ReplicatedStorage:FindFirstChild("Script")
+        if not ScriptFolder then
+            warn("Script folder not found")
+            return
+        end
+
+        -- BattleChoreoConst
+        local ChoreoConstModule = ScriptFolder
+            :FindFirstChild("BattleChoreo")
+            and ScriptFolder.BattleChoreo:FindFirstChild("Basic")
+            and ScriptFolder.BattleChoreo.Basic:FindFirstChild("BattleChoreoConst")
+
+        if ChoreoConstModule then
+            local success, CC = pcall(require, ChoreoConstModule)
+
+            if success and type(CC) == "table" then
+                if type(CC.DefaultActionWaitTime) == "number" then
+                    CC.DefaultActionWaitTime = CC.DefaultActionWaitTime / mult
+                end
+
+                if type(CC.SettleNodeWaitTime) == "number" then
+                    CC.SettleNodeWaitTime = CC.SettleNodeWaitTime / mult
+                end
+
+                if type(CC.StartBattleBeforeChoreographyDelayTime) == "number" then
+                    CC.StartBattleBeforeChoreographyDelayTime = CC.StartBattleBeforeChoreographyDelayTime / mult
+                end
+
+                if type(CC.FirstRoundEmptyActionResultsAnimationCompleteDelay) == "number" then
+                    CC.FirstRoundEmptyActionResultsAnimationCompleteDelay = 0.05
+                end
+
+                if type(CC.ForceSwitchAnimationCompleteDelay) == "number" then
+                    CC.ForceSwitchAnimationCompleteDelay = 0.05
+                end
+
+                if type(CC.OpeningThrowBallPreDelay) == "number" then
+                    CC.OpeningThrowBallPreDelay = 0.01
+                end
+
+                if type(CC.OpeningThrowBallPostDelay) == "number" then
+                    CC.OpeningThrowBallPostDelay = 0.01
+                end
+
+                if type(CC.ActionWaitTimeByType) == "table" then
+                    for k, v in pairs(CC.ActionWaitTimeByType) do
+                        if type(v) == "number" then
+                            CC.ActionWaitTimeByType[k] = v / mult
+                        end
+                    end
+                end
+
+                if type(CC.SettleNodeWaitTimeByType) == "table" then
+                    for k, v in pairs(CC.SettleNodeWaitTimeByType) do
+                        if type(v) == "number" then
+                            CC.SettleNodeWaitTimeByType[k] = v / mult
+                        end
+                    end
+                end
+
+                print("Max battle speed applied: x10")
+            end
+        else
+            warn("BattleChoreoConst not found")
+        end
+
+        -- SkillPerformanceCfg
+        local SkillCfgModule = ScriptFolder
+            :FindFirstChild("Pet")
+            and ScriptFolder.Pet:FindFirstChild("Cfg")
+            and ScriptFolder.Pet.Cfg:FindFirstChild("SkillPerformanceCfg")
+
+        if SkillCfgModule then
+            local success, SC = pcall(require, SkillCfgModule)
+
+            if success and type(SC) == "table" then
+                for _, data in pairs(SC) do
+                    if type(data) == "table" and type(data.finishWaitTime) == "number" then
+                        data.finishWaitTime = math.max(50, math.floor(data.finishWaitTime / mult))
+                    end
+                end
+            end
+        else
+            warn("SkillPerformanceCfg not found")
+        end
+    end)
 end
