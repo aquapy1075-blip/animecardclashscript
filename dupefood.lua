@@ -34,23 +34,18 @@ local function RemoveBatch(uid)
         list[i] = uid
     end
 
-    local ok, result = pcall(function()
-        return ReplicatedStorage.Remote.Pet.ReqRemovePets:InvokeServer(list)
+    pcall(function()
+        ReplicatedStorage.Remote.Pet.ReqRemovePets:InvokeServer(list)
     end)
-
-    print("Remove x100 batch:", ok, result)
 end
 
 task.spawn(function()
     while task.wait(3) do
-        if getgenv().AutoRemovePet then
+        if getgenv().TargetPetName then
             local uid = FindUID()
 
             if uid then
-                print("Found UID:", uid)
                 RemoveBatch(uid)
-            else
-                print("No pet found")
             end
         end
     end
