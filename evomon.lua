@@ -1,3 +1,6 @@
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local VirtualUser = game:GetService("VirtualUser")
@@ -70,7 +73,7 @@ getgenv().Settings = {
 	AutoQuest = false,
 	AutoSkipAnimation = false,
 	AutoCombat = false,
-	MaxBattleSpeed = false
+	SpeedMode = false
 }
 local ReleasePetName = ""
 local SelectedSummonPet = nil
@@ -170,13 +173,17 @@ local petNames = {
 }
 
 local SummonpetId = {}
-
+local ManualSummonId = {}
 local startId = 14018
 
 for i, name in ipairs(petNames) do
     SummonpetId[name] = startId + (i - 1)
 end
 
+
+for i, name in ipairs(petNames) do
+    ManualSummonId[name] = 18 + (i - 1)
+end
 local PetOptions = {}
 for petName in pairs(PetIds) do 
 	table.insert(PetOptions, petName)
@@ -225,12 +232,9 @@ local Utility = Window:Tab({
     Title = "Utility",
     Icon = "list"
 })
-local ConfigTab = Window:Tab({
-			Title = "Config Usage",
-			Icon = "solar:folder-with-files-bold",
-			IconColor = Purple,
-			IconShape = nil,
-			Border = true,
+local Config = Window:Tab({
+	Title = "Config",
+	Icon = "solar:folder-with-files-bold",
 })
 -- Main
 MainTab:Dropdown({
@@ -526,7 +530,15 @@ MiscTab:Toggle({
     end
 })
 
--- Utility
+local function FindNpc22()
+    local cache = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache
+
+    for _, obj in ipairs(cache:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "Npc22" then
+            return obj
+        end
+    end
+end
 Utility:Button({
     Title = "Teleport To Travelling Merchant",
     Callback = function()
@@ -580,104 +592,110 @@ Utility:Toggle({
         end
     end
 })
+Utility:Toggle({
+    Title = "Speed Mode",
+    Value = false,
+    Flag = "SpeedMode",
+    Callback = function(v)
+        getgenv().Settings.SpeedMode = v
+        print("Speed Mode:", v)
+    end
+})
 
 local ConfigManager = Window.ConfigManager
 local ConfigName = "default"
+local Configs = ConfigManager:AllConfigs()
 
-local ConfigNameInput = ConfigTab:Input({
-    Title = "Config Name",
-    Icon = "file-cog",
-    Callback = function(value)
-        ConfigName = value
-    end,
+local ConfigDropdown = Config:Dropdown({
+    Title = "Select Config",
+    Desc = "Select your configuration",
+    Values = Configs,
+    Value = "",
+    Callback = function(option) 
+        SelectedConfig = option
+    end
 })
-
-ConfigTab:Space()
-
-local AutoLoadToggle = ConfigTab:Toggle({
-    Title = "Enable Auto Load to Selected Config",
-    Value = false,
-	Flag = "autoloadconfig",
-    Callback = function(v)
-        Window.CurrentConfig:SetAutoLoad(v)
+Config:Button({
+    Title = "Overwrite Config",
+    Desc = "Overwrite selected config",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
+        MyConfig:Save()
+    end
+})
+Config:Button({
+    Title = "Load Config",
+    Desc = "Loads selected config",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(SelectedConfig)
+        MyConfig:Load()
     end
 })
 
-ConfigTab:Space()
+function ConfigManager:SetExclusiveAutoLoad(targetName)
+    local HttpService = game:GetService("HttpService")
 
-local AllConfigs = ConfigManager:AllConfigs()
-local DefaultValue = table.find(AllConfigs, ConfigName) and ConfigName or nil
-for i, v in next, AllConfigs do
+    for _, name in ipairs(ConfigManager:AllConfigs()) do
+        local path = ConfigManager.Path .. name .. ".json"
+
+        if isfile(path) then
+            local ok, data = pcall(function()
+                return HttpService:JSONDecode(readfile(path))
+            end)
+
+            if ok and type(data) == "table" then
+                data.__autoload = (name == targetName)
+
+                writefile(path, HttpService:JSONEncode(data))
+            end
+        end
+
+        local cfg = ConfigManager.Configs[name]
+        if type(cfg) == "table" then
+            cfg.AutoLoad = (name == targetName)
+        end
+    end
+
+    print("Exclusive AutoLoad set:", targetName)
+end
+Config:Button({
+    Title = "Set as Auto Load Config",
+    Desc = "Auto loads the selected config next time",
+    Locked = false,
+    Callback = function()
+        ConfigManager:SetExclusiveAutoLoad(SelectedConfig)
+end
+})
+Config:Input({
+    Title = "Enter config name",
+    Desc = "Enter configuration name",
+    Value = "Default",
+    InputIcon = "bird",
+    Type = "Input", -- or "Textarea"
+    Placeholder = "Enter text...",
+    Callback = function(input)
+        ConfigName = input
+    end
+})
+Config:Button({
+    Title = "Save Config",
+    Desc = "Saves your settings as config name",
+    Locked = false,
+    Callback = function()
+        local MyConfig = ConfigManager:CreateConfig(ConfigName)
+        MyConfig:Save()
+        table.insert(Configs, MyConfig)
+        ConfigDropdown:Refresh(Configs)
+    end
+})
+for i, v in next, Configs do
     local MyConfig = ConfigManager:CreateConfig(v)
-
     if MyConfig.AutoLoad then
-        print("Auto loading config:", v)
         MyConfig:Load()
-        break
     end
 end
-
-local AllConfigsDropdown = ConfigTab:Dropdown({
-    Title = "All Configs",
-    Desc = "Select existing configs",
-    Values = AllConfigs,
-    Value = DefaultValue,
-    Callback = function(value)
-        ConfigName = value
-        ConfigNameInput:Set(value)
-
-        AutoLoadToggle:Set(ConfigManager:GetConfig(ConfigName).AutoLoad or false)
-    end,
-})
-
-ConfigTab:Space()
-
-ConfigTab:Button({
-    Title = "Save Config",
-    Icon = "",
-    Justify = "Center",
-    Callback = function()
-        Window.CurrentConfig = ConfigManager:Config(ConfigName)
-        if Window.CurrentConfig:Save() then
-            WindUI:Notify({
-                Title = "Config Saved",
-                Desc = "Config '" .. ConfigName .. "' saved",
-                Icon = "check",
-            })
-        end
-
-        AllConfigsDropdown:Refresh(ConfigManager:AllConfigs())
-    end,
-})
-
-ConfigTab:Space()
-
-ConfigTab:Button({
-    Title = "Load Config",
-    Icon = "",
-    Justify = "Center",
-    Callback = function()
-        Window.CurrentConfig = ConfigManager:CreateConfig(ConfigName)
-        if Window.CurrentConfig:Load() then
-            WindUI:Notify({
-                Title = "Config Loaded",
-                Desc = "Config '" .. ConfigName .. "' loaded",
-                Icon = "refresh-cw",
-            })
-        end
-    end,
-})
-
-ConfigTab:Space()
-
-ConfigTab:Button({
-    Title = "Print AutoLoad Configs",
-    Icon = "",
-    Justify = "Center",
-    Callback = function()
-        print(HttpService:JSONDecode(ConfigManager:GetAutoLoadConfigs()))
-    end,
-})
 local function LeaveBattle()
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         actionType = 8
@@ -747,7 +765,11 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     if IsShiny() then
         if getgenv().Settings.AutoShiny then
             print("Shiny Found -> Catch Ball:", SelectedShinyBall)
-            Catch(SelectedShinyBall)
+		    while catchFrame.Visible do 
+                 Catch(SelectedShinyBall)
+				 task.wait(0.5)
+				end
+			
         else
             print("Shiny Found -> Leaving battle")
             LeaveBattle()
@@ -762,7 +784,10 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
     end
 
     if getgenv().Settings.AutoCatch then
-        Catch(SelectedCatchBall)
+		while catchFrame.Visible do 
+             Catch(SelectedCatchBall)
+			task.wait(0.5)
+			end
     end
 end)
 local function InBattle()
@@ -901,7 +926,47 @@ task.spawn(function()
         task.wait(3)
     end
 end)
+local function HasSummonMonster()
+    local cache = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache
 
+    for _, model in pairs(cache:GetChildren()) do
+        for _, child in pairs(model:GetChildren()) do
+            if child.Name:find("Summon") then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+local function ManualSummon(monsterId)
+    return ReplicatedStorage.Remote.SummonMonster.ReqManualSummonMonster:InvokeServer(30, monsterId)
+end
+task.spawn(function()
+    while task.wait(1.5) do
+        if not getgenv().Settings.AutoSummonBoss then
+            continue
+        end
+
+        if not SelectedSummonPet then
+            continue
+        end
+
+        if HasSummonMonster() then
+            continue
+        end
+
+        local monsterId = ManualSummonId[SelectedSummonPet]
+
+        if monsterId then
+            local ok, result = pcall(function()
+                return ManualSummon(monsterId)
+            end)
+
+            print("Auto summon:", SelectedSummonPet, monsterId, ok, result)
+        end
+    end
+end)
 local function SummonPet(petId)
     local args = {
         petId,
@@ -934,8 +999,9 @@ local SelectedPetUID
 local function FindSelectedPet()
     for _, tbl in ipairs(getgc(true)) do
         if type(tbl) == "table"
-        and rawget(tbl, "petUid")
-        and rawget(tbl, "isSelected") ~= nil then
+        and rawget(tbl, "petUid") ~= nil 
+        and rawget(tbl, "isSelected") ~= nil 
+		and rawget(tbl, "level") ~= nil then
 
             if tbl.isSelected then
                 SelectedPetTable = tbl
@@ -1067,6 +1133,8 @@ local function GetPP(skillIndex)
     return tonumber(current), tonumber(max)
 end
 local function PressSkill(skillNumber)
+    print("[PressSkill] skillNumber =", skillNumber)
+
     local keyMap = {
         [1] = Enum.KeyCode.One,
         [2] = Enum.KeyCode.Two,
@@ -1075,11 +1143,16 @@ local function PressSkill(skillNumber)
     }
 
     local key = keyMap[skillNumber]
-    if not key then return end
+    if not key then
+        warn("[PressSkill] invalid skillNumber:", skillNumber)
+        return
+    end
 
-    Vim:SendKeyEvent(true,key,false,game)
+    print("[PressSkill] key =", key.Name)
+
+    Vim:SendKeyEvent(true, key, false, game)
     task.wait(0.05)
-    Vim:SendKeyEvent(false,key,false,game)
+    Vim:SendKeyEvent(false, key, false, game)
 end
 
 local function UltimateReady()
@@ -1110,11 +1183,15 @@ task.spawn(function()
 
         local battleState = BattleWindow.Enabled
 
-        if battleState and not LastBattleState then
-            StartPP[1] = select(1, GetPP(3))
-            StartPP[2] = select(1, GetPP(4))
-            StartPP[3] = select(1, GetPP(5))
-        end
+       if battleState and not LastBattleState then
+             task.wait(1)
+ 
+         StartPP[1] = select(2, GetPP(3))
+         StartPP[2] = select(2, GetPP(4))
+         StartPP[3] = select(2, GetPP(5))
+
+           print("StartPP:", StartPP[1], StartPP[2], StartPP[3])
+end
 
         LastBattleState = battleState
 
@@ -1152,22 +1229,37 @@ task.spawn(function()
             SkillNameToNumber(Priority3)
         }
 
-        for _, skillNum in ipairs(Priorities) do
+for _, skillNum in ipairs(Priorities) do
+    if skillNum then
+        local guiIndex = skillNum + 2
+        local currentPP, maxPP = GetPP(guiIndex)
 
-            local guiIndex = skillNum + 2
-            local currentPP = select(1, GetPP(guiIndex))
+        if currentPP and maxPP then
+            if not StartPP[skillNum]
+            or StartPP[skillNum] < currentPP
+            or StartPP[skillNum] > maxPP then
+                StartPP[skillNum] = maxPP
+            end
 
-            if currentPP and StartPP[skillNum] then
+            local used = StartPP[skillNum] - currentPP
+            local limit = SkillUses[skillNum] or 0
 
-                local used = StartPP[skillNum] - currentPP
-                local limit = SkillUses[skillNum]
+            print(
+                "Skill:", skillNum,
+                "Current:", currentPP,
+                "Max:", maxPP,
+                "Start:", StartPP[skillNum],
+                "Used:", used,
+                "Limit:", limit
+            )
 
-                if limit == 0 or used < limit then
-                    PressSkill(skillNum)
-                    break
-                end
+            if currentPP > 0 and (limit == 0 or used < limit) then
+                PressSkill(skillNum)
+                break
             end
         end
+    end
+end
     end
 
 end)
@@ -1239,6 +1331,118 @@ task.spawn(function()
         end
     end
 end)
+getgenv().BattlePlaybackSpeed = 20
+
+local function callLastCallback(...)
+    local args = {...}
+    for i = #args, 1, -1 do
+        if typeof(args[i]) == "function" then
+            task.defer(args[i])
+            return true
+        end
+    end
+end
+
+local function hook(moduleName, funcName, replace)
+    for _, m in ipairs(getloadedmodules()) do
+        if m.Name == moduleName then
+            local mod = require(m)
+            if type(mod) == "table" and type(mod[funcName]) == "function" then
+                local old = mod[funcName]
+                mod[funcName] = replace(old)
+                print("Hooked:", moduleName, funcName)
+            end
+        end
+    end
+end
+
+-- Skip enter combat
+hook("BattleChoreoStartModule", "executePreEnterBattleEffect", function(old)
+    return function(...)
+        if getgenv().Settings.SpeedMode then
+            callLastCallback(...)
+            return 0
+        end
+        return old(...)
+    end
+end)
+
+hook("BattleStartWindowController", "playStartAnimation", function(old)
+    return function(...)
+        if getgenv().Settings.SpeedMode then
+            callLastCallback(...)
+            return 0
+        end
+        return old(...)
+    end
+end)
+
+hook("BattleStartWindowController", "playEndAnimation", function(old)
+    return function(...)
+        if getgenv().Settings.SpeedMode then
+            callLastCallback(...)
+            return 0
+        end
+        return old(...)
+    end
+end)
+
+-- Skip enemy pet commonAttack lúc vào combat
+local AnimationConst
+pcall(function()
+    AnimationConst = require(ReplicatedStorage.Script.Animation.Basic.AnimationConst)
+end)
+
+local CommonAttackState = AnimationConst
+    and AnimationConst.AnimationState
+    and AnimationConst.AnimationState.commonAttack
+
+for _, m in ipairs(getloadedmodules()) do
+    if m.Name == "PetAnimationController" then
+        local mod = require(m)
+
+        if type(mod) == "table" and type(mod.changeState) == "function" then
+            local old = mod.changeState
+
+            mod.changeState = function(uid, state, model, ...)
+                if getgenv().Settings.SpeedMode and state == CommonAttackState then
+                    return
+                end
+
+                return old(uid, state, model, ...)
+            end
+
+            print("Hooked PetAnimationController.changeState")
+        end
+
+        break
+    end
+end
+
+-- Combat skill animation speed = 20
+local ctrl
+
+for _, obj in ipairs(getgc(true)) do
+    if type(obj) == "table"
+    and type(rawget(obj, "getBattlePlaybackSpeed")) == "function" then
+        ctrl = obj
+        break
+    end
+end
+
+if ctrl then
+    local oldGetSpeed = ctrl.getBattlePlaybackSpeed
+
+    ctrl.getBattlePlaybackSpeed = function(...)
+        if getgenv().Settings.SpeedMode then
+            return 20
+        end
+
+        return oldGetSpeed(...)
+    end
+
+    print("Battle playback speed hooked: 20")
+end
 local target
 
 for _, m in ipairs(getloadedmodules()) do
@@ -1281,5 +1485,3 @@ if ClientBattleStart then
 else
     warn("ClientBattleStart not found")
 end
-
-
