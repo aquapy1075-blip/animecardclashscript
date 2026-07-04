@@ -18,8 +18,8 @@ assert(PetList, "PetList not found")
 
 local function FindUID()
     for uid, pet in pairs(PetList) do
-        local name = pet.name or pet.petName
-        local locked = pet.locked or pet.isLocked
+        local name = pet.name or pet.petName or pet.configName
+        local locked = pet.locked or pet.isLocked or false
 
         if name == TargetPetName and locked == false then
             return uid
@@ -30,23 +30,21 @@ end
 local function RemoveBatch(uid)
     local list = {}
 
-    for i = 1, 100 do
+    for i = 1, 150 do
         list[i] = uid
     end
 
-    pcall(function()
-        ReplicatedStorage.Remote.Pet.ReqRemovePets:InvokeServer(list)
+    local ok, result = pcall(function()
+        return ReplicatedStorage.Remote.Pet.ReqRemovePets:InvokeServer(list)
     end)
+
+    print("RemovePet x150:", ok, result)
 end
 
-task.spawn(function()
-    while task.wait(3) do
-        if getgenv().TargetPetName then
-            local uid = FindUID()
+local uid = FindUID()
 
-            if uid then
-                RemoveBatch(uid)
-            end
-        end
-    end
-end)
+if uid then
+    RemoveBatch(uid)
+else
+    print("No pet found:", TargetPetName)
+end
