@@ -173,13 +173,17 @@ local petNames = {
 }
 
 local SummonpetId = {}
-
+local ManualSummonId = {}
 local startId = 14018
 
 for i, name in ipairs(petNames) do
     SummonpetId[name] = startId + (i - 1)
 end
 
+
+for i, name in ipairs(petNames) do
+    ManualSummonId[name] = 18 + (i - 1)
+end
 local PetOptions = {}
 for petName in pairs(PetIds) do 
 	table.insert(PetOptions, petName)
@@ -913,7 +917,47 @@ task.spawn(function()
         task.wait(3)
     end
 end)
+local function HasSummonMonster()
+    local cache = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache
 
+    for _, model in pairs(cache:GetChildren()) do
+        for _, child in pairs(model:GetChildren()) do
+            if child.Name:find("Summon") then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+local function ManualSummon(monsterId)
+    return ReplicatedStorage.Remote.SummonMonster.ReqManualSummonMonster:InvokeServer(30, monsterId)
+end
+task.spawn(function()
+    while task.wait(1.5) do
+        if not getgenv().Settings.AutoSummonBoss then
+            continue
+        end
+
+        if not SelectedSummonPet then
+            continue
+        end
+
+        if HasSummonMonster() then
+            continue
+        end
+
+        local monsterId = ManualSummonId[SelectedSummonPet]
+
+        if monsterId then
+            local ok, result = pcall(function()
+                return ManualSummon(monsterId)
+            end)
+
+            print("Auto summon:", SelectedSummonPet, monsterId, ok, result)
+        end
+    end
+end)
 local function SummonPet(petId)
     local args = {
         petId,
@@ -1080,6 +1124,8 @@ local function GetPP(skillIndex)
     return tonumber(current), tonumber(max)
 end
 local function PressSkill(skillNumber)
+    print("[PressSkill] skillNumber =", skillNumber)
+
     local keyMap = {
         [1] = Enum.KeyCode.One,
         [2] = Enum.KeyCode.Two,
@@ -1088,11 +1134,16 @@ local function PressSkill(skillNumber)
     }
 
     local key = keyMap[skillNumber]
-    if not key then return end
+    if not key then
+        warn("[PressSkill] invalid skillNumber:", skillNumber)
+        return
+    end
 
-    Vim:SendKeyEvent(true,key,false,game)
+    print("[PressSkill] key =", key.Name)
+
+    Vim:SendKeyEvent(true, key, false, game)
     task.wait(0.05)
-    Vim:SendKeyEvent(false,key,false,game)
+    Vim:SendKeyEvent(false, key, false, game)
 end
 
 local function UltimateReady()
@@ -1165,22 +1216,46 @@ task.spawn(function()
             SkillNameToNumber(Priority3)
         }
 
-        for _, skillNum in ipairs(Priorities) do
+        print("==== AUTO SKILL TICK ====")
+print("Priority1:", Priority1, "=>", SkillNameToNumber(Priority1))
+print("Priority2:", Priority2, "=>", SkillNameToNumber(Priority2))
+print("Priority3:", Priority3, "=>", SkillNameToNumber(Priority3))
 
-            local guiIndex = skillNum + 2
-            local currentPP = select(1, GetPP(guiIndex))
+for _, skillNum in ipairs(Priorities) do
+    print("Check skillNum:", skillNum)
 
-            if currentPP and StartPP[skillNum] then
+    if skillNum then
+        local guiIndex = skillNum + 2
 
-                local used = StartPP[skillNum] - currentPP
-                local limit = SkillUses[skillNum]
+        local currentPP, maxPP = GetPP(guiIndex)
 
-                if limit == 0 or used < limit then
-                    PressSkill(skillNum)
-                    break
-                end
+        print(
+            "Skill:", skillNum,
+            "GuiIndex:", guiIndex,
+            "CurrentPP:", currentPP,
+            "MaxPP:", maxPP,
+            "StartPP:", StartPP[skillNum],
+            "Limit:", SkillUses[skillNum]
+        )
+
+        if currentPP and StartPP[skillNum] then
+            local used = StartPP[skillNum] - currentPP
+            local limit = SkillUses[skillNum]
+
+            print("Used:", used, "Limit:", limit)
+
+            if limit == 0 or used < limit then
+                print(">>> PRESS SKILL:", skillNum)
+                PressSkill(skillNum)
+                break
+            else
+                print("Skip skill:", skillNum, "reason: reached limit")
             end
+        else
+            print("Skip skill:", skillNum, "reason: no PP or no StartPP")
         end
+    end
+end
     end
 
 end)
