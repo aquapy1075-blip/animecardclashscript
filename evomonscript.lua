@@ -73,7 +73,7 @@ getgenv().Settings = {
 	AutoQuest = false,
 	AutoSkipAnimation = false,
 	AutoCombat = false,
-	MaxBattleSpeed = false
+	SpeedMode = false
 }
 local ReleasePetName = ""
 local SelectedSummonPet = nil
@@ -590,6 +590,15 @@ Utility:Toggle({
                 print("Auto Combat disabled")
             end
         end
+    end
+})
+Utility:Toggle({
+    Title = "Speed Mode",
+    Value = false,
+    Flag = "SpeedMode",
+    Callback = function(v)
+        getgenv().Settings.SpeedMode = v
+        print("Speed Mode:", v)
     end
 })
 
@@ -1322,6 +1331,118 @@ task.spawn(function()
         end
     end
 end)
+getgenv().BattlePlaybackSpeed = 20
+
+local function callLastCallback(...)
+    local args = {...}
+    for i = #args, 1, -1 do
+        if typeof(args[i]) == "function" then
+            task.defer(args[i])
+            return true
+        end
+    end
+end
+
+local function hook(moduleName, funcName, replace)
+    for _, m in ipairs(getloadedmodules()) do
+        if m.Name == moduleName then
+            local mod = require(m)
+            if type(mod) == "table" and type(mod[funcName]) == "function" then
+                local old = mod[funcName]
+                mod[funcName] = replace(old)
+                print("Hooked:", moduleName, funcName)
+            end
+        end
+    end
+end
+
+-- Skip enter combat
+hook("BattleChoreoStartModule", "executePreEnterBattleEffect", function(old)
+    return function(...)
+        if getgenv().Settings.SpeedMode then
+            callLastCallback(...)
+            return 0
+        end
+        return old(...)
+    end
+end)
+
+hook("BattleStartWindowController", "playStartAnimation", function(old)
+    return function(...)
+        if getgenv().Settings.SpeedMode then
+            callLastCallback(...)
+            return 0
+        end
+        return old(...)
+    end
+end)
+
+hook("BattleStartWindowController", "playEndAnimation", function(old)
+    return function(...)
+        if getgenv().Settings.SpeedMode then
+            callLastCallback(...)
+            return 0
+        end
+        return old(...)
+    end
+end)
+
+-- Skip enemy pet commonAttack lúc vào combat
+local AnimationConst
+pcall(function()
+    AnimationConst = require(ReplicatedStorage.Script.Animation.Basic.AnimationConst)
+end)
+
+local CommonAttackState = AnimationConst
+    and AnimationConst.AnimationState
+    and AnimationConst.AnimationState.commonAttack
+
+for _, m in ipairs(getloadedmodules()) do
+    if m.Name == "PetAnimationController" then
+        local mod = require(m)
+
+        if type(mod) == "table" and type(mod.changeState) == "function" then
+            local old = mod.changeState
+
+            mod.changeState = function(uid, state, model, ...)
+                if getgenv().Settings.SpeedMode and state == CommonAttackState then
+                    return
+                end
+
+                return old(uid, state, model, ...)
+            end
+
+            print("Hooked PetAnimationController.changeState")
+        end
+
+        break
+    end
+end
+
+-- Combat skill animation speed = 20
+local ctrl
+
+for _, obj in ipairs(getgc(true)) do
+    if type(obj) == "table"
+    and type(rawget(obj, "getBattlePlaybackSpeed")) == "function" then
+        ctrl = obj
+        break
+    end
+end
+
+if ctrl then
+    local oldGetSpeed = ctrl.getBattlePlaybackSpeed
+
+    ctrl.getBattlePlaybackSpeed = function(...)
+        if getgenv().Settings.SpeedMode then
+            return 20
+        end
+
+        return oldGetSpeed(...)
+    end
+
+    print("Battle playback speed hooked: 20")
+end
 local target
 
 for _, m in ipairs(getloadedmodules()) do
