@@ -1174,11 +1174,15 @@ task.spawn(function()
 
         local battleState = BattleWindow.Enabled
 
-        if battleState and not LastBattleState then
-            StartPP[1] = select(1, GetPP(3))
-            StartPP[2] = select(1, GetPP(4))
-            StartPP[3] = select(1, GetPP(5))
-        end
+       if battleState and not LastBattleState then
+             task.wait(1)
+ 
+         StartPP[1] = select(2, GetPP(3))
+         StartPP[2] = select(2, GetPP(4))
+         StartPP[3] = select(2, GetPP(5))
+
+           print("StartPP:", StartPP[1], StartPP[2], StartPP[3])
+end
 
         LastBattleState = battleState
 
@@ -1216,43 +1220,34 @@ task.spawn(function()
             SkillNameToNumber(Priority3)
         }
 
-        print("==== AUTO SKILL TICK ====")
-print("Priority1:", Priority1, "=>", SkillNameToNumber(Priority1))
-print("Priority2:", Priority2, "=>", SkillNameToNumber(Priority2))
-print("Priority3:", Priority3, "=>", SkillNameToNumber(Priority3))
-
 for _, skillNum in ipairs(Priorities) do
-    print("Check skillNum:", skillNum)
-
     if skillNum then
         local guiIndex = skillNum + 2
-
         local currentPP, maxPP = GetPP(guiIndex)
 
-        print(
-            "Skill:", skillNum,
-            "GuiIndex:", guiIndex,
-            "CurrentPP:", currentPP,
-            "MaxPP:", maxPP,
-            "StartPP:", StartPP[skillNum],
-            "Limit:", SkillUses[skillNum]
-        )
+        if currentPP and maxPP then
+            if not StartPP[skillNum]
+            or StartPP[skillNum] < currentPP
+            or StartPP[skillNum] > maxPP then
+                StartPP[skillNum] = maxPP
+            end
 
-        if currentPP and StartPP[skillNum] then
             local used = StartPP[skillNum] - currentPP
-            local limit = SkillUses[skillNum]
+            local limit = SkillUses[skillNum] or 0
 
-            print("Used:", used, "Limit:", limit)
+            print(
+                "Skill:", skillNum,
+                "Current:", currentPP,
+                "Max:", maxPP,
+                "Start:", StartPP[skillNum],
+                "Used:", used,
+                "Limit:", limit
+            )
 
-            if limit == 0 or used < limit then
-                print(">>> PRESS SKILL:", skillNum)
+            if currentPP > 0 and (limit == 0 or used < limit) then
                 PressSkill(skillNum)
                 break
-            else
-                print("Skip skill:", skillNum, "reason: reached limit")
             end
-        else
-            print("Skip skill:", skillNum, "reason: no PP or no StartPP")
         end
     end
 end
