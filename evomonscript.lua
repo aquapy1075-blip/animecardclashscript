@@ -526,7 +526,15 @@ MiscTab:Toggle({
     end
 })
 
--- Utility
+local function FindNpc22()
+    local cache = workspace.RuntimeCache.RuntimeCacheServer.CreatureModelCache
+
+    for _, obj in ipairs(cache:GetDescendants()) do
+        if obj:IsA("Model") and obj.Name == "Npc22" then
+            return obj
+        end
+    end
+end
 Utility:Button({
     Title = "Teleport To Travelling Merchant",
     Callback = function()
