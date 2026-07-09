@@ -1133,7 +1133,6 @@ local function GetPP(skillIndex)
     return tonumber(current), tonumber(max)
 end
 local function PressSkill(skillNumber)
-    print("[PressSkill] skillNumber =", skillNumber)
 
     local keyMap = {
         [1] = Enum.KeyCode.One,
@@ -1148,7 +1147,6 @@ local function PressSkill(skillNumber)
         return
     end
 
-    print("[PressSkill] key =", key.Name)
 
     Vim:SendKeyEvent(true, key, false, game)
     task.wait(0.05)
@@ -1190,7 +1188,6 @@ task.spawn(function()
          StartPP[2] = select(2, GetPP(4))
          StartPP[3] = select(2, GetPP(5))
 
-           print("StartPP:", StartPP[1], StartPP[2], StartPP[3])
 end
 
         LastBattleState = battleState
