@@ -1432,7 +1432,7 @@ if ctrl then
 
     ctrl.getBattlePlaybackSpeed = function(...)
         if getgenv().Settings.SpeedMode then
-            return 20
+            return 50
         end
 
         return oldGetSpeed(...)
