@@ -32,19 +32,19 @@ window:GetPropertyChangedSignal("Enabled"):Connect(function()
 end)
 local WindUI = loadstring(game:HttpGet("https://github.com/Footagesus/WindUI/releases/latest/download/main.lua"))()
 local Window = WindUI:CreateWindow({
-    Title = "Aqua Hub", -- window title
-    Icon = "door-open", -- lucide icon or "rbxassetid://" or URL. optional
-    Author = "by aquane", -- window subtitle. optional
+    Title = "Aqua Hub",
+    Icon = "door-open",
+    Author = "by aquane",
     Folder = "aquahub",
-    ToggleKey = Enum.KeyCode.K, -- key to toggle window. optional
-    Size = UDim2.fromOffset(580, 460), -- window size
-    MinSize = Vector2.new(560, 350), -- minimal window size
+    ToggleKey = Enum.KeyCode.K,
+    Size = UDim2.fromOffset(580, 460),
+    MinSize = Vector2.new(560, 350),
     MaxSize = Vector2.new(850, 560),
     Transparent = true,
     Theme = "Dark",
-    Resizable = true, -- the ability to rezize window
-    SideBarWidth = 200, -- sidebar (tabs) width
-    HideSearchBar = true, -- hide search bar
+    Resizable = true,
+    SideBarWidth = 200,
+    HideSearchBar = true,
     ScrollBarEnabled = false,
 })
 
@@ -772,7 +772,7 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
 			
         else
             print("Shiny Found -> Leaving battle")
-            LeaveBattle()
+            if  getgenv().Settings.AutoLeave then LeaveBattle() end
         end
         return
     end
@@ -1133,7 +1133,6 @@ local function GetPP(skillIndex)
     return tonumber(current), tonumber(max)
 end
 local function PressSkill(skillNumber)
-    print("[PressSkill] skillNumber =", skillNumber)
 
     local keyMap = {
         [1] = Enum.KeyCode.One,
@@ -1148,7 +1147,6 @@ local function PressSkill(skillNumber)
         return
     end
 
-    print("[PressSkill] key =", key.Name)
 
     Vim:SendKeyEvent(true, key, false, game)
     task.wait(0.05)
@@ -1190,7 +1188,6 @@ task.spawn(function()
          StartPP[2] = select(2, GetPP(4))
          StartPP[3] = select(2, GetPP(5))
 
-           print("StartPP:", StartPP[1], StartPP[2], StartPP[3])
 end
 
         LastBattleState = battleState
@@ -1208,9 +1205,6 @@ end
         end
 
         if getgenv().Settings.AutoUltimate and UltimateReady() then
-
-            print("ULT READY -> CAST")
-
             for i = 1,20 do
                 if not UltimateReady() then
                     break
@@ -1230,8 +1224,7 @@ end
         }
 
 for _, skillNum in ipairs(Priorities) do
-    if skillNum then
-        local guiIndex = skillNum + 2
+    if skillNum then        local guiIndex = skillNum + 2
         local currentPP, maxPP = GetPP(guiIndex)
 
         if currentPP and maxPP then
@@ -1244,14 +1237,7 @@ for _, skillNum in ipairs(Priorities) do
             local used = StartPP[skillNum] - currentPP
             local limit = SkillUses[skillNum] or 0
 
-            print(
-                "Skill:", skillNum,
-                "Current:", currentPP,
-                "Max:", maxPP,
-                "Start:", StartPP[skillNum],
-                "Used:", used,
-                "Limit:", limit
-            )
+            
 
             if currentPP > 0 and (limit == 0 or used < limit) then
                 PressSkill(skillNum)
@@ -1331,7 +1317,10 @@ task.spawn(function()
         end
     end
 end)
-getgenv().BattlePlaybackSpeed = 20
+
+-- ============================================
+-- SPEED MODE HOOKS (AN TOÀN)
+-- ============================================
 
 local function callLastCallback(...)
     local args = {...}
@@ -1346,11 +1335,9 @@ end
 local function hook(moduleName, funcName, replace)
     for _, m in ipairs(getloadedmodules()) do
         if m.Name == moduleName then
-            local mod = require(m)
-            if type(mod) == "table" and type(mod[funcName]) == "function" then
-                local old = mod[funcName]
-                mod[funcName] = replace(old)
-                print("Hooked:", moduleName, funcName)
+            local success, mod = pcall(require, m)
+            if success and type(mod) == "table" and type(mod[funcName]) == "function" then
+                mod[funcName] = replace(mod[funcName])
             end
         end
     end
@@ -1399,32 +1386,24 @@ local CommonAttackState = AnimationConst
 
 for _, m in ipairs(getloadedmodules()) do
     if m.Name == "PetAnimationController" then
-        local mod = require(m)
-
-        if type(mod) == "table" and type(mod.changeState) == "function" then
+        local success, mod = pcall(require, m)
+        if success and type(mod) == "table" and type(mod.changeState) == "function" then
             local old = mod.changeState
-
             mod.changeState = function(uid, state, model, ...)
                 if getgenv().Settings.SpeedMode and state == CommonAttackState then
                     return
                 end
-
                 return old(uid, state, model, ...)
             end
-
-            print("Hooked PetAnimationController.changeState")
         end
-
         break
     end
 end
 
--- Combat skill animation speed = 20
+-- Combat skill animation speed
 local ctrl
-
 for _, obj in ipairs(getgc(true)) do
-    if type(obj) == "table"
-    and type(rawget(obj, "getBattlePlaybackSpeed")) == "function" then
+    if type(obj) == "table" and type(rawget(obj, "getBattlePlaybackSpeed")) == "function" then
         ctrl = obj
         break
     end
@@ -1432,41 +1411,140 @@ end
 
 if ctrl then
     local oldGetSpeed = ctrl.getBattlePlaybackSpeed
-
     ctrl.getBattlePlaybackSpeed = function(...)
         if getgenv().Settings.SpeedMode then
-            return 20
+            return 50
         end
-
         return oldGetSpeed(...)
     end
-
-    print("Battle playback speed hooked: 20")
 end
-local target
 
+-- Skip capture
+local target
 for _, m in ipairs(getloadedmodules()) do
     if m.Name == "CaptureFlowV2Module" then
-        target = require(m)
-        break
+        local success, mod = pcall(require, m)
+        if success and mod then
+            target = mod
+            break
+        end
     end
 end
 
 if target and target.start then
+    local oldStart = target.start
     target.start = function(data, callback)
-        if typeof(callback) == "function" then
-            task.defer(callback)
+        if getgenv().Settings.SpeedMode then
+            if typeof(callback) == "function" then
+                task.defer(callback)
+            end
+            return 0
         end
-        return 0
+        return oldStart(data, callback)
     end
 end
 
+-- ============================================
+-- TEST 1: SKILL PERFORMANCE WAIT (OK)
+-- ============================================
+local function zeroSkillPerformanceWait()
+    local ReplicatedStorage = game:GetService("ReplicatedStorage")
+    local Script = ReplicatedStorage:FindFirstChild("Script")
+    if Script then
+        local Pet = Script:FindFirstChild("Pet")
+        if Pet then
+            local Cfg = Pet:FindFirstChild("Cfg")
+            if Cfg then
+                local SkillPerformanceCfg = Cfg:FindFirstChild("SkillPerformanceCfg")
+                if SkillPerformanceCfg then
+                    local success, mod = pcall(require, SkillPerformanceCfg)
+                    if success and type(mod) == "table" then
+                        for skillId, config in pairs(mod) do
+                            if type(config) == "table" and type(config.finishWaitTime) == "number" then
+                                config.finishWaitTime = 0
+                            end
+                        end
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+zeroSkillPerformanceWait()
+
+-- ============================================
+-- TEST 2: BATTLE CHOREO CONST (OK)
+-- ============================================
+local function zeroChoreoWaits()
+    for _, m in ipairs(getloadedmodules()) do
+        if m.Name == "BattleChoreoConst" then
+            local success, mod = pcall(require, m)
+            if success and type(mod) == "table" then
+                if type(mod.ActionWaitTimeByType) == "table" then
+                    for k, v in pairs(mod.ActionWaitTimeByType) do
+                        mod.ActionWaitTimeByType[k] = 0
+                    end
+                end
+                if type(mod.DefaultActionWaitTime) == "number" then
+                    mod.DefaultActionWaitTime = 0
+                end
+                if type(mod.StartBattleBeforeChoreographyDelayTime) == "number" then
+                    mod.StartBattleBeforeChoreographyDelayTime = 0
+                end
+                if type(mod.OpeningThrowBallPreDelay) == "number" then
+                    mod.OpeningThrowBallPreDelay = 0
+                end
+                if type(mod.OpeningThrowBallPostDelay) == "number" then
+                    mod.OpeningThrowBallPostDelay = 0
+                end
+                if type(mod.SettleNodeWaitTime) == "number" then
+                    mod.SettleNodeWaitTime = 0
+                end
+                return true
+            end
+        end
+    end
+    return false
+end
+zeroChoreoWaits()
+
+-- ============================================
+-- TEST 3: BATTLE WAIT (LỖI - BỎ)
+-- ============================================
+
+-- ============================================
+-- TEST 4: BROADCAST (OK)
+-- ============================================
+for _, m in ipairs(getloadedmodules()) do
+    if m.Name == "BattleChoreoStatusUiModule" then
+        local success, mod = pcall(require, m)
+        if success and type(mod) == "table" then
+            if type(mod.executeBroadcastBattleAction) == "function" then
+                local old = mod.executeBroadcastBattleAction
+                mod.executeBroadcastBattleAction = function(actions, callback)
+                    if getgenv().Settings.SpeedMode then
+                        if callback then
+                            task.defer(callback)
+                        end
+                        return 0
+                    end
+                    return old(actions, callback)
+                end
+            end
+        end
+        break
+    end
+end
+
+-- ============================================
+-- AUTO COMBAT
+-- ============================================
 local function EnableAutoCombat()
     if not ReqAutoBattle then
-        warn("ReqAutoBattle not found")
         return
     end
-
     pcall(function()
         ReqAutoBattle:InvokeServer(true)
     end)
@@ -1475,13 +1553,9 @@ end
 if ClientBattleStart then
     ClientBattleStart.Event:Connect(function()
         task.wait(0.5)
-
         if not getgenv().Settings.AutoCombat then
             return
         end
-
         EnableAutoCombat()
     end)
-else
-    warn("ClientBattleStart not found")
 end
