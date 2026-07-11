@@ -772,7 +772,7 @@ catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
 			
         else
             print("Shiny Found -> Leaving battle")
-            LeaveBattle()
+            if  getgenv().Settings.AutoLeave then LeaveBattle() end
         end
         return
     end
