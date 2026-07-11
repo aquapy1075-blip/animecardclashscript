@@ -1509,10 +1509,25 @@ local function zeroChoreoWaits()
     return false
 end
 zeroChoreoWaits()
-
--- ============================================
--- TEST 3: BATTLE WAIT (LỖI - BỎ)
--- ============================================
+-- SKIP CAMERA ZOOM VÀO PET
+for _, m in ipairs(getloadedmodules()) do
+    if m.Name == "BattleSceneController" then
+        local success, mod = pcall(require, m)
+        if success and type(mod) == "table" then
+            if type(mod.playBattleStartIntroPullBackCamera) == "function" then
+                local old = mod.playBattleStartIntroPullBackCamera
+                mod.playBattleStartIntroPullBackCamera = function(battleData)
+                    if getgenv().Settings.SpeedMode then
+                        return 0
+                    end
+                    return old(battleData)
+                end
+                print("[+] Hooked: playBattleStartIntroPullBackCamera")
+            end
+        end
+        break
+    end
+end
 
 -- ============================================
 -- TEST 4: BROADCAST (OK)
