@@ -739,11 +739,14 @@ local function IsShiny()
             .CurBallShinyChanceText
 
         local text = label.ContentText
-        return text and text:find("Shiny:%s*%-%-") ~= nil
+        -- Kiểm tra nếu text KHÔNG chứa "2%"
+		print(text)
+        return text and not text:find("2%%") 
     end)
 
     return success and result
 end
+
 local function Catch(ballId)
     ReplicatedStorage.Remote.Battle.ReqOperateBattle:InvokeServer({
         sourcePos = 1,
@@ -754,40 +757,42 @@ local function Catch(ballId)
 end
 
 catchFrame:GetPropertyChangedSignal("Visible"):Connect(function()
-
     if not catchFrame.Visible then
         return
     end
 
     task.wait(0.1)
 
-    -- ⭐ SHINY LOGIC
+    -- ⭐ SHINY LOGIC - ƯU TIÊN HÀNG ĐẦU
     if IsShiny() then
         if getgenv().Settings.AutoShiny then
             print("Shiny Found -> Catch Ball:", SelectedShinyBall)
-		    while catchFrame.Visible do 
-                 Catch(SelectedShinyBall)
-				 task.wait(0.5)
-				end
-			
+            while catchFrame.Visible do 
+                Catch(SelectedShinyBall)
+                task.wait(0.25)
+            end
         else
             print("Shiny Found -> Leaving battle")
-            if  getgenv().Settings.AutoLeave then LeaveBattle() end
+            if getgenv().Settings.AutoLeave then 
+                LeaveBattle() 
+            end
         end
-        return
+        return -- THOÁT NGAY, KHÔNG XÉT NORMAL LOGIC
     end
 
-    -- 🟦 NORMAL LOGIC
+    -- 🟦 NORMAL LOGIC - CHỈ CHẠY KHI KHÔNG PHẢI SHINY
+    -- (Vì nếu là shiny đã return ở trên rồi)
+    
     if getgenv().Settings.AutoLeave then
         LeaveBattle()
         return
     end
 
     if getgenv().Settings.AutoCatch then
-		while catchFrame.Visible do 
-             Catch(SelectedCatchBall)
-			task.wait(0.5)
-			end
+        while catchFrame.Visible do 
+            Catch(SelectedCatchBall)
+            task.wait(0.15)
+        end
     end
 end)
 local function InBattle()
@@ -1474,41 +1479,6 @@ local function zeroSkillPerformanceWait()
 end
 zeroSkillPerformanceWait()
 
--- ============================================
--- TEST 2: BATTLE CHOREO CONST (OK)
--- ============================================
-local function zeroChoreoWaits()
-    for _, m in ipairs(getloadedmodules()) do
-        if m.Name == "BattleChoreoConst" then
-            local success, mod = pcall(require, m)
-            if success and type(mod) == "table" then
-                if type(mod.ActionWaitTimeByType) == "table" then
-                    for k, v in pairs(mod.ActionWaitTimeByType) do
-                        mod.ActionWaitTimeByType[k] = 0
-                    end
-                end
-                if type(mod.DefaultActionWaitTime) == "number" then
-                    mod.DefaultActionWaitTime = 0
-                end
-                if type(mod.StartBattleBeforeChoreographyDelayTime) == "number" then
-                    mod.StartBattleBeforeChoreographyDelayTime = 0
-                end
-                if type(mod.OpeningThrowBallPreDelay) == "number" then
-                    mod.OpeningThrowBallPreDelay = 0
-                end
-                if type(mod.OpeningThrowBallPostDelay) == "number" then
-                    mod.OpeningThrowBallPostDelay = 0
-                end
-                if type(mod.SettleNodeWaitTime) == "number" then
-                    mod.SettleNodeWaitTime = 0
-                end
-                return true
-            end
-        end
-    end
-    return false
-end
-zeroChoreoWaits()
 -- SKIP CAMERA ZOOM VÀO PET
 for _, m in ipairs(getloadedmodules()) do
     if m.Name == "BattleSceneController" then
