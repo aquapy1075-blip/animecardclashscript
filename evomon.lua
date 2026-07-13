@@ -740,7 +740,6 @@ local function IsShiny()
 
         local text = label.ContentText
         -- Kiểm tra nếu text KHÔNG chứa "2%"
-		print(text)
         return text and not text:find("2%%") 
     end)
 
