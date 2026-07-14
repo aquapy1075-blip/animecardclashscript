@@ -30,7 +30,7 @@ end
 local function RemoveBatch(uid)
     local list = {}
 
-    for i = 1, 150 do
+    for i = 1, 500 do
         list[i] = uid
     end
 
