@@ -149,7 +149,11 @@ local PetIds = {
 	Fluffet = {44},
 	Fluffastar = {45},
 	Spikub = {58},
-	Spikumane = {59}
+	Spikumane = {59},
+	Cyanie = {107},
+	Cyanknight = {108},
+	Coulomb = {28},
+	Coultron = {29}
 }
 
 
