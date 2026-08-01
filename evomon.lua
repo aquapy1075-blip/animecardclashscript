@@ -854,9 +854,9 @@ local function FindMobList()
                 end
             end
 
-            if total >= 50
+            if total >= 1
             and total <= 1000
-            and valid >= 20
+            and valid >= 1
             and valid > bestValid then
                 bestList = tbl
                 bestValid = valid
