@@ -6,18 +6,7 @@ local player = Players.LocalPlayer
 -- AUTO WALKSPEED
 -- =========================
 
-task.spawn(function()
-    while true do
-        local character = player.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 
-        if humanoid then
-            humanoid.WalkSpeed = 70
-        end
-
-        task.wait(0.5)
-    end
-end)
 
 
 -- =========================
