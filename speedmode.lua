@@ -2,23 +2,28 @@ local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
 
-while true do
-    local character = player.Character
-    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+-- =========================
+-- AUTO WALKSPEED
+-- =========================
 
-    if humanoid then
-        humanoid.WalkSpeed = 70
+task.spawn(function()
+    while true do
+        local character = player.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+        if humanoid then
+            humanoid.WalkSpeed = 70
+        end
+
+        task.wait(0.5)
     end
-
-    task.wait(0.5)
-end
+end)
 
 
-local Players = game:GetService("Players")
+-- =========================
+-- TELEPORT UI
+-- =========================
 
-local player = Players.LocalPlayer
-
--- Tạo UI
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "IslandTeleportUI"
 ScreenGui.ResetOnSpawn = false
@@ -124,4 +129,3 @@ PelButton.MouseButton1Click:Connect(function()
         warn("Không tìm thấy player phanquanghai100gb")
     end
 end)
-
