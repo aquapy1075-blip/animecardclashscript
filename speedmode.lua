@@ -1,133 +1,127 @@
--- ============================================
--- SPEED MODE - TỰ ĐỘNG BẬT KHI CHẠY
--- ============================================
+local Players = game:GetService("Players")
 
-if not game:IsLoaded() then
-    game.Loaded:Wait()
-end
+local player = Players.LocalPlayer
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
+while true do
+    local character = player.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 
--- CẤU HÌNH
-getgenv().SpeedMode = true
-getgenv().BattlePlaybackSpeed = 20
-
--- HÀM GỌI CALLBACK
-local function callLastCallback(...)
-    local args = {...}
-    for i = #args, 1, -1 do
-        if typeof(args[i]) == "function" then
-            task.defer(args[i])
-            return true
-        end
+    if humanoid then
+        humanoid.WalkSpeed = 70
     end
+
+    task.wait(0.5)
 end
 
--- HOOK MODULE
-local function hook(moduleName, funcName, replace)
-    for _, m in ipairs(getloadedmodules()) do
-        if m.Name == moduleName then
-            local mod = require(m)
-            if type(mod) == "table" and type(mod[funcName]) == "function" then
-                local old = mod[funcName]
-                mod[funcName] = replace(old)
-                print("✅ Hooked:", moduleName, funcName)
-            end
+```lua
+local Players = game:GetService("Players")
+
+local player = Players.LocalPlayer
+
+-- Tạo UI
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "IslandTeleportUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game:GetService("CoreGui")
+
+local Frame = Instance.new("Frame")
+Frame.Size = UDim2.new(0, 435, 0, 70)
+Frame.Position = UDim2.new(0.5, -217, 0, 10)
+Frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+Frame.BorderSizePixel = 0
+Frame.Parent = ScreenGui
+
+local Corner = Instance.new("UICorner")
+Corner.CornerRadius = UDim.new(0, 8)
+Corner.Parent = Frame
+
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 25)
+Title.BackgroundTransparency = 1
+Title.Text = "Island Teleport"
+Title.TextColor3 = Color3.new(1, 1, 1)
+Title.TextSize = 16
+Title.Font = Enum.Font.GothamBold
+Title.Parent = Frame
+
+local function CreateButton(text, position, teleportPosition)
+    local Button = Instance.new("TextButton")
+
+    Button.Size = UDim2.new(0, 95, 0, 30)
+    Button.Position = position
+    Button.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+    Button.BorderSizePixel = 0
+    Button.Text = text
+    Button.TextColor3 = Color3.new(1, 1, 1)
+    Button.TextSize = 14
+    Button.Font = Enum.Font.Gotham
+    Button.Parent = Frame
+
+    local ButtonCorner = Instance.new("UICorner")
+    ButtonCorner.CornerRadius = UDim.new(0, 6)
+    ButtonCorner.Parent = Button
+
+    Button.MouseButton1Click:Connect(function()
+        local character = player.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+
+        if root then
+            root.CFrame = CFrame.new(teleportPosition)
         end
-    end
+    end)
 end
 
--- SKIP ANIMATION
-hook("BattleChoreoStartModule", "executePreEnterBattleEffect", function(old)
-    return function(...)
-        if getgenv().SpeedMode then
-            callLastCallback(...)
-            return 0
+-- Đảo 1
+CreateButton(
+    "Đảo 1",
+    UDim2.new(0, 10, 0, 32),
+    Vector3.new(253, 23, -201)
+)
+
+-- Đảo 2
+CreateButton(
+    "Đảo 2",
+    UDim2.new(0, 117, 0, 32),
+    Vector3.new(2301, 19, -265)
+)
+
+-- Đảo 3
+CreateButton(
+    "Đảo 3",
+    UDim2.new(0, 224, 0, 32),
+    Vector3.new(85, 78, -2739)
+)
+
+-- Pel
+local PelButton = Instance.new("TextButton")
+
+PelButton.Size = UDim2.new(0, 95, 0, 30)
+PelButton.Position = UDim2.new(0, 331, 0, 32)
+PelButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+PelButton.BorderSizePixel = 0
+PelButton.Text = "Pel"
+PelButton.TextColor3 = Color3.new(1, 1, 1)
+PelButton.TextSize = 14
+PelButton.Font = Enum.Font.Gotham
+PelButton.Parent = Frame
+
+local PelCorner = Instance.new("UICorner")
+PelCorner.CornerRadius = UDim.new(0, 6)
+PelCorner.Parent = PelButton
+
+PelButton.MouseButton1Click:Connect(function()
+    local target = Players:FindFirstChild("phanquanghai100gb")
+
+    if target and target.Character then
+        local targetRoot = target.Character:FindFirstChild("HumanoidRootPart")
+        local myRoot = player.Character
+            and player.Character:FindFirstChild("HumanoidRootPart")
+
+        if targetRoot and myRoot then
+            myRoot.CFrame = targetRoot.CFrame
         end
-        return old(...)
+    else
+        warn("Không tìm thấy player phanquanghai100gb")
     end
 end)
-
-hook("BattleStartWindowController", "playStartAnimation", function(old)
-    return function(...)
-        if getgenv().SpeedMode then
-            callLastCallback(...)
-            return 0
-        end
-        return old(...)
-    end
-end)
-
-hook("BattleStartWindowController", "playEndAnimation", function(old)
-    return function(...)
-        if getgenv().SpeedMode then
-            callLastCallback(...)
-            return 0
-        end
-        return old(...)
-    end
-end)
-
--- SKIP PET ATTACK ANIMATION
-local AnimationConst
-pcall(function()
-    AnimationConst = require(ReplicatedStorage.Script.Animation.Basic.AnimationConst)
-end)
-
-local CommonAttackState = AnimationConst and AnimationConst.AnimationState and AnimationConst.AnimationState.commonAttack
-
-for _, m in ipairs(getloadedmodules()) do
-    if m.Name == "PetAnimationController" then
-        local mod = require(m)
-        if type(mod) == "table" and type(mod.changeState) == "function" then
-            local old = mod.changeState
-            mod.changeState = function(uid, state, model, ...)
-                if getgenv().SpeedMode and state == CommonAttackState then
-                    return
-                end
-                return old(uid, state, model, ...)
-            end
-            print("✅ Hooked PetAnimationController")
-        end
-        break
-    end
-end
-
--- TĂNG TỐC SKILL
-local ctrl
-for _, obj in ipairs(getgc(true)) do
-    if type(obj) == "table" and type(rawget(obj, "getBattlePlaybackSpeed")) == "function" then
-        ctrl = obj
-        break
-    end
-end
-
-if ctrl then
-    local oldGetSpeed = ctrl.getBattlePlaybackSpeed
-    ctrl.getBattlePlaybackSpeed = function(...)
-        if getgenv().SpeedMode then
-            return getgenv().BattlePlaybackSpeed or 20
-        end
-        return oldGetSpeed(...)
-    end
-    print("✅ Speed set to " .. (getgenv().BattlePlaybackSpeed or 20) .. "x")
-end
-
--- SKIP CAPTURE ANIMATION
-for _, m in ipairs(getloadedmodules()) do
-    if m.Name == "CaptureFlowV2Module" then
-        local mod = require(m)
-        if mod and mod.start then
-            mod.start = function(data, callback)
-                if typeof(callback) == "function" then
-                    task.defer(callback)
-                end
-                return 0
-            end
-            print("✅ Skip capture animation")
-        end
-        break
-    end
-end
-
-print("🚀 SPEED MODE ACTIVATED!")
+```
