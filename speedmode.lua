@@ -13,7 +13,7 @@ while true do
     task.wait(0.5)
 end
 
-```lua
+
 local Players = game:GetService("Players")
 
 local player = Players.LocalPlayer
@@ -124,4 +124,4 @@ PelButton.MouseButton1Click:Connect(function()
         warn("Không tìm thấy player phanquanghai100gb")
     end
 end)
-```
+
