@@ -321,7 +321,7 @@ local function GetTrainingDummy()
 
     local Dummy =
         Entities:FindFirstChild(
-            "Training Dummy5"
+            "Training Dummy11"
         )
 
     if not Dummy then
@@ -924,10 +924,7 @@ end
 
 local function M1()
 
-    if
-        not Enabled
-        or Destroyed
-    then
+    if not Enabled or Destroyed then
         return false
     end
 
@@ -935,23 +932,9 @@ local function M1()
         return false
     end
 
-    VIM:SendMouseButtonEvent(
-        0,
-        0,
-        0,
-        true,
-        game,
-        0
-    )
-
-    VIM:SendMouseButtonEvent(
-        0,
-        0,
-        0,
-        false,
-        game,
-        0
-    )
+    VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+    task.wait(0.1)
+    VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
 
     return true
 end
