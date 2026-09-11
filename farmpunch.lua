@@ -923,7 +923,6 @@ end
 ------------------------------------------------------------
 
 local function M1()
-
     if not Enabled or Destroyed then
         return false
     end
@@ -933,12 +932,10 @@ local function M1()
     end
 
     VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-    task.wait(0.1)
     VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
 
     return true
 end
-
 
 ------------------------------------------------------------
 -- HOLD F
