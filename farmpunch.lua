@@ -47,6 +47,8 @@ local Destroyed = false
 local TARGET_POSITION =
     Vector3.new(252, 22, -201)
 
+local TARGET_TOLERANCE = 8
+
 local DANGER_DISTANCE = 5
 local PLAYER_DISTANCE = 200
 local SERVER_HOP_TIME = 60
@@ -107,6 +109,8 @@ local LastTeleport = -math.huge
 local CombatActive = false
 local PendingServerHop = false
 local DangerPlayerDetected = false
+
+local TargetPrepared = false
 
 
 ------------------------------------------------------------
@@ -216,7 +220,7 @@ local function IsAtTarget()
 
     return (
         Root.Position - TARGET_POSITION
-    ).Magnitude <= 5
+    ).Magnitude <= TARGET_TOLERANCE
 end
 
 
@@ -293,48 +297,6 @@ local function IsDangerPlayerNear()
     return GetClosestPlayerDistance()
         <= DANGER_DISTANCE
 end
-
-
-------------------------------------------------------------
--- GET TRAINING DUMMY
-------------------------------------------------------------
-
-local function GetTrainingDummy()
-
-    local Entities =
-        workspace:FindFirstChild("Entities")
-
-    if not Entities then
-
-        warn(
-            "[TARGET] Entities not found"
-        )
-
-        return nil
-    end
-
-    local Dummy =
-        Entities:FindFirstChild(
-            "Training Dummy11"
-        )
-
-    if not Dummy then
-
-        warn(
-            "[TARGET] Training Dummy11 not found"
-        )
-
-        return nil
-    end
-
-    return Dummy
-end
-
-
-------------------------------------------------------------
--- GET DUMMY ROOT
-------------------------------------------------------------
-
 local function GetDummyRoot(Dummy)
 
     if not Dummy then
@@ -342,9 +304,7 @@ local function GetDummyRoot(Dummy)
     end
 
     local DummyRoot =
-        Dummy:FindFirstChild(
-            "HumanoidRootPart"
-        )
+        Dummy:FindFirstChild("HumanoidRootPart")
 
     if DummyRoot then
         return DummyRoot
@@ -361,7 +321,67 @@ end
 
 
 ------------------------------------------------------------
--- FACE TRAINING DUMMY
+-- GET TRAINING DUMMY 11
+------------------------------------------------------------
+
+local function GetTrainingDummy()
+
+    local Entities =
+        workspace:FindFirstChild("Entities")
+
+    if not Entities then
+        return nil
+    end
+
+    local Character, Humanoid, Root =
+        GetCharacter()
+
+    if not Root then
+        return nil
+    end
+
+    local ClosestDummy = nil
+    local ClosestDistance = math.huge
+
+    for _, Object in ipairs(Entities:GetChildren()) do
+
+        if string.find(
+            Object.Name,
+            "Training Dummy",
+            1,
+            true
+        ) then
+
+            local DummyRoot =
+                GetDummyRoot(Object)
+
+            if DummyRoot then
+
+                local Distance =
+                    (
+                        DummyRoot.Position
+                        - Root.Position
+                    ).Magnitude
+
+                if Distance < ClosestDistance then
+
+                    ClosestDistance =
+                        Distance
+
+                    ClosestDummy =
+                        Object
+                end
+            end
+        end
+    end
+
+    return ClosestDummy
+end
+
+
+
+------------------------------------------------------------
+-- FACE TRAINING DUMMY 11
 ------------------------------------------------------------
 
 local function FaceTrainingDummy()
@@ -396,11 +416,6 @@ local function FaceTrainingDummy()
         GetDummyRoot(Dummy)
 
     if not DummyRoot then
-
-        warn(
-            "[TARGET] Training Dummy11 root not found"
-        )
-
         return false
     end
 
@@ -420,13 +435,8 @@ local function FaceTrainingDummy()
             LookPosition
         )
 
-    print(
-        "[TARGET] Facing Training Dummy11"
-    )
-
     return true
 end
-
 
 ------------------------------------------------------------
 -- RELEASE F
@@ -458,10 +468,6 @@ local function SelectSkill1AndWait()
         Destroyed
         or not Enabled
     then
-        return false
-    end
-
-    if not IsAtTarget() then
         return false
     end
 
@@ -497,18 +503,59 @@ local function SelectSkill1AndWait()
         and not Destroyed
         and os.clock() - StartTime < SKILL_KEY_DELAY
     do
-
-        if not IsAtTarget() then
-            return false
-        end
-
         task.wait(0.05)
     end
 
-    return
-        Enabled
-        and not Destroyed
-        and IsAtTarget()
+    if
+        Destroyed
+        or not Enabled
+    then
+        return false
+    end
+
+    TargetPrepared = true
+
+    print("[SKILL] Ready for M1")
+
+    return true
+end
+
+
+------------------------------------------------------------
+-- PREPARE SKILL
+------------------------------------------------------------
+
+local function PrepareSkill()
+
+    if
+        Destroyed
+        or not Enabled
+    then
+        return false
+    end
+
+    if TargetPrepared then
+        return true
+    end
+
+    if not IsAtTarget() then
+        return false
+    end
+
+    if not FaceTrainingDummy() then
+        return false
+    end
+
+    task.wait(AFTER_FACE_DELAY)
+
+    if
+        Destroyed
+        or not Enabled
+    then
+        return false
+    end
+
+    return SelectSkill1AndWait()
 end
 
 
@@ -539,6 +586,8 @@ local function ServerHop()
     PlayerDetectedTime = nil
     PendingServerHop = false
     DangerPlayerDetected = false
+
+    TargetPrepared = false
 
     ReleaseF()
 
@@ -603,11 +652,12 @@ local function DirectTeleport()
             - TARGET_POSITION
         ).Magnitude
 
-    if Distance <= 5 then
+    if Distance <= TARGET_TOLERANCE then
         return false
     end
 
     Teleporting = true
+    TargetPrepared = false
     LastTeleport = os.clock()
 
     print(
@@ -643,7 +693,7 @@ local function DirectTeleport()
     end
 
     --------------------------------------------------------
-    -- FACE
+    -- FACE DUMMY 11
     --------------------------------------------------------
 
     if not FaceTrainingDummy() then
@@ -671,7 +721,7 @@ local function DirectTeleport()
     Teleporting = false
 
     print(
-        "[SAFE] Direct teleport finished"
+        "[SAFE] Direct teleport finished - READY FOR M1"
     )
 
     return true
@@ -724,12 +774,12 @@ local function TweenToTarget()
             - TARGET_POSITION
         ).Magnitude
 
-    if Distance <= 5 then
-        return false
+    if Distance <= TARGET_TOLERANCE then
+        return PrepareSkill()
     end
 
     --------------------------------------------------------
-    -- XA > 300 -> DIRECT TELEPORT
+    -- > 300 -> DIRECT TELEPORT
     --------------------------------------------------------
 
     if Distance > TELEPORT_DISTANCE then
@@ -742,6 +792,7 @@ local function TweenToTarget()
     --------------------------------------------------------
 
     Teleporting = true
+    TargetPrepared = false
     LastTeleport = os.clock()
 
     print(
@@ -871,6 +922,10 @@ local function TweenToTarget()
         return false
     end
 
+    --------------------------------------------------------
+    -- TARGET CHECK
+    --------------------------------------------------------
+
     if not IsAtTarget() then
 
         Teleporting = false
@@ -892,7 +947,7 @@ local function TweenToTarget()
     end
 
     --------------------------------------------------------
-    -- FACE DUMMY
+    -- FACE DUMMY 11
     --------------------------------------------------------
 
     if not FaceTrainingDummy() then
@@ -920,7 +975,7 @@ local function TweenToTarget()
     Teleporting = false
 
     print(
-        "[SAFE] Tween sequence finished"
+        "[SAFE] Tween sequence finished - READY FOR M1"
     )
 
     return true
@@ -941,7 +996,7 @@ local function PrepareTarget()
     end
 
     --------------------------------------------------------
-    -- ĐÃ Ở TARGET
+    -- ALREADY AT TARGET
     --------------------------------------------------------
 
     if IsAtTarget() then
@@ -958,23 +1013,25 @@ local function PrepareTarget()
         end
 
         ----------------------------------------------------
-        -- ĐÃ Ở TARGET -> FACE RỒI COMBAT
-        -- KHÔNG PRESS 1 LẠI
+        -- ALREADY PREPARED
         ----------------------------------------------------
 
-        if not FaceTrainingDummy() then
-            return false
+        if TargetPrepared then
+
+            FaceTrainingDummy()
+
+            return true
         end
 
-        task.wait(
-            AFTER_FACE_DELAY
-        )
+        ----------------------------------------------------
+        -- NOT PREPARED
+        ----------------------------------------------------
 
-        return true
+        return PrepareSkill()
     end
 
     --------------------------------------------------------
-    -- CHƯA Ở TARGET
+    -- NOT AT TARGET
     --------------------------------------------------------
 
     if IsDangerPlayerNear() then
@@ -985,7 +1042,7 @@ local function PrepareTarget()
     end
 
     --------------------------------------------------------
-    -- PLAYER <= 200 -> KHÔNG TWEEN
+    -- PLAYER <= 200 -> DON'T TWEEN
     --------------------------------------------------------
 
     if IsPlayerNearTarget() then
@@ -1007,13 +1064,26 @@ end
 
 local function M1()
 
-    if not Enabled or Destroyed then
+    if
+        not Enabled
+        or Destroyed
+    then
         return false
     end
 
     if not IsAtTarget() then
         return false
     end
+
+    if not TargetPrepared then
+        return false
+    end
+
+    --------------------------------------------------------
+    -- FACE AGAIN BEFORE M1
+    --------------------------------------------------------
+
+    FaceTrainingDummy()
 
     VIM:SendMouseButtonEvent(
         0,
@@ -1146,7 +1216,7 @@ task.spawn(function()
                 end
 
             ------------------------------------------------
-            -- PLAYER > 5 VÀ <= 200
+            -- PLAYER > 5 AND <= 200
             ------------------------------------------------
 
             elseif ClosestDistance <= PLAYER_DISTANCE then
@@ -1250,6 +1320,7 @@ task.spawn(function()
             not Enabled
             or Destroyed
             or not IsAtTarget()
+            or not TargetPrepared
         then
 
             task.wait(0.1)
@@ -1294,6 +1365,13 @@ task.spawn(function()
 
                 break
             end
+
+            print(
+                "[M1]",
+                i,
+                "/",
+                M1_COUNT
+            )
 
             if i < M1_COUNT then
 
@@ -1610,7 +1688,13 @@ Button.MouseButton1Click:Connect(function()
         PendingServerHop = false
         DangerPlayerDetected = false
 
+        TargetPrepared = false
+
         ReleaseF()
+
+    else
+
+        TargetPrepared = false
     end
 
     UpdateUI()
@@ -1630,6 +1714,7 @@ CloseButton.MouseButton1Click:Connect(function()
     PendingServerHop = false
     DangerPlayerDetected = false
     CombatActive = false
+    TargetPrepared = false
 
     ReleaseF()
 
@@ -1651,6 +1736,7 @@ LocalPlayer.CharacterAdded:Connect(function()
 
     Teleporting = false
     CombatActive = false
+    TargetPrepared = false
 
     LastTeleport = -math.huge
 
@@ -1686,6 +1772,8 @@ print("[M1 + F] Loaded")
 print("[M1 + F] Account:", LocalPlayer.Name)
 print("[M1 + F] Status: ON")
 print("[TARGET]", TARGET_POSITION)
+print("[DUMMY] Training Dummy11")
+print("[TARGET TOLERANCE]", TARGET_TOLERANCE)
 print("[DANGER DISTANCE]", DANGER_DISTANCE)
 print("[PLAYER DISTANCE]", PLAYER_DISTANCE)
 print("[SERVER HOP TIME]", SERVER_HOP_TIME)
