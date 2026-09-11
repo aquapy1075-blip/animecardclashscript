@@ -47,13 +47,8 @@ local Destroyed = false
 local TARGET_POSITION =
     Vector3.new(252, 22, -201)
 
--- Player <= 5 studs -> hop ngay
 local DANGER_DISTANCE = 5
-
--- Player <= 200 studs -> bắt đầu theo dõi
 local PLAYER_DISTANCE = 200
-
--- Player > 5 và <= 200 studs trong 60s -> hop
 local SERVER_HOP_TIME = 60
 
 
@@ -62,7 +57,6 @@ local SERVER_HOP_TIME = 60
 ------------------------------------------------------------
 
 local TELEPORT_DISTANCE = 300
-
 local TELEPORT_COOLDOWN = 2
 
 
@@ -73,7 +67,6 @@ local TELEPORT_COOLDOWN = 2
 local TWEEN_SPEED = 100
 
 local AFTER_TELEPORT_DELAY = 0.5
-
 local AFTER_FACE_DELAY = 0.3
 
 
@@ -83,6 +76,13 @@ local AFTER_FACE_DELAY = 0.3
 
 local M1_COUNT = 4
 local M1_DELAY = 0.35
+
+
+------------------------------------------------------------
+-- SKILL 1
+------------------------------------------------------------
+
+local SKILL_KEY_DELAY = 2
 
 
 ------------------------------------------------------------
@@ -104,13 +104,8 @@ local FHeld = false
 
 local LastTeleport = -math.huge
 
--- Đang M1 x4 + F
 local CombatActive = false
-
--- Đã đủ điều kiện hop nhưng đang combat
 local PendingServerHop = false
-
--- Player <= 5 studs
 local DangerPlayerDetected = false
 
 
@@ -291,7 +286,6 @@ end
 
 ------------------------------------------------------------
 -- DANGER PLAYER
--- <= 5 STUDS
 ------------------------------------------------------------
 
 local function IsDangerPlayerNear()
@@ -327,7 +321,7 @@ local function GetTrainingDummy()
     if not Dummy then
 
         warn(
-            "[TARGET] Training Dummy5 not found"
+            "[TARGET] Training Dummy11 not found"
         )
 
         return nil
@@ -404,7 +398,7 @@ local function FaceTrainingDummy()
     if not DummyRoot then
 
         warn(
-            "[TARGET] Training Dummy5 root not found"
+            "[TARGET] Training Dummy11 root not found"
         )
 
         return false
@@ -427,7 +421,7 @@ local function FaceTrainingDummy()
         )
 
     print(
-        "[TARGET] Facing Training Dummy5"
+        "[TARGET] Facing Training Dummy11"
     )
 
     return true
@@ -455,6 +449,70 @@ end
 
 
 ------------------------------------------------------------
+-- PRESS 1 + WAIT 2 SECONDS
+------------------------------------------------------------
+
+local function SelectSkill1AndWait()
+
+    if
+        Destroyed
+        or not Enabled
+    then
+        return false
+    end
+
+    if not IsAtTarget() then
+        return false
+    end
+
+    print("[SKILL] Pressing 1")
+
+    VIM:SendKeyEvent(
+        true,
+        Enum.KeyCode.One,
+        false,
+        game
+    )
+
+    task.wait(0.05)
+
+    VIM:SendKeyEvent(
+        false,
+        Enum.KeyCode.One,
+        false,
+        game
+    )
+
+    print(
+        "[SKILL] Pressed 1 - waiting",
+        SKILL_KEY_DELAY,
+        "seconds"
+    )
+
+    local StartTime =
+        os.clock()
+
+    while
+        Enabled
+        and not Destroyed
+        and os.clock() - StartTime < SKILL_KEY_DELAY
+    do
+
+        if not IsAtTarget() then
+            return false
+        end
+
+        task.wait(0.05)
+    end
+
+    return
+        Enabled
+        and not Destroyed
+        and IsAtTarget()
+end
+
+
+------------------------------------------------------------
 -- SERVER HOP
 ------------------------------------------------------------
 
@@ -466,10 +524,6 @@ local function ServerHop()
     then
         return
     end
-
-    --------------------------------------------------------
-    -- KHÔNG INTERRUPT COMBAT
-    --------------------------------------------------------
 
     if CombatActive then
 
@@ -484,7 +538,6 @@ local function ServerHop()
 
     PlayerDetectedTime = nil
     PendingServerHop = false
-
     DangerPlayerDetected = false
 
     ReleaseF()
@@ -589,11 +642,31 @@ local function DirectTeleport()
         return false
     end
 
-    FaceTrainingDummy()
+    --------------------------------------------------------
+    -- FACE
+    --------------------------------------------------------
+
+    if not FaceTrainingDummy() then
+
+        Teleporting = false
+
+        return false
+    end
 
     task.wait(
         AFTER_FACE_DELAY
     )
+
+    --------------------------------------------------------
+    -- PRESS 1 + WAIT 2S
+    --------------------------------------------------------
+
+    if not SelectSkill1AndWait() then
+
+        Teleporting = false
+
+        return false
+    end
 
     Teleporting = false
 
@@ -625,10 +698,6 @@ local function TweenToTarget()
     then
         return false
     end
-
-    --------------------------------------------------------
-    -- PLAYER ĐANG GẦN -> KHÔNG TWEEN
-    --------------------------------------------------------
 
     if IsPlayerNearTarget() then
         return false
@@ -669,7 +738,7 @@ local function TweenToTarget()
     end
 
     --------------------------------------------------------
-    -- 5 -> 300 -> TWEEN
+    -- TWEEN
     --------------------------------------------------------
 
     Teleporting = true
@@ -722,7 +791,6 @@ local function TweenToTarget()
 
         ----------------------------------------------------
         -- PLAYER <= 5
-        -- STOP TWEEN + HOP
         ----------------------------------------------------
 
         if IsDangerPlayerNear() then
@@ -742,7 +810,6 @@ local function TweenToTarget()
 
         ----------------------------------------------------
         -- PLAYER <= 200
-        -- STOP TWEEN
         ----------------------------------------------------
 
         if IsPlayerNearTarget() then
@@ -812,7 +879,7 @@ local function TweenToTarget()
     end
 
     --------------------------------------------------------
-    -- CHECK DANGER SAU KHI TỚI
+    -- CHECK DANGER
     --------------------------------------------------------
 
     if IsDangerPlayerNear() then
@@ -824,6 +891,10 @@ local function TweenToTarget()
         return false
     end
 
+    --------------------------------------------------------
+    -- FACE DUMMY
+    --------------------------------------------------------
+
     if not FaceTrainingDummy() then
 
         Teleporting = false
@@ -834,6 +905,17 @@ local function TweenToTarget()
     task.wait(
         AFTER_FACE_DELAY
     )
+
+    --------------------------------------------------------
+    -- PRESS 1 + WAIT 2S
+    --------------------------------------------------------
+
+    if not SelectSkill1AndWait() then
+
+        Teleporting = false
+
+        return false
+    end
 
     Teleporting = false
 
@@ -876,7 +958,8 @@ local function PrepareTarget()
         end
 
         ----------------------------------------------------
-        -- PLAYER > 5 -> VẪN COMBAT
+        -- ĐÃ Ở TARGET -> FACE RỒI COMBAT
+        -- KHÔNG PRESS 1 LẠI
         ----------------------------------------------------
 
         if not FaceTrainingDummy() then
@@ -923,6 +1006,7 @@ end
 ------------------------------------------------------------
 
 local function M1()
+
     if not Enabled or Destroyed then
         return false
     end
@@ -931,11 +1015,27 @@ local function M1()
         return false
     end
 
-    VIM:SendMouseButtonEvent(0, 0, 0, true, game, 0)
-    VIM:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    VIM:SendMouseButtonEvent(
+        0,
+        0,
+        0,
+        true,
+        game,
+        0
+    )
+
+    VIM:SendMouseButtonEvent(
+        0,
+        0,
+        0,
+        false,
+        game,
+        0
+    )
 
     return true
 end
+
 
 ------------------------------------------------------------
 -- HOLD F
@@ -1008,10 +1108,6 @@ task.spawn(function()
                 PendingServerHop = false
                 DangerPlayerDetected = false
 
-                ------------------------------------------------
-                -- TWEEN / TELEPORT
-                ------------------------------------------------
-
                 if
                     not IsAtTarget()
                     and not Teleporting
@@ -1036,11 +1132,6 @@ task.spawn(function()
                     )
                 end
 
-                ------------------------------------------------
-                -- COMBAT ĐANG CHẠY
-                -- ĐỢI COMBO XONG
-                ------------------------------------------------
-
                 if CombatActive then
 
                     PendingServerHop = true
@@ -1050,10 +1141,6 @@ task.spawn(function()
                     )
 
                 else
-
-                    ------------------------------------------------
-                    -- KHÔNG COMBAT -> HOP NGAY
-                    ------------------------------------------------
 
                     ServerHop()
                 end
@@ -1081,10 +1168,6 @@ task.spawn(function()
                     os.clock()
                     - PlayerDetectedTime
 
-                ------------------------------------------------
-                -- ĐỦ 60S
-                ------------------------------------------------
-
                 if WaitTime >= SERVER_HOP_TIME then
 
                     if CombatActive then
@@ -1110,10 +1193,6 @@ task.spawn(function()
                 PlayerDetectedTime = nil
                 PendingServerHop = false
                 DangerPlayerDetected = false
-
-                ------------------------------------------------
-                -- CHO PHÉP TỚI TARGET
-                ------------------------------------------------
 
                 if
                     not IsAtTarget()
@@ -1267,7 +1346,7 @@ task.spawn(function()
                 GetClosestPlayerDistance()
 
             ------------------------------------------------
-            -- <= 5 -> HOP NGAY
+            -- <= 5 -> HOP
             ------------------------------------------------
 
             if
@@ -1614,6 +1693,7 @@ print("[DIRECT TELEPORT DISTANCE]", TELEPORT_DISTANCE)
 print("[TWEEN SPEED]", TWEEN_SPEED)
 print("[M1 COUNT]", M1_COUNT)
 print("[M1 DELAY]", M1_DELAY)
+print("[SKILL 1 WAIT]", SKILL_KEY_DELAY)
 print("[F HOLD]", F_HOLD_TIME)
 print("[F AFTER DELAY]", AFTER_F_DELAY)
 print("[COMBAT PROTECTION] ON")
