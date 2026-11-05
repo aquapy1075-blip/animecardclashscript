@@ -60,6 +60,14 @@ local e=createRemoteColo();e.synced=true;e.resync=false;e.run={phase='diceCard',
  team={card('Other'),carry,card('Useless Goddess'),card('Idol')},diceCard=card('Useless Goddess')}
 calls={};now+=1;e.tick()
 assert(calls[1].payload.bonus=='buff' and calls[1].payload.target==2,'do not duplicate a nonstacking support')
+local e=createRemoteColo();calls={}
+local cards={card('Other'),card('Deathless Outlaw'),card('Useless Goddess'),card('Idol')}
+cards[4].dead=true
+response={ok=true,run={phase='ready',wave=5,team=cards,world={}}};now+=1;e.tick()
+assert(#state.teamCards==4 and state.teamCards[2].role=='carry' and state.teamCards[3].role=='support'
+ and state.teamCards[1].role=='normal' and state.teamCards[4].dead,'all team roles exposed to UI')
+cards[2].name='changed outside';assert(state.teamCards[2].name=='Deathless Outlaw','display snapshot independent of RPC tables')
+e.resync=true;response={ok=true};now+=1;e.tick();assert(#state.teamCards==0,'ended run clears displayed team')
 print('PASS: 1:1 World picks with resumed catch-up, variant support families, carry row 2 when available, fixed bench draft, dice upgrades, no duplicate aura')
 '''
 binary=os.environ.get('LUAU_BIN') or shutil.which('luau')

@@ -1985,6 +1985,7 @@ local flags={
     AO_Colo_Hell=true, AO_Colo_Endless=true, AO_Colo_StopFloor='30-40',
     AO_Rift_Walk=true, AO_Rift_Leave=true,
     AO_Reconnect=true, AO_UI_Theme='Midnight', AO_UI_Transparency=15,
+    AO_UI_WindowW=805, AO_UI_WindowH=565, AO_UI_WindowX=-1, AO_UI_WindowY=-1,
 }
 for _,b in ipairs(boss.bosses) do
     flags['AO_Boss_'..b.id]=b.selected
@@ -2285,6 +2286,7 @@ local uiProfile=setmetatable({}, {
 })
 local ui=UILibrary.Create({
     profile=uiProfile,
+    saveAppearance=deferAutoSave,
     playerGui=playerGui,
     state=state,
     flags=flags,
@@ -2427,11 +2429,20 @@ local function createRemoteColo()
     end
     local function updateRun(run)
         engine.run=run
+        state.teamCards={}
         if not run then return end
         state.phase=phaseNames[run.phase] or tostring(run.phase)
         state.lastSeenWave=math.max(0,(tonumber(run.wave) or 1)-1)
         local slot,card=carry(run)
         state.carrySlot=slot
+        for index=1,4 do
+            local member=(run.team or {})[index]
+            if member then
+                state.teamCards[index]={slot=index,name=tostring(member.name or '--'),
+                    role=index==slot and 'carry' or (sideScore(member)>0 and 'support' or 'normal'),
+                    dead=member.dead==true,hp=member.hp,maxHP=member.maxHP}
+            end
+        end
         state.noCarry=card~=nil and rank(card)==0 and cfg.restartUntilCarry and cfg.autoRerun
         state.carryName=card and card.name or nil
         state.carryHp=card and card.hp or nil

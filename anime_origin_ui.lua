@@ -5,6 +5,7 @@ local profile=ctx.profile
 local repaintControls=function() end
 local playerGui=ctx.playerGui
 local state=ctx.state
+if type(state.__animeUiDestroy)=='function' then state.__animeUiDestroy() end
 local flags=ctx.flags
 local cfg=ctx.cfg
 local Workspace=ctx.Workspace
@@ -26,7 +27,46 @@ local loadProfile=ctx.loadProfile
 local deleteProfile=ctx.deleteProfile
 local setAutoProfile=ctx.setAutoProfile
 local markCurrentForNextExecute=ctx.markCurrentForNextExecute
+local saveAppearance=ctx.saveAppearance or function() end
+local lifecycle={alive=true,connections={},tweens=setmetatable({}, {__mode='k'})}
+local TweenService=ctx.TweenService
+if not TweenService then pcall(function() TweenService=game:GetService('TweenService') end) end
+local function trackUI(connection)
+    lifecycle.connections[connection]=true
+    state.connections=state.connections or {}
+    state.connections[#state.connections+1]=connection
+    return connection
+end
+local function disconnectUI(connection)
+    if not connection then return end
+    pcall(function() connection:Disconnect() end)
+    lifecycle.connections[connection]=nil
+    for index=#(state.connections or {}),1,-1 do
+        if state.connections[index]==connection then table.remove(state.connections,index) end
+    end
+end
+local function animate(obj,properties,duration)
+    if not lifecycle.alive or not obj.Parent then return end
+    local previous=lifecycle.tweens[obj]
+    if previous then previous:Cancel() end
+    if not TweenService then for key,value in pairs(properties) do obj[key]=value end;return end
+    local tween=TweenService:Create(obj,TweenInfo.new(duration or .16,Enum.EasingStyle.Quint,Enum.EasingDirection.Out),properties)
+    lifecycle.tweens[obj]=tween
+    local connection
+    connection=tween.Completed:Connect(function()
+        connection:Disconnect()
+        if lifecycle.tweens[obj]==tween then lifecycle.tweens[obj]=nil end
+    end)
+    tween:Play()
+end
+local window={width=805,height=565,x=.5,y=.5,compact=false,minimized=false,visible=true}
+local applyResponsiveLayout=function() end
+local cancelInteraction=function() end
+local notify=function() end
+local tooltip=function() end
+local responsiveRows={}
 local themes={
+    Light={bg='F2F5FC',side='E7EDF8',panel='FFFFFF',row='EAF0FA',text='14213A',muted='526781',accent='4264D9',line='D1DBED'},
     Midnight={bg='0D1320',side='101A2B',panel='172338',row='22334D',text='EFF5FF',muted='96ABC8',accent='8BAFFF',line='2B405D'},
     Ocean={bg='0D1922',side='112635',panel='173247',row='204159',text='ECFAFF',muted='9BBCCC',accent='53C8E6',line='325267'},
     Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267'},
@@ -56,6 +96,8 @@ local function applyTransparency()
     updateTransparencyLabel(value)
 end
 local function color(role)
+    if role=='carry' then return rgb(flags.AO_UI_Theme=='Light' and '9B6500' or 'FFD479') end
+    if role=='support' then return rgb(flags.AO_UI_Theme=='Light' and '087B72' or '6AE3CC') end
     return themeColors[role] or Color3.fromRGB(255,255,255)
 end
 local function skin(obj,property,role)
@@ -100,9 +142,15 @@ local function uiButton(parent,caption,size)
         Font=Enum.Font.GothamMedium,TextSize=12,AutoButtonColor=true,
         TextTruncate=Enum.TextTruncate.AtEnd,
     })
-    corner(b,8)
+    corner(b,10)
     skin(b,'BackgroundColor3','row')
     skin(b,'TextColor3','text')
+    local outline=make('UIStroke',b,{Thickness=1,Transparency=1})
+    skin(outline,'Color','accent')
+    b.MouseEnter:Connect(function() animate(outline,{Transparency=.45},.12) end)
+    b.MouseLeave:Connect(function() animate(outline,{Transparency=1},.16) end)
+    b.MouseButton1Down:Connect(function() animate(outline,{Transparency=.1},.07) end)
+    b.MouseButton1Up:Connect(function() animate(outline,{Transparency=.45},.1) end)
     return b
 end
 
@@ -111,11 +159,16 @@ local root=make('ScreenGui',playerGui,{
     ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=9900,
 })
 state.gui=root
-local main=make('Frame',root,{
+local main=make('CanvasGroup',root,{
+    Name='Window',GroupTransparency=0,Active=true,
     Size=UDim2.fromOffset(805,565),Position=UDim2.new(.5,-402,.5,-282),
     BorderSizePixel=0,BackgroundTransparency=0,
 })
-corner(main,18)
+local shadow=make('Frame',root,{Name='WindowShadow',BorderSizePixel=0,
+    BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=.78,ZIndex=1})
+corner(shadow,20)
+main.ZIndex=2
+corner(main,16)
 skin(main,'BackgroundColor3','bg')
 stroke(main)
 local accentLine=make('Frame',main,{
@@ -124,24 +177,62 @@ local accentLine=make('Frame',main,{
 skin(accentLine,'BackgroundColor3','accent')
 make('UIGradient',accentLine,{Transparency=NumberSequence.new(0,.85)})
 local scale=make('UIScale',main,{Scale=1})
+local function viewport()
+    local camera=Workspace.CurrentCamera
+    return camera and camera.ViewportSize or Vector2.new(1280,720)
+end
+local function readGeometry()
+    local function number(key,fallback,low,high)
+        local value=tonumber(flags[key])
+        if not value or value~=value or value==math.huge or value==-math.huge then return fallback end
+        return math.clamp(value,low,high)
+    end
+    window.width=number('AO_UI_WindowW',805,600,1200)
+    window.height=number('AO_UI_WindowH',565,420,1000)
+    window.x=number('AO_UI_WindowX',.5,0,1)
+    window.y=number('AO_UI_WindowY',.5,0,1)
+    if tonumber(flags.AO_UI_WindowX)==-1 then window.x=.5 end
+    if tonumber(flags.AO_UI_WindowY)==-1 then window.y=.5 end
+end
 local function sizeForDevice()
-    local camera=Workspace.CurrentCamera
-    if not camera then return end
-    local view=camera.ViewportSize
-    local n=math.min(1,(view.X-24)/825,(view.Y-24)/585)
-    scale.Scale=math.max(.53,n)
-    main.Position=UDim2.new(.5,-402*scale.Scale,.5,-282*scale.Scale)
+    local view=viewport()
+    window.compact=view.X<680
+    local width=window.compact and math.min(window.width,math.max(240,view.X-16)) or window.width
+    local height=window.compact and math.min(window.height,math.max(260,view.Y-16)) or window.height
+    window.shownWidth=width;window.shownHeight=height
+    scale.Scale=math.min(1,math.max(.01,(view.X-16)/width),math.max(.01,(view.Y-16)/height))
+    local actualHeight=window.minimized and 57 or height
+    main.Size=UDim2.fromOffset(width,actualHeight)
+    main.Position=UDim2.fromOffset(math.max(0,view.X-width*scale.Scale)*window.x,
+        math.max(0,view.Y-actualHeight*scale.Scale)*window.y)
+    shadow.Position=UDim2.fromOffset(main.Position.X.Offset+4,main.Position.Y.Offset+7)
+    shadow.Size=UDim2.fromOffset(width*scale.Scale,actualHeight*scale.Scale)
+    applyResponsiveLayout()
+    if window.reflowOverlays then window.reflowOverlays() end
 end
-sizeForDevice()
-if Workspace.CurrentCamera then
-    local camera=Workspace.CurrentCamera
-    local c=camera:GetPropertyChangedSignal('ViewportSize'):Connect(sizeForDevice)
-    state.connections=state.connections or {}
-    state.connections[#state.connections+1]=c
+local function saveGeometry()
+    flags.AO_UI_WindowW=window.width;flags.AO_UI_WindowH=window.height
+    flags.AO_UI_WindowX=window.x;flags.AO_UI_WindowY=window.y
+    saveAppearance()
 end
+local cameraConnection
+local function bindCamera()
+    disconnectUI(cameraConnection)
+    local camera=Workspace.CurrentCamera
+    cameraConnection=camera and trackUI(camera:GetPropertyChangedSignal('ViewportSize'):Connect(function()
+        cancelInteraction();sizeForDevice()
+    end)) or nil
+    cancelInteraction();sizeForDevice()
+end
+readGeometry()
+bindCamera()
+trackUI(Workspace:GetPropertyChangedSignal('CurrentCamera'):Connect(bindCamera))
 local header=make('Frame',main,{
     Size=UDim2.new(1,0,0,57),BackgroundTransparency=1,
 })
+local headerRule=make('Frame',header,{Position=UDim2.new(0,16,1,-1),Size=UDim2.new(1,-32,0,1),
+    BackgroundTransparency=.5,BorderSizePixel=0})
+skin(headerRule,'BackgroundColor3','line')
 local iconTile=make('Frame',header,{
     Position=UDim2.fromOffset(16,12),Size=UDim2.fromOffset(34,34),BorderSizePixel=0,
 })
@@ -165,7 +256,8 @@ hide.Position=UDim2.new(1,-77,0,14)
 local dismiss=uiButton(header,'×',UDim2.fromOffset(30,28))
 dismiss.Position=UDim2.new(1,-42,0,14)
 
-local sidebar=make('Frame',main,{
+local sidebar=make('ScrollingFrame',main,{
+    CanvasSize=UDim2.fromOffset(0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=0,BackgroundTransparency=0,
     Position=UDim2.fromOffset(0,57),Size=UDim2.new(0,174,1,-57),BorderSizePixel=0,
 })
 skin(sidebar,'BackgroundColor3','side')
@@ -173,12 +265,12 @@ local divider=make('Frame',main,{
     Position=UDim2.fromOffset(173,57),Size=UDim2.new(0,1,1,-57),BorderSizePixel=0,
 })
 skin(divider,'BackgroundColor3','line')
-make('UIListLayout',sidebar,{
+local navLayout=make('UIListLayout',sidebar,{
     Padding=UDim.new(0,8),FillDirection=Enum.FillDirection.Vertical,
     HorizontalAlignment=Enum.HorizontalAlignment.Center,
     SortOrder=Enum.SortOrder.LayoutOrder,
 })
-make('UIPadding',sidebar,{PaddingTop=UDim.new(0,22)})
+local navPadding=make('UIPadding',sidebar,{PaddingTop=UDim.new(0,22)})
 local body=make('Frame',main,{
     Position=UDim2.fromOffset(175,57),Size=UDim2.new(1,-175,1,-57),
     BackgroundTransparency=1,ClipsDescendants=true,
@@ -212,6 +304,8 @@ for i,name in ipairs(tabNames) do
         selectedTab=name
         smallTitle.Text='CONTROL CENTER  /  '..string.upper(name)
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
+        page.Position=UDim2.fromOffset(0,9)
+        animate(page,{Position=UDim2.fromOffset(0,0)},.18)
         repaintControls()
     end)
 end
@@ -232,11 +326,13 @@ local function row(tab,label)
         Size=UDim2.new(1,-2,0,49),BorderSizePixel=0,
         LayoutOrder=orderCounter,
     })
-    corner(r,9)
+    corner(r,10)
     skin(r,'BackgroundColor3','panel')
+    stroke(r)
     local nameLabel=newText(r,label,13,true)
     nameLabel.Position=UDim2.fromOffset(14,0)
     nameLabel.Size=UDim2.new(1,-221,1,0)
+    responsiveRows[r]={label=nameLabel,kind='row'}
     return r
 end
 local function addStatus(tab,label,initial)
@@ -246,6 +342,7 @@ local function addStatus(tab,label,initial)
     s.Size=UDim2.new(0,246,1,0)
     s.TextXAlignment=Enum.TextXAlignment.Right
     statusLabels[label]=s
+    responsiveRows[r].kind='status';responsiveRows[r].value=s
     return s
 end
 local function addToggle(tab,label,key)
@@ -256,8 +353,8 @@ local function addToggle(tab,label,key)
     widgets[#widgets+1]=function()
         local on=flags[key]==true
         b.Text=on and 'ON  ●' or 'OFF  ○'
-        b.BackgroundColor3=on and color('accent') or color('row')
-        b.TextColor3=on and color('bg') or color('muted')
+        animate(b,{BackgroundColor3=on and color('accent') or color('row'),
+            TextColor3=on and color('bg') or color('muted')},.16)
     end
     return b
 end
@@ -269,30 +366,78 @@ local menu=make('Frame',root,{
 corner(menu,10)
 skin(menu,'BackgroundColor3','side')
 stroke(menu)
-local function hideMenu() menu.Visible=false end
+local menuConnections={}
+local menuSearch=make('TextBox',menu,{Name='DropdownSearch',Position=UDim2.fromOffset(8,8),
+    Size=UDim2.new(1,-16,0,36),Text='',PlaceholderText='Search options…',ClearTextOnFocus=false,
+    Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0,ZIndex=152})
+corner(menuSearch,8);skin(menuSearch,'BackgroundColor3','row');skin(menuSearch,'TextColor3','text')
+skin(menuSearch,'PlaceholderColor3','muted')
+local menuList=make('ScrollingFrame',menu,{Name='DropdownOptions',Position=UDim2.fromOffset(6,50),
+    Size=UDim2.new(1,-12,1,-56),BackgroundTransparency=1,BorderSizePixel=0,ZIndex=151,
+    CanvasSize=UDim2.fromOffset(0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=3})
+skin(menuList,'ScrollBarImageColor3','accent')
+make('UIListLayout',menuList,{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder})
+local menuData=nil
+local function releaseOwnFocus()
+    pcall(function()
+        local focused=UIS:GetFocusedTextBox()
+        if focused and focused:IsDescendantOf(root) then focused:ReleaseFocus() end
+    end)
+end
+local function hideMenu()
+    menu.Visible=false;menuData=nil
+    releaseOwnFocus()
+    for _,connection in ipairs(menuConnections) do connection:Disconnect() end
+    menuConnections={}
+    for _,child in ipairs(menuList:GetChildren()) do
+        if child:IsA('GuiButton') or child:IsA('TextLabel') then child:Destroy() end
+    end
+end
+local function renderMenuOptions()
+    if not menuData then return end
+    for _,connection in ipairs(menuConnections) do connection:Disconnect() end
+    menuConnections={}
+    for _,child in ipairs(menuList:GetChildren()) do
+        if child:IsA('GuiButton') or child:IsA('TextLabel') then child:Destroy() end
+    end
+    local query=tostring(menuSearch.Text):lower()
+    local count=0
+    for index,label in ipairs(menuData.options) do
+        if tostring(label):lower():find(query,1,true) then
+            count=count+1
+            local choice=uiButton(menuList,tostring(label),UDim2.new(1,-4,0,38))
+            choice.LayoutOrder=index;choice.ZIndex=152
+            local callback=menuData.choose
+            menuConnections[#menuConnections+1]=choice.MouseButton1Click:Connect(function()
+                hideMenu();callback(index,label)
+            end)
+        end
+    end
+    if count==0 then
+        local empty=newText(menuList,'No matching options',12,false)
+        empty.Size=UDim2.new(1,-8,0,38);empty.ZIndex=152
+    end
+    menuList.CanvasPosition=Vector2.new(0,0)
+end
+menuSearch:GetPropertyChangedSignal('Text'):Connect(renderMenuOptions)
 local function openMenu(anchor,options,choose)
-    for _,child in ipairs(menu:GetChildren()) do
-        if child:IsA('GuiButton') then child:Destroy() end
-    end
-    if #options==0 then options={'(empty)'} end
-    local height=#options*35+10
+    hideMenu()
+    local view=viewport()
+    local width=math.min(260,view.X-16)
+    local height=math.min(math.max(110,#options*43+60),300,view.Y-20)
     local position=anchor.AbsolutePosition
-    local camera=Workspace.CurrentCamera
-    local viewport=camera and camera.ViewportSize or Vector2.new(1920,1080)
-    local top=position.Y+anchor.AbsoluteSize.Y+4
-    if top+height>viewport.Y-8 then top=math.max(10,position.Y-height-4) end
-    menu.Size=UDim2.fromOffset(184,height)
-    menu.Position=UDim2.fromOffset(math.max(5,math.min(position.X,viewport.X-194)),top)
-    for i,label in ipairs(options) do
-        local choice=uiButton(menu,tostring(label),UDim2.fromOffset(174,31))
-        choice.Position=UDim2.fromOffset(5,5+(i-1)*35)
-        choice.ZIndex=152
-        choice.MouseButton1Click:Connect(function()
-            hideMenu()
-            choose(i,label)
-        end)
-    end
+    local top=position.Y+anchor.AbsoluteSize.Y+6
+    if top+height>view.Y-8 then top=position.Y-height-6 end
+    menu.Size=UDim2.fromOffset(width,height)
+    menu.Position=UDim2.fromOffset(math.clamp(position.X,8,math.max(8,view.X-width-8)),
+        math.clamp(top,8,math.max(8,view.Y-height-8)))
+    menuSearch.Text=''
+    menuData={options=options,choose=choose}
+    renderMenuOptions()
     menu.Visible=true
+    local target=menu.Size
+    menu.Size=UDim2.fromOffset(width,math.max(72,height-12))
+    animate(menu,{Size=target},.14)
 end
 local function addDropdown(tab,label,key,choices,indexed)
     local r=row(tab,label)
@@ -319,11 +464,11 @@ local function addInput(tab,label,key,placeholder)
         Font=Enum.Font.GothamMedium,PlaceholderText=placeholder or '',
         ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Center,
     })
-    corner(box,8)
+    corner(box,10)
     skin(box,'BackgroundColor3','row')
     skin(box,'TextColor3','text')
     skin(box,'PlaceholderColor3','muted')
-    box.FocusLost:Connect(function() setFlag(key,box.Text) end)
+    box.FocusLost:Connect(function() if lifecycle.alive then setFlag(key,box.Text) end end)
     widgets[#widgets+1]=function()
         if not box:IsFocused() then box.Text=tostring(flags[key] or '') end
     end
@@ -345,6 +490,8 @@ local function paintTheme()
     paintedTheme=theme
     for role,hex in pairs(themes[theme]) do themeColors[role]=rgb(hex) end
     for obj,properties in pairs(skinned) do
+        local tween=lifecycle.tweens[obj]
+        if tween then tween:Cancel();lifecycle.tweens[obj]=nil end
         if obj.Parent then
             for property,role in pairs(properties) do obj[property]=color(role) end
         end
@@ -352,6 +499,7 @@ local function paintTheme()
     return true
 end
 repaintControls=function()
+    if not lifecycle.alive then return end
     local themeChanged=paintTheme()
     local dirty=themeChanged
     for key,value in pairs(flags) do
@@ -365,28 +513,179 @@ repaintControls=function()
             b.TextColor3=(title==selectedTab) and color('bg') or color('muted')
         end
     end
+    local geometryChanged=false
+    for _,key in ipairs({'AO_UI_WindowW','AO_UI_WindowH','AO_UI_WindowX','AO_UI_WindowY'}) do
+        if window[key]~=flags[key] then geometryChanged=true;window[key]=flags[key] end
+    end
+    if geometryChanged then readGeometry();cancelInteraction();sizeForDevice() end
     applyTransparency()
     if dirty then for _,fn in ipairs(widgets) do fn() end end
 end
 
+local delay=ctx.Delay or function(seconds,callback) task.delay(seconds,callback) end
+local tooltipBox=make('TextLabel',root,{Name='Tooltip',Visible=false,Size=UDim2.fromOffset(240,54),
+    BackgroundTransparency=.06,BorderSizePixel=0,ZIndex=220,TextWrapped=true,
+    TextSize=12,Font=Enum.Font.Gotham,Text='',TextXAlignment=Enum.TextXAlignment.Left})
+corner(tooltipBox,10);skin(tooltipBox,'BackgroundColor3','side');skin(tooltipBox,'TextColor3','text')
+make('UIPadding',tooltipBox,{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,12)})
+tooltip=function(obj,text)
+    local held=false
+    local function show()
+        if not lifecycle.alive or not root.Enabled or not obj.Parent then return end
+        local view=viewport();local position=obj.AbsolutePosition
+        tooltipBox.Text=type(text)=='function' and text() or text
+        tooltipBox.Position=UDim2.fromOffset(math.clamp(position.X,6,math.max(6,view.X-246)),
+            math.clamp(position.Y+obj.AbsoluteSize.Y+7,6,math.max(6,view.Y-60)))
+        tooltipBox.Visible=true
+    end
+    obj.MouseEnter:Connect(show)
+    obj.MouseLeave:Connect(function() tooltipBox.Visible=false end)
+    obj.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.Touch then
+            held=true;delay(.5,function() if held then show() end end)
+        end
+    end)
+    obj.InputEnded:Connect(function() held=false;tooltipBox.Visible=false end)
+end
+local toast={queue={},active=false,generation=0}
+local toastBox=make('Frame',root,{Name='Toast',Visible=false,Size=UDim2.fromOffset(300,84),
+    BorderSizePixel=0,ZIndex=210})
+corner(toastBox,12);stroke(toastBox);skin(toastBox,'BackgroundColor3','side')
+local toastBar=make('Frame',toastBox,{Size=UDim2.new(0,3,1,-20),Position=UDim2.fromOffset(0,10),BorderSizePixel=0,ZIndex=211})
+local toastTitle=newText(toastBox,'',12,true);toastTitle.Position=UDim2.fromOffset(15,12)
+toastTitle.Size=UDim2.new(1,-30,0,18);toastTitle.ZIndex=211
+local toastMessage=newText(toastBox,'',12,false);toastMessage.Position=UDim2.fromOffset(15,34)
+toastMessage.Size=UDim2.new(1,-30,0,40);toastMessage.TextWrapped=true;toastMessage.ZIndex=211
+local function pumpToast()
+    if not lifecycle.alive or toast.active or not root.Enabled or #toast.queue==0 then return end
+    local item=table.remove(toast.queue,1)
+    toast.item=item
+    toast.active=true;toast.generation=toast.generation+1
+    local generation=toast.generation
+    local tint={info='8BAFFF',success='4ACBA7',warning='E3B658',error='ED8193'}
+    toastTitle.Text=string.upper(item.kind);toastBar.BackgroundColor3=rgb(tint[item.kind] or tint.info)
+    toastMessage.Text=item.message
+    local view=viewport();local width=math.min(320,view.X-24)
+    toastBox.Size=UDim2.fromOffset(width,84)
+    toastBox.Position=UDim2.fromOffset(view.X-width-12,view.Y+10);toastBox.Visible=true
+    animate(toastBox,{Position=UDim2.fromOffset(view.X-width-12,view.Y-96)},.2)
+    delay(item.duration,function()
+        if not lifecycle.alive or generation~=toast.generation then return end
+        animate(toastBox,{Position=UDim2.fromOffset(view.X-width-12,view.Y+10)},.16)
+        delay(.17,function()
+            if not lifecycle.alive or generation~=toast.generation then return end
+            toastBox.Visible=false;toast.active=false;toast.item=nil;pumpToast()
+        end)
+    end)
+end
+notify=function(message,kind,duration)
+    if not lifecycle.alive then return end
+    if kind~='success' and kind~='warning' and kind~='error' then kind='info' end
+    duration=tonumber(duration) or 3
+    if duration~=duration then duration=3 end
+    if #toast.queue>=8 then table.remove(toast.queue,1) end
+    toast.queue[#toast.queue+1]={message=tostring(message),kind=kind or 'info',
+        duration=math.clamp(duration,1,10)}
+    pumpToast()
+end
+window.reflowOverlays=function()
+    local view=viewport()
+    if menu.Visible then
+        local width=math.min(menu.Size.X.Offset,view.X-16)
+        local height=math.min(menu.Size.Y.Offset,view.Y-16)
+        animate(menu,{Size=UDim2.fromOffset(width,height),Position=UDim2.fromOffset(
+            math.clamp(menu.Position.X.Offset,8,math.max(8,view.X-width-8)),
+            math.clamp(menu.Position.Y.Offset,8,math.max(8,view.Y-height-8)))},.1)
+    end
+    tooltipBox.Visible=false
+end
+local function suspendOverlays()
+    hideMenu();tooltipBox.Visible=false
+    if toast.active then
+        if lifecycle.alive and toast.item then
+            if #toast.queue>=8 then table.remove(toast.queue) end
+            table.insert(toast.queue,1,toast.item)
+        end
+        toast.item=nil
+        toast.generation=toast.generation+1;toast.active=false;toastBox.Visible=false
+    end
+end
 section('Colosseum','Colosseum')
 addToggle('Colosseum','Auto Colosseum','AO_AutoColosseum')
-addStatus('Colosseum','Mode','Remote / no UI / no replay')
 addToggle('Colosseum','Hell Mode','AO_Colo_Hell')
 addToggle('Colosseum','Endless Mode','AO_Colo_Endless')
 addInput('Colosseum','Stop Floor','AO_Colo_StopFloor','35 or 30-40')
 section('Colosseum','Live Status')
 local colStatus=addStatus('Colosseum','Colo status','OFF')
-local colCarry=addStatus('Colosseum','Carry','--')
+local cardsRow=row('Colosseum','Cards')
+responsiveRows[cardsRow]=nil
+local cardsHeading=cardsRow:FindFirstChildWhichIsA('TextLabel')
+cardsHeading.Position=UDim2.fromOffset(14,10)
+cardsHeading.Size=UDim2.new(1,-100,0,20)
+local colFloor=newText(cardsRow,'Floor 0',12,false)
+colFloor.Position=UDim2.new(1,-100,0,10)
+colFloor.Size=UDim2.fromOffset(86,20)
+colFloor.TextXAlignment=Enum.TextXAlignment.Right
+local cardWidgets={}
+for index=1,4 do
+    local tile=make('Frame',cardsRow,{Name='TeamCard'..index,BorderSizePixel=0})
+    corner(tile,10);skin(tile,'BackgroundColor3','row')
+    local edge=make('Frame',tile,{Size=UDim2.new(0,3,1,-16),Position=UDim2.fromOffset(0,8),BorderSizePixel=0})
+    corner(edge,2)
+    local badge=newText(tile,string.format('%02d  CARD',index),10,true)
+    badge.Position=UDim2.fromOffset(12,7);badge.Size=UDim2.new(1,-24,0,15)
+    local name=newText(tile,'Waiting for team',13,true)
+    name.Position=UDim2.fromOffset(12,25);name.Size=UDim2.new(1,-24,0,22)
+    cardWidgets[index]={tile=tile,edge=edge,badge=badge,name=name}
+    tooltip(tile,function() return name.Text..' · '..badge.Text end)
+end
+local function paintCards(compact)
+    cardsRow.Size=UDim2.new(1,-2,0,compact and 286 or 164)
+    for index,widget in ipairs(cardWidgets) do
+        local column=(index-1)%2
+        local line=math.floor((index-1)/2)
+        widget.tile.Position=compact and UDim2.fromOffset(12,38+(index-1)*60)
+            or UDim2.new(column*.5,12-column*2,0,38+line*60)
+        widget.tile.Size=compact and UDim2.new(1,-24,0,54) or UDim2.new(.5,-22,0,54)
+    end
+end
+paintCards(false)
+local function refreshCards()
+    local team=state.teamCards
+    -- Older main scripts still work with the same Create(ctx) contract.
+    if not team then team={[state.carrySlot or 2]={name=state.carryName,role='carry'}} end
+    for index,widget in ipairs(cardWidgets) do
+        local card=team[index]
+        local role=card and card.role or 'normal'
+        local tintRole=role=='carry' and 'carry' or role=='support' and 'support' or 'muted'
+        local tint=color(tintRole)
+        skinned[widget.badge].TextColor3=tintRole
+        skinned[widget.name].TextColor3=role=='normal' and 'text' or tintRole
+        skinned[widget.edge]=skinned[widget.edge] or {}
+        skinned[widget.edge].BackgroundColor3=tintRole
+        local label=string.format('%02d  %s%s',index,role=='carry' and 'CARRY' or role=='support' and 'SUPPORT' or 'CARD',
+            card and card.dead and '  ·  DOWN' or '')
+        local name=card and card.name or 'Waiting for team'
+        if widget.badge.Text~=label then widget.badge.Text=label end
+        if widget.name.Text~=name then widget.name.Text=name end
+        if widget.badge.TextColor3~=tint then widget.badge.TextColor3=tint;widget.edge.BackgroundColor3=tint end
+        local textTint=role=='normal' and color('text') or tint
+        if widget.name.TextColor3~=textTint then widget.name.TextColor3=textTint end
+    end
+    local floor='Floor '..tostring(state.lastSeenWave or 0)
+    if colFloor.Text~=floor then colFloor.Text=floor end
+end
 local colProgress=addStatus('Colosseum','PB / Curse / Floor','--')
 local worldRow=row('Colosseum','World Blessing')
 worldRow.Size=UDim2.new(1,-2,0,83)
+responsiveRows[worldRow]=nil
 local worldHeading=worldRow:FindFirstChildWhichIsA('TextLabel')
 worldHeading.Position=UDim2.fromOffset(14,9)
 worldHeading.Size=UDim2.new(1,-28,0,20)
 local colWorld=newText(worldRow,'Total: --\nWave: --',12,false)
 colWorld.Position=UDim2.fromOffset(14,32)
 colWorld.Size=UDim2.new(1,-28,0,42)
+colWorld.TextWrapped=true
 colWorld.TextTruncate=Enum.TextTruncate.None
 colWorld.TextYAlignment=Enum.TextYAlignment.Top
 local function worldBuffText()
@@ -413,7 +712,6 @@ end
 
 section('Rift Gate','Rift Gate')
 addToggle('Rift Gate','Auto Rift','AO_AutoRift')
-addStatus('Rift Gate','Mode','Remote entry / native battle engine')
 addToggle('Rift Gate','Auto Leave','AO_Rift_Leave')
 section('Rift Gate','Live Status')
 local riftStatus=addStatus('Rift Gate','Rift status','OFF')
@@ -428,7 +726,7 @@ for _,b in ipairs(boss.bosses) do
     local r=make('Frame',tabPages['Multi-Boss'],{
         Size=UDim2.new(1,-2,0,51),BorderSizePixel=0,LayoutOrder=orderCounter,
     })
-    corner(r,9)
+    corner(r,10)
     skin(r,'BackgroundColor3','panel')
     local name=newText(r,b.name,13,true)
     name.Position=UDim2.fromOffset(12,0)
@@ -457,6 +755,7 @@ for _,b in ipairs(boss.bosses) do
         toggle.TextColor3=on and color('bg') or color('muted')
         dropdown.Text=boss.borders[math.clamp(tonumber(flags['AO_Border_'..b.id]) or 1,1,6)]..' ▾'
     end
+    responsiveRows[r]={kind='boss',label=name,toggle=toggle,dropdown=dropdown,timer=timer}
     b.displayCooldown=timer
 end
 local bossCounts=addStatus('Multi-Boss','Wins / Losses','0 / 0')
@@ -470,7 +769,7 @@ for _,stage in ipairs(raid.stages) do
     local item=make('Frame',tabPages['Raid'],{
         Size=UDim2.new(1,-2,0,49),BorderSizePixel=0,LayoutOrder=orderCounter,
     })
-    corner(item,9)
+    corner(item,10)
     skin(item,'BackgroundColor3','panel')
     local label=newText(item,'Stage '..stage.index..' - '..stage.name,13,true)
     label.Position=UDim2.fromOffset(14,0)
@@ -489,6 +788,7 @@ for _,stage in ipairs(raid.stages) do
         toggle.BackgroundColor3=enabled and color('accent') or color('row')
         toggle.TextColor3=enabled and color('bg') or color('muted')
     end
+    responsiveRows[item]={kind='stage',label=label,toggle=toggle,timer=timer}
     stage.displayCooldown=timer
 end
 local raidCounts=addStatus('Raid','Wins / Losses','0 / 0')
@@ -503,7 +803,7 @@ for _,stage in ipairs(siege.stages) do
     local item=make('Frame',tabPages['Siege'],{
         Size=UDim2.new(1,-2,0,49),BorderSizePixel=0,LayoutOrder=orderCounter,
     })
-    corner(item,9);skin(item,'BackgroundColor3','panel')
+    corner(item,10);skin(item,'BackgroundColor3','panel')
     local label=newText(item,string.format('%02d  %s',stage.index,stage.name),12,true)
     label.Position=UDim2.fromOffset(14,0)
     label.Size=UDim2.new(1,-238,1,0)
@@ -521,12 +821,14 @@ for _,stage in ipairs(siege.stages) do
         toggle.BackgroundColor3=on and color('accent') or color('row')
         toggle.TextColor3=on and color('bg') or color('muted')
     end
+    responsiveRows[item]={kind='stage',label=label,toggle=toggle,timer=timer}
     stage.displayCooldown=timer
 end
 
 section('Settings','Appearance')
-addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose'},false)
+addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Light','Ocean','Violet','Emerald','Rose'},false)
 local transparencyRow=row('Settings','Transparency')
+responsiveRows[transparencyRow].kind='transparency'
 local transparencyText=newText(transparencyRow,'15%',12,true)
 transparencyText.Position=UDim2.new(1,-60,0,0)
 transparencyText.Size=UDim2.new(0,46,1,0)
@@ -567,15 +869,6 @@ slider.InputBegan:Connect(function(input)
         adjustTransparency(input.Position.X)
     end
 end)
-state.connections=state.connections or {}
-state.connections[#state.connections+1]=UIS.InputChanged:Connect(function(input)
-    if sliderInput and (input==sliderInput or input.UserInputType==Enum.UserInputType.MouseMovement) then
-        adjustTransparency(input.Position.X)
-    end
-end)
-state.connections[#state.connections+1]=UIS.InputEnded:Connect(function(input)
-    if input==sliderInput then sliderInput=nil end
-end)
 local navigationBefore={}
 local navigationChanged={}
 local function restoreGameInput()
@@ -603,10 +896,25 @@ addAction('Settings','Reconnect Now','REJOIN',function()
     requestReconnect(true)
 end)
 section('Settings','Session')
-addAction('Settings','Stop Script','STOP SCRIPT',function()
+local confirmation=make('Frame',root,{Name='StopConfirmation',Visible=false,
+    Size=UDim2.fromOffset(290,164),AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fromScale(.5,.5),BorderSizePixel=0,ZIndex=200})
+corner(confirmation,14);stroke(confirmation);skin(confirmation,'BackgroundColor3','side')
+local confirmationTitle=newText(confirmation,'Stop all automation?',15,true)
+confirmationTitle.Position=UDim2.fromOffset(16,15);confirmationTitle.Size=UDim2.new(1,-32,0,25);confirmationTitle.ZIndex=201
+local confirmationNote=newText(confirmation,'This stops the script. Hiding the window keeps it running.',12,false)
+confirmationNote.Position=UDim2.fromOffset(16,48);confirmationNote.Size=UDim2.new(1,-32,0,44)
+confirmationNote.TextWrapped=true;confirmationNote.ZIndex=201
+local cancelStop=uiButton(confirmation,'CANCEL',UDim2.fromOffset(118,38))
+cancelStop.Position=UDim2.fromOffset(16,108);cancelStop.ZIndex=201
+local confirmStop=uiButton(confirmation,'STOP ALL',UDim2.fromOffset(118,38))
+confirmStop.Position=UDim2.fromOffset(156,108);confirmStop.ZIndex=201
+cancelStop.MouseButton1Click:Connect(function() confirmation.Visible=false end)
+confirmStop.MouseButton1Click:Connect(function()
     state.stop()
     if env.AnimeOriginV10_7==state then env.AnimeOriginV10_7=nil end
-    if root.Parent then root:Destroy() end
+end)
+addAction('Settings','Stop Script','STOP SCRIPT',function()
+    hideMenu();confirmation.Visible=true
 end)
 
 section('Config','Profiles')
@@ -617,7 +925,7 @@ local nameInput=make('TextBox',configRow,{
     BackgroundTransparency=0,Text=profile.currentProfile,ClearTextOnFocus=false,
     TextXAlignment=Enum.TextXAlignment.Center,
 })
-corner(nameInput,8)
+corner(nameInput,10)
 skin(nameInput,'BackgroundColor3','row')
 skin(nameInput,'TextColor3','text')
 local savedDrop
@@ -638,16 +946,19 @@ addAction('Config','Save','SAVE',function()
         nameInput.Text=profile.currentProfile
         if markCurrentForNextExecute() then
             profile.configStatus='Saved + will Auto Load: '..profile.currentProfile
+            notify(profile.configStatus,'success')
         end
     end
 end)
 addAction('Config','Load','LOAD',function()
     profile.revision=profile.revision+1
-    if loadProfile(nameInput.Text) then applyFlags();repaintControls() end
+    if loadProfile(nameInput.Text) then applyFlags();repaintControls();notify('Profile loaded: '..profile.currentProfile,'success')
+    else notify(profile.configStatus,'error') end
 end)
 addAction('Config','Delete','DELETE',function()
     profile.revision=profile.revision+1
-    if deleteProfile(nameInput.Text) then nameInput.Text=profile.currentProfile end
+    if deleteProfile(nameInput.Text) then nameInput.Text=profile.currentProfile;notify('Profile deleted','info')
+    else notify(profile.configStatus,'warning') end
 end)
 addAction('Config','Set as Auto Load','SET AUTO LOAD',function()
     profile.revision=profile.revision+1
@@ -665,59 +976,224 @@ section('Config','Profile Status')
 local configCurrent=addStatus('Config','Auto Load Profile','Default')
 local configResult=addStatus('Config','Storage','--')
 
--- Header drag; hide/minimize never stops an AUTO loop.
+-- Responsive window interaction: all coordinates are clamped to the viewport.
 local dragging=false
+local resizing=false
 local originMouse,originPosition,dragTouch
-header.InputBegan:Connect(function(input)
-    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
-        dragging=true
-        dragTouch=input.UserInputType==Enum.UserInputType.Touch and input or nil
-        originMouse=input.Position
-        originPosition=main.Position
-    end
-end)
-local dragMove=UIS.InputChanged:Connect(function(input)
-    if dragging and (input==dragTouch or input.UserInputType==Enum.UserInputType.MouseMovement) then
-        local delta=input.Position-originMouse
-        main.Position=UDim2.new(originPosition.X.Scale,originPosition.X.Offset+delta.X,
-            originPosition.Y.Scale,originPosition.Y.Offset+delta.Y)
-    end
-end)
-local dragEnd=UIS.InputEnded:Connect(function(input)
-    if input==dragTouch or input.UserInputType==Enum.UserInputType.MouseButton1 then
-        dragging=false;dragTouch=nil
-    end
-end)
-local hotkey=UIS.InputBegan:Connect(function(input,used)
-    if not used and input.KeyCode==Enum.KeyCode.RightShift and state.alive then
-        root.Enabled=not root.Enabled
-    end
-end)
-state.connections=state.connections or {}
-for _,conn in ipairs({dragMove,dragEnd,hotkey}) do
-    state.connections[#state.connections+1]=conn
+local resizeOrigin,resizeWidth,resizeHeight
+local resizeHandle=uiButton(main,'◢',UDim2.fromOffset(30,30))
+resizeHandle.Name='ResizeHandle';resizeHandle.Position=UDim2.new(1,-32,1,-32)
+resizeHandle.ZIndex=20;resizeHandle.BackgroundTransparency=1
+surfaces[resizeHandle]=nil
+local function pointer(input)
+    return input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch
 end
-hide.MouseButton1Click:Connect(function()
-    local small=main.Size.Y.Offset<100
-    main.Size=UDim2.fromOffset(805,small and 565 or 57)
-    sidebar.Visible=small
-    divider.Visible=small
-    body.Visible=small
-    hide.Text=small and '—' or '▢'
+cancelInteraction=function()
+    dragging=false;resizing=false;dragTouch=nil;sliderInput=nil
+end
+local function movedPosition(x,y)
+    local view=viewport()
+    local width=main.Size.X.Offset*scale.Scale
+    local height=main.Size.Y.Offset*scale.Scale
+    local maxX=math.max(0,view.X-width);local maxY=math.max(0,view.Y-height)
+    window.x=maxX>0 and math.clamp(x,0,maxX)/maxX or 0
+    window.y=maxY>0 and math.clamp(y,0,maxY)/maxY or 0
+    sizeForDevice()
+end
+header.InputBegan:Connect(function(input)
+    if pointer(input) then
+        dragging=true;resizing=false
+        dragTouch=input.UserInputType==Enum.UserInputType.Touch and input or nil
+        originMouse=input.Position;originPosition=main.Position
+    end
 end)
-dismiss.MouseButton1Click:Connect(function() root.Enabled=false end)
-local stopEverything=state.stop
-state.stop=function()
-    stopEverything()
+resizeHandle.InputBegan:Connect(function(input)
+    if pointer(input) and not window.minimized then
+        resizing=true;dragging=false
+        dragTouch=input.UserInputType==Enum.UserInputType.Touch and input or nil
+        resizeOrigin=input.Position;resizeWidth=window.width;resizeHeight=window.height
+    end
+end)
+local dragMove=trackUI(UIS.InputChanged:Connect(function(input)
+    if not root.Enabled then cancelInteraction();return end
+    if sliderInput and (input==sliderInput or input.UserInputType==Enum.UserInputType.MouseMovement) then
+        adjustTransparency(input.Position.X)
+    elseif (dragging or resizing) and (input==dragTouch or input.UserInputType==Enum.UserInputType.MouseMovement) then
+        if dragging then
+            movedPosition(originPosition.X.Offset+input.Position.X-originMouse.X,
+                originPosition.Y.Offset+input.Position.Y-originMouse.Y)
+        else
+            window.width=math.clamp(resizeWidth+(input.Position.X-resizeOrigin.X)/scale.Scale,600,1200)
+            window.height=math.clamp(resizeHeight+(input.Position.Y-resizeOrigin.Y)/scale.Scale,420,1000)
+            sizeForDevice()
+        end
+    end
+end))
+local dragEnd=trackUI(UIS.InputEnded:Connect(function(input)
+    if input==sliderInput then sliderInput=nil end
+    if input==dragTouch or input.UserInputType==Enum.UserInputType.MouseButton1 then
+        if (dragging or resizing) and not window.minimized then saveGeometry() end
+        dragging=false;resizing=false;dragTouch=nil
+    end
+end))
+local function setWindowVisible(show)
+    window.visibilityRevision=(window.visibilityRevision or 0)+1
+    local token=window.visibilityRevision
+    window.visible=show
+    cancelInteraction();suspendOverlays();confirmation.Visible=false
+    if show then
+        root.Enabled=true;shadow.Visible=true;sizeForDevice()
+        local target=main.Position
+        main.GroupTransparency=1
+        main.Position=UDim2.fromOffset(target.X.Offset,target.Y.Offset+12)
+        animate(main,{GroupTransparency=0,Position=target},.18)
+        pumpToast()
+    else
+        releaseOwnFocus()
+        animate(main,{GroupTransparency=1},.15)
+        delay(.16,function()
+            if not lifecycle.alive or token~=window.visibilityRevision then return end
+            root.Enabled=false;shadow.Visible=false;main.GroupTransparency=0
+        end)
+    end
+end
+local hotkey=trackUI(UIS.InputBegan:Connect(function(input,used)
+    if not used and input.KeyCode==Enum.KeyCode.RightShift and state.alive then
+        setWindowVisible(not window.visible)
+    elseif not used and input.UserInputType==Enum.UserInputType.MouseButton1 and menu.Visible then
+        local point=input.Position;local position=menu.AbsolutePosition;local size=menu.AbsoluteSize
+        if point.X<position.X or point.Y<position.Y or point.X>position.X+size.X or point.Y>position.Y+size.Y then hideMenu() end
+    end
+end))
+trackUI(root:GetPropertyChangedSignal('Enabled'):Connect(function()
+    if window.visible~=root.Enabled then
+        window.visibilityRevision=(window.visibilityRevision or 0)+1
+        window.visible=root.Enabled
+        local tween=lifecycle.tweens[main]
+        if tween then tween:Cancel();lifecycle.tweens[main]=nil end
+        main.GroupTransparency=0
+    end
+    if not root.Enabled then cancelInteraction();suspendOverlays();confirmation.Visible=false end
+    shadow.Visible=root.Enabled
+end))
+hide.MouseButton1Click:Connect(function()
+    cancelInteraction();suspendOverlays();confirmation.Visible=false
+    local position=main.Position
+    window.minimized=not window.minimized
+    local height=window.minimized and 57 or window.shownHeight
+    local view=viewport()
+    window.y=math.clamp(position.Y.Offset/math.max(1,view.Y-height*scale.Scale),0,1)
+    sizeForDevice()
+    local target=main.Size
+    main.Size=UDim2.fromOffset(window.shownWidth,window.minimized and height+12 or height-12)
+    animate(main,{Size=target},.18)
+    hide.Text=window.minimized and '▢' or '—'
+end)
+dismiss.MouseButton1Click:Connect(function() setWindowVisible(false) end)
+tooltip(hide,'Minimize the window. Automation keeps running.')
+tooltip(dismiss,'Hide this window. Press Right Shift to show it again.')
+tooltip(resizeHandle,'Drag to resize. Size and position are saved with the profile.')
+local stopWrapper
+local function destroyUI(removeRoot)
+    if not lifecycle.alive then return end
+    lifecycle.alive=false;toast.generation=toast.generation+1;toast.queue={}
     if GuiService then
         for property in pairs(navigationChanged) do
             pcall(function()
                 if GuiService[property]==false then GuiService[property]=navigationBefore[property] end
             end)
+            navigationChanged[property]=nil
         end
     end
-    for _,conn in ipairs(state.connections or {}) do pcall(function() conn:Disconnect() end) end
+    cancelInteraction();suspendOverlays()
+    for connection in pairs(lifecycle.connections) do disconnectUI(connection) end
+    for obj,tween in pairs(lifecycle.tweens) do tween:Cancel();lifecycle.tweens[obj]=nil end
+    if state.gui==root then state.gui=nil end
+    if state.__animeUiDestroy==destroyUI then state.__animeUiDestroy=nil end
+    if state.stop==stopWrapper then state.stop=state.__animeUiStopBase end
+    if removeRoot~=false and root.Parent then root:Destroy() end
 end
+trackUI(root.Destroying:Connect(function() destroyUI(false) end))
+local stopEverything=state.__animeUiStopBase or state.stop
+state.__animeUiStopBase=stopEverything
+state.__animeUiDestroy=destroyUI
+stopWrapper=function()
+    stopEverything()
+    destroyUI(true)
+end
+state.stop=stopWrapper
+-- Capture desktop geometry once; compact layouts never overwrite that baseline.
+for r,entry in pairs(responsiveRows) do
+    entry.height=r.Size.Y.Offset
+    entry.children={}
+    for _,obj in ipairs(r:GetChildren()) do
+        if obj:IsA('GuiObject') then
+            entry.children[obj]={Position=obj.Position,Size=obj.Size,TextXAlignment=obj:IsA('TextLabel') and obj.TextXAlignment or nil}
+        end
+    end
+end
+applyResponsiveLayout=function()
+    local compact=window.compact
+    local width=window.shownWidth
+    sidebar.Position=UDim2.fromOffset(0,57)
+    sidebar.Size=compact and UDim2.new(1,0,0,48) or UDim2.new(0,174,1,-57)
+    sidebar.AutomaticCanvasSize=compact and Enum.AutomaticSize.X or Enum.AutomaticSize.Y
+    sidebar.ScrollingDirection=compact and Enum.ScrollingDirection.X or Enum.ScrollingDirection.Y
+    navLayout.FillDirection=compact and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical
+    navLayout.HorizontalAlignment=compact and Enum.HorizontalAlignment.Left or Enum.HorizontalAlignment.Center
+    navPadding.PaddingTop=UDim.new(0,compact and 5 or 22)
+    navPadding.PaddingLeft=UDim.new(0,compact and 10 or 0)
+    for _,button in pairs(navButtons) do button.Size=compact and UDim2.fromOffset(145,38) or UDim2.new(1,-20,0,39) end
+    body.Position=compact and UDim2.fromOffset(0,105) or UDim2.fromOffset(175,57)
+    body.Size=compact and UDim2.new(1,0,1,-105) or UDim2.new(1,-175,1,-57)
+    sidebar.Visible=not window.minimized;body.Visible=not window.minimized
+    divider.Visible=not compact and not window.minimized
+    sessionBadge.Visible=not compact
+    bigTitle.Size=UDim2.new(1,-150,0,22)
+    smallTitle.Size=UDim2.new(1,-150,0,16)
+    resizeHandle.Visible=not window.minimized and not compact
+    paintCards(compact)
+    worldRow.Size=UDim2.new(1,-2,0,compact and 112 or 83)
+    colWorld.Size=UDim2.new(1,-28,1,-38)
+    for r,entry in pairs(responsiveRows) do
+        if not compact then
+            r.Size=UDim2.new(1,-2,0,entry.height)
+            for obj,properties in pairs(entry.children) do
+                obj.Position=properties.Position;obj.Size=properties.Size
+                if properties.TextXAlignment then obj.TextXAlignment=properties.TextXAlignment end
+            end
+        else
+            local contentWidth=width-40
+            r.Size=UDim2.new(1,-2,0,entry.kind=='boss' and 104 or entry.kind=='transparency' and 90 or 80)
+            entry.label.Position=UDim2.fromOffset(12,8)
+            entry.label.Size=UDim2.new(1,-24,0,22)
+            if entry.kind=='boss' then
+                entry.label.Size=UDim2.new(1,-130,0,28)
+                entry.timer.Position=UDim2.new(1,-112,0,8);entry.timer.Size=UDim2.fromOffset(100,28)
+                entry.toggle.Position=UDim2.fromOffset(12,51);entry.toggle.Size=UDim2.fromOffset(84,38)
+                entry.dropdown.Position=UDim2.fromOffset(108,51);entry.dropdown.Size=UDim2.new(1,-120,0,38)
+            elseif entry.kind=='stage' then
+                entry.timer.Position=UDim2.fromOffset(12,40);entry.timer.Size=UDim2.new(1,-130,0,30)
+                entry.timer.TextXAlignment=Enum.TextXAlignment.Left
+                entry.toggle.Position=UDim2.new(1,-106,0,36);entry.toggle.Size=UDim2.fromOffset(94,38)
+            elseif entry.kind=='transparency' then
+                transparencyText.Position=UDim2.new(1,-60,0,8);transparencyText.Size=UDim2.fromOffset(46,22)
+                slider.Position=UDim2.fromOffset(14,36);slider.Size=UDim2.new(1,-28,0,38)
+            elseif entry.kind=='status' then
+                entry.value.Position=UDim2.fromOffset(12,36);entry.value.Size=UDim2.new(1,-24,0,30)
+                entry.value.TextXAlignment=Enum.TextXAlignment.Left
+            else
+                for obj in pairs(entry.children) do
+                    if obj:IsA('GuiButton') or obj:IsA('TextBox') then
+                        local w=math.min(200,math.max(100,contentWidth-24))
+                        obj.Position=UDim2.new(1,-w-12,0,36);obj.Size=UDim2.fromOffset(w,36)
+                    end
+                end
+            end
+        end
+    end
+end
+sizeForDevice()
 local function showStatus(widget,value)
     if widget and widget.Parent and widget.Text~=value then widget.Text=value end
 end
@@ -725,7 +1201,8 @@ local overviewLast=0
 local function refreshOverview()
     if os.clock()-overviewLast<0.7 then return end
     overviewLast=os.clock()
-    if not root.Parent or not root.Enabled or main.Size.Y.Offset<100 then return end
+    if not lifecycle.alive or not root.Parent or not root.Enabled or window.minimized then return end
+    pumpToast()
     local running=state.enabled or rift.state.on or boss.state.running or raid.state.on or siege.state.on
     showStatus(sessionBadge,running and '● RUNNING' or '○ STANDBY')
     local badgeColor=running and color('accent') or color('muted')
@@ -735,7 +1212,7 @@ local function refreshOverview()
             or handoff.returning and ('RESUME COLO / '..tostring(state.transportStatus))
             or tostring((state.phase~='' and state.phase) or state.transportStatus or 'ON')) or 'OFF')
     showStatus(colStatus,colLabel)
-    showStatus(colCarry,tostring(state.carryName or '--')..'  /  Floor '..tostring(state.lastSeenWave))
+    refreshCards()
     showStatus(colProgress,tostring(state.supportCount)..'/8  /  '..tostring(state.curseCount)..'/3  /  '..tostring(state.stopFloor or cfg.stopSpec))
     showStatus(colWorld,worldBuffText())
     showStatus(riftStatus,(rift.state.on and 'ON / ' or 'OFF / ')..tostring(rift.state.status or 'WAITING'))
@@ -774,6 +1251,6 @@ local function refreshOverview()
 end
 repaintControls()
 refreshOverview()
-return {Repaint=repaintControls,Refresh=refreshOverview,Root=root}
+return {Repaint=repaintControls,Refresh=refreshOverview,Root=root,Notify=notify,Destroy=destroyUI}
 end
 return Library

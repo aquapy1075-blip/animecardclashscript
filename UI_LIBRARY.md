@@ -68,3 +68,70 @@ To capture the missing swap payload: disable automation, run
 `colo_remote_capture.lua`, manually swap two team positions in Colosseum, then
 run `getgenv().ColoRemoteCapture.stop()`. Share `colo_remote_capture.json` from
 the executor workspace. The recorder does not send requests itself.
+
+## UI refresh: Cards, adaptive layout and feedback
+
+Colosseum and Rift no longer show static Mode rows. Colosseum's **Cards** panel
+shows four slots from the latest server team snapshot: gold **CARRY**, teal
+**SUPPORT**, and normal theme text for other cards. Labels also identify roles
+without relying only on color. Defeated cards show **DOWN**. Floor has its own
+label. Card roles describe the existing strategy; displaying them does not
+reorder cards or alter combat.
+
+The UI adds a Light palette to the five existing themes. Window surfaces use
+rounded corners, subtle strokes, a shadow and an accent gradient. Short,
+cancellable TweenService transitions cover button hover/press, toggles, dropdown
+opening, tab entrance, minimize and hide/show. Right Shift and the × button keep
+their existing hide/show behavior; the Stop Script button now asks for confirmation.
+Calling `state.stop()` directly still stops immediately.
+
+On desktop, drag the lower-right handle to resize and drag the header to move.
+The window stays within the viewport. Size and normalized position are saved in
+the active JSON profile after an expanded-window drag/resize. Phone layouts use
+a horizontal scrolling tab bar, stacked controls, four single-column card tiles
+and readable unscaled labels. The library follows replacement cameras and viewport
+changes. Hiding the UI cancels active pointer interactions and releases focus
+only from its own text boxes.
+
+Dropdowns now include a case-insensitive search field and a capped scrolling list.
+Filtering preserves the original selected option index. Tooltips are available
+on hover and long touch. Toasts support info, success, warning and error, queue up
+to eight waiting messages, and resume pending feedback when the UI is shown.
+Profile save/load/delete actions use the same existing profile functions.
+
+### Compatibility
+
+Existing contracts are unchanged: `Library.Version == 1`, `Library.Create(ctx)`,
+`Repaint()`, `Refresh()` and `Root`. Existing main scripts can still create the UI
+without the new optional context fields; old carry-only state falls back gracefully.
+No existing function or parameter was renamed.
+
+Two optional returned methods were added:
+
+```lua
+ui.Notify("Saved", "success", 3) -- kind: info/success/warning/error; seconds optional
+ui.Destroy()                    -- destroys the UI; does not stop gameplay controllers
+```
+
+`Destroy()` is idempotent. It disconnects owned global listeners, cancels tweens,
+invalidates delayed effects, releases dropdown listeners and restores navigation
+preferences changed by the UI. Recreating the library with the same state cleans
+up the prior UI without chaining stop wrappers. All styling is scoped to objects
+created by this library.
+
+### Design comparison
+
+These are design reference points, not a performance ranking or a claim of full
+component parity. Library versions and forks differ.
+
+| Reference | Familiar strength | This dashboard's implementation |
+| --- | --- | --- |
+| Rayfield | Clear controls and feedback | Consistent controls, hover/press feedback, searchable options and queued toasts |
+| Fluent | Layered surfaces and theme hierarchy | Dark/Light palettes, shadow, translucent panels and short transitions |
+| Orion | Simple tabs and sections | Existing sections/profiles with adaptive phone navigation and live team cards |
+
+This library is tailored to the game's live team and automation state. Optional
+components such as ColorPicker and multi-dropdown remain outside this iteration.
+No FPS or memory benchmark against these libraries has been performed. Current
+validation consists of Luau compilation and mock Roblox UI/controller tests;
+visual appearance still needs confirmation in Roblox.
