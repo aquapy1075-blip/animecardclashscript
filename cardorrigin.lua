@@ -2762,6 +2762,40 @@ local function createRemoteColo()
         end
         return best,best and run.team[best]
     end
+    local worldStats={'hpPct','dmgPct','dr','critDmg'}
+    local function copyWorld(world)
+        if type(world)~='table' then return nil end
+        local copy={}
+        for _,key in ipairs(worldStats) do copy[key]=tonumber(world[key]) or 0 end
+        return copy
+    end
+    local function observeWorld(action,result)
+        local current=copyWorld(result.run and result.run.world)
+        if action=='lobby' or action=='start' then
+            -- A resumed run provides totals, but no history of its last reward.
+            engine.worldSnapshot=current
+            state.worldBuffs=current
+            state.worldBuffWave=action=='lobby' and result.run
+                and math.max(0,(tonumber(result.run.wave) or 1)-1) or nil
+            state.worldBuffDelta=nil
+            return
+        end
+        if action=='fight' then
+            state.worldBuffWave=tonumber(result.wave)
+                or (engine.run and tonumber(engine.run.wave))
+            state.worldBuffDelta={hpPct=0,dmgPct=0,dr=0,critDmg=0}
+        end
+        if current then
+            if engine.worldSnapshot and state.worldBuffDelta then
+                for _,key in ipairs(worldStats) do
+                    state.worldBuffDelta[key]=state.worldBuffDelta[key]
+                        +current[key]-engine.worldSnapshot[key]
+                end
+            end
+            engine.worldSnapshot=current
+            state.worldBuffs=current
+        end
+    end
     local function updateRun(run)
         engine.run=run
         if not run then return end
@@ -2823,6 +2857,7 @@ local function createRemoteColo()
         end
         state.verified=state.verified+1
         state.transportStatus='Remote: '..action
+        observeWorld(action,result)
         if result.run~=nil then updateRun(result.run)
         elseif action=='lobby' or action=='forfeit' or result.summary then updateRun(nil) end
         if action=='start' then

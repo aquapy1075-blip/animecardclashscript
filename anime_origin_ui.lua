@@ -377,6 +377,37 @@ section('Colosseum','Live Status')
 local colStatus=addStatus('Colosseum','Colo status','OFF')
 local colCarry=addStatus('Colosseum','Carry','--')
 local colProgress=addStatus('Colosseum','PB / Curse / Floor','--')
+local worldRow=row('Colosseum','World Blessing')
+worldRow.Size=UDim2.new(1,-2,0,83)
+local worldHeading=worldRow:FindFirstChildWhichIsA('TextLabel')
+worldHeading.Position=UDim2.fromOffset(14,9)
+worldHeading.Size=UDim2.new(1,-28,0,20)
+local colWorld=newText(worldRow,'Total: --\nWave: --',12,false)
+colWorld.Position=UDim2.fromOffset(14,32)
+colWorld.Size=UDim2.new(1,-28,0,42)
+colWorld.TextTruncate=Enum.TextTruncate.None
+colWorld.TextYAlignment=Enum.TextYAlignment.Top
+local function worldBuffText()
+    local names={{'hpPct','HP'},{'dmgPct','DMG'},{'dr','DR'},{'critDmg','Crit DMG'}}
+    local totals,gains={},{}
+    local function percent(value)
+        if math.abs(value)<.000001 then value=0 end
+        return string.format('%+.1f',value*100):gsub('%.0$','')..'%'
+    end
+    for _,item in ipairs(names) do
+        if state.worldBuffs then
+            totals[#totals+1]=item[2]..' '..percent(state.worldBuffs[item[1]] or 0)
+        end
+        local delta=state.worldBuffDelta and (state.worldBuffDelta[item[1]] or 0)
+        if delta and math.abs(delta)>.000001 then
+            gains[#gains+1]=item[2]..' '..percent(delta)
+        end
+    end
+    local wave=state.worldBuffWave
+    local recent=wave and wave>0 and ('Wave '..wave..': ') or 'Wave: '
+    recent=recent..(state.worldBuffDelta and (#gains>0 and table.concat(gains,'  /  ') or 'No World buff') or '--')
+    return 'Total: '..(#totals>0 and table.concat(totals,'  /  ') or '--')..'\n'..recent
+end
 
 section('Rift Gate','Rift Gate')
 addToggle('Rift Gate','Auto Rift','AO_AutoRift')
@@ -679,6 +710,7 @@ local function refreshOverview()
     showStatus(colStatus,colLabel)
     showStatus(colCarry,tostring(state.carryName or '--')..'  /  Floor '..tostring(state.lastSeenWave))
     showStatus(colProgress,tostring(state.supportCount)..'/8  /  '..tostring(state.curseCount)..'/3  /  '..tostring(state.stopFloor or cfg.stopSpec))
+    showStatus(colWorld,worldBuffText())
     showStatus(riftStatus,(rift.state.on and 'ON / ' or 'OFF / ')..tostring(rift.state.status or 'WAITING'))
     showStatus(riftTimer,rift.cooldownText())
     showStatus(riftClears,tostring(rift.state.clears or 0))

@@ -37,6 +37,7 @@ function Instance.new(class)
  local methods={}
  function methods:IsA(kind) return kind==class or kind=='GuiObject' and (class=='Frame' or class=='TextLabel' or class=='TextButton' or class=='TextBox' or class=='ScrollingFrame') or kind=='GuiButton' and class=='TextButton' end
  function methods:GetChildren() return children end
+ function methods:FindFirstChildWhichIsA(kind) for _,child in ipairs(children) do if child:IsA(kind) then return child end end end
  function methods:IsFocused() return false end
  function methods:Destroy() props.Parent=nil end
  function methods:GetPropertyChangedSignal(key) signals[key]=signals[key] or signal();return signals[key] end
@@ -116,6 +117,19 @@ button('×').MouseButton1Click:Fire();assert(not ui.Root.Enabled)
 UIS.InputBegan:Fire({KeyCode=Enum.KeyCode.RightShift},false)
 assert(ui.Root.Enabled,'Right Shift reopens dismissed UI')
 print('PASS: Right Shift hide/show, reopen after close, automation unchanged')
+state.worldBuffs={hpPct=.15,dmgPct=.2,dr=.1,critDmg=.25}
+state.worldBuffDelta={hpPct=0,dmgPct=.1,dr=0,critDmg=0};state.worldBuffWave=7
+now+=1;ui.Refresh()
+local worldLabel=find(function(o) return o:IsA('TextLabel') and o.Text:find('Total: HP +15%',1,true) end)
+assert(worldLabel.Text:find('DMG +20%',1,true) and worldLabel.Text:find('DR +10%',1,true)
+ and worldLabel.Text:find('Crit DMG +25%',1,true),'all world totals')
+assert(worldLabel.Text:find('Wave 7: DMG +10%',1,true),'latest wave gain')
+state.worldBuffDelta={};state.worldBuffWave=8;now+=1;ui.Refresh()
+assert(worldLabel.Text:find('Wave 8: No World buff',1,true),'wave without World blessing')
+state.worldBuffDelta=nil;now+=1;ui.Refresh()
+assert(worldLabel.Text:find('Wave 8: --',1,true),'resumed history is unknown')
+print('PASS: World Blessing totals, latest wave gain, no-buff wave, resumed unknown history')
+
 local before=#state.connections
 state.stop();assert(stateStopped)
 for _,c in ipairs(state.connections) do assert(not c.Connected,'external connections disconnected') end
