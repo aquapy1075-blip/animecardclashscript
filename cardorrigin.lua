@@ -1,19 +1,9 @@
 --[[
  ANIME ORIGIN V10.7 | Add Multi-Siege (12-stage round-robin + server cooldown), Siege/Boss/Rift arbiter
-  Preserve V10.6 Colosseum 0.25s cadence and Continue fix. No Colo logs.
+  Colosseum: remote state machine; no game UI, NPC, world teleport or replay.
   Colosseum / Rift Gate / Multi-Boss / Raid / Siege / Settings / Config
  Game source: provided rbxl + prior working V8.2/V5 scripts.
  Original battle/remote validation is handled by the game server.
-]]
---[[
-  ANIME ORIGIN V8.2 | Rayfield Gen2
-  Colosseum: PDF carry + unique blessings / curse memory + Hell/Endless/Cash Out.
-  Rift Gate: live event GUI flow (from the user's recorded Rift Gate session).
-  UI: Colosseum / Rift Gate / Settings / Config.
-  Both AUTO switches are persisted as stable Rayfield Gen2 flags and restored on execution.
-  Colosseum entry: WorldsTeleportRequest:FireServer("Colosseum") FIRST,
-  then humanoid walks to ColosseumPrompt and activates it.
-  Colosseum: original 0.25s action cadence; zero console/file debug overhead.
 ]]
 if not game:IsLoaded() then
     game.Loaded:Wait()
@@ -29,6 +19,23 @@ local player = Players.LocalPlayer
 if not player then return end
 local playerGui = player:WaitForChild('PlayerGui')
 local env = (getgenv and getgenv()) or _G
+local function loadUILibrary()
+    if type(env.AnimeOriginUILibrary)=='table' and env.AnimeOriginUILibrary.Version==1
+        and type(env.AnimeOriginUILibrary.Create)=='function' then
+        return env.AnimeOriginUILibrary
+    end
+    assert(type(loadstring)=='function','This executor must support loadstring')
+    local ok,library=pcall(function()
+        return loadstring(game:HttpGet(
+            'https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/main/anime_origin_ui.lua'
+        ))()
+    end)
+    assert(ok,'Cannot load Anime Origin UI from GitHub: '..tostring(library))
+    assert(type(library)=='table' and library.Version==1 and type(library.Create)=='function',
+        'Incompatible Anime Origin UI library')
+    return library
+end
+local UILibrary=loadUILibrary()
 
 -- Stop any older controllers: running two Colosseum or Rift loops causes collisions.
 for _,key in ipairs({
@@ -60,37 +67,22 @@ local cfg={
     wantHell=true,
     wantEndless=true,
     stopSpec='30-40',
-    autoApproachNPC=true,
-    useSignalFirst=true,
-    inputFallback=true,
-    chooseRandomWorldBuff=false,
-    pdfStrategy=true,
+    remoteColo=true,
     maxDraftRerolls=4,
     restartUntilCarry=true, -- PDF carry search is always enabled; no UI option
     allowSupports=true,
-    autoBattleSpeed=false,
     poll=.25,
-    ackWait=1.8,
-    maxSacredBindAttempts=2,
-    actionGap=.65,
 }
 local rng=Random.new()
 local state={
-    alive=true, enabled=false, window=nil,
-    phase='', pending=nil, draftDone={}, picked={}, blocked=false,
-    badSupport=false,lastPrompt=0,lastStatus='',lastPhase='',
-    clickCount=0,verified=0,lastUnknown=0,delayUntil=0,dice=nil,
+    alive=true, enabled=false, remoteColo=cfg.remoteColo,
+    phase='', pending=nil, blocked=false, verified=0,
     stopFloor=nil,runCount=0,lastSeenWave=0,
-    sacredStep=nil,sacredAt=0,sacredPlan=nil,
-    carryName=nil,carrySlot=nil,teamNames={},carryHp=nil,carryDmg=nil,
-    carryImmunity=false,carryDodge=false,noCarry=false,devilChosen={},
-    supportOwned={},supportCount=0,supportPendingNames=nil,
-    curseCount=0,curseUnavailable={},sacredChosen={},sacredUnavailable={},
-    draftRerolls=0,draftRerollDisabled=false,supportRouteCount={},
-    blessingsGiven=0,worldHpCount=0,worldDmgCount=0,noCarryCashout=false,
+    carryName=nil,carrySlot=nil,carryHp=nil,carryDmg=nil,
+    carryImmunity=false,carryDodge=false,noCarry=false,
+    supportCount=0,curseCount=0,sacredChosen={},draftRerolls=0,
     transportStage='idle',transportAt=0,transportAttempts=0,transportOrigin=nil,
-    transportStatus='Ready',
-    reconnectStatus='Monitoring',
+    transportStatus='Ready',reconnectStatus='Monitoring',
 }
 env.AnimeOriginV10_7=state
 -- No Colosseum logs, snapshots, copies or file writes.  Errors remain on UI
@@ -565,7 +557,7 @@ end
                     or s.runActive
                     or (s.isCleared and alert and inGate(alert))
                     or (p=='INSIDE' and s.lastEntryEpoch>s.lastClearEpoch)
-                if state.enabled and not state.blocked then
+                if state.enabled and not state.blocked and not state.remoteColo then
                     if handoff.returning then
                         s.status='Colosseum resuming; Rift standing by'
                         return
@@ -1841,7 +1833,7 @@ local function createRaidController(mainState)
         task.spawn(function()
             while st.alive and mainState.alive and st.on and token==st.epoch do
                 requestState()
-                if mainState.enabled then
+                if mainState.enabled and not mainState.remoteColo then
                     setStatus('Waiting for Colosseum')
                 elseif not st.lastServerState then
                     setStatus('Waiting for RaidStateSync / opening Raid NPC')
@@ -2308,7 +2300,7 @@ local function createSiegeController(mainState)
                         say('Turn OFF game-native Siege Auto-Stage '..st.nativeStage..' first')
                         return
                     end
-                    if mainState.enabled then
+                    if mainState.enabled and not mainState.remoteColo then
                         say('Waiting for Colosseum (exclusive)')
                         return
                     end
@@ -2395,7 +2387,7 @@ local flags={
     AO_AutoColosseum=false, AO_AutoRift=false, AO_AutoBoss=false, AO_AutoRaid=false, AO_AutoSiege=false,
     AO_Colo_Hell=true, AO_Colo_Endless=true, AO_Colo_StopFloor='30-40',
     AO_Rift_Walk=true, AO_Rift_Leave=true,
-    AO_Reconnect=true, AO_UI_Theme='Midnight',
+    AO_Reconnect=true, AO_UI_Theme='Midnight', AO_UI_Transparency=15,
 }
 for _,b in ipairs(boss.bosses) do
     flags['AO_Boss_'..b.id]=b.selected
@@ -2570,6 +2562,9 @@ local function deferAutoSave()
     end)
 end
 local function applyFlags()
+    local alpha=tonumber(flags.AO_UI_Transparency) or 15
+    if alpha~=alpha then alpha=15 end
+    flags.AO_UI_Transparency=math.clamp(math.floor(alpha+.5),0,65)
     cfg.wantHell=flags.AO_Colo_Hell==true
     cfg.wantEndless=flags.AO_Colo_Endless==true
     if cfg.stopSpec~=flags.AO_Colo_StopFloor then
@@ -2596,9 +2591,7 @@ local function applyFlags()
     local wantBoss=flags.AO_AutoBoss==true
     local wantRaid=flags.AO_AutoRaid==true
     local wantSiege=flags.AO_AutoSiege==true
-    -- Colosseum + Rift may BOTH be ON. Rift preempts only at safe
-    -- Colosseum boundaries; Boss/Raid remain exclusive with Colosseum.
-    if wantColo then wantBoss=false;wantRaid=false;wantSiege=false end
+    -- Remote Colo owns no battle UI and can run alongside other modes.
     flags.AO_AutoColosseum=wantColo
     flags.AO_AutoRift=wantRift
     flags.AO_AutoBoss=wantBoss
@@ -2612,8 +2605,9 @@ local function applyFlags()
         state.transportAt=0
         state.transportAttempts=0
         state.transportOrigin=nil
-        state.transportStatus='Teleporting to Colosseum'
+        state.transportStatus='Connecting to ColosseumRemote'
     end
+    if wantColo and not state.enabled then state.remoteNeedsSync=true end
     state.enabled=wantColo and not state.blocked
     if not state.enabled then
         state.pending=nil
@@ -2635,19 +2629,17 @@ local function setFlag(key,value)
     if flags[key]==nil then return end
     local wasOn=flags[key]==true
     flags[key]=value
+    if key=='AO_UI_Transparency' then
+        local alpha=tonumber(value) or 15
+        if alpha~=alpha then alpha=15 end
+        flags[key]=math.clamp(math.floor(alpha+.5),0,65)
+        repaintControls()
+        deferAutoSave()
+        return
+    end
     if key=='AO_AutoColosseum' and value==true and not wasOn and state.blocked then
         state.blocked=false;state.blockedReason=nil
         state.pending=nil;state.phase='';state.delayUntil=os.clock()+.5
-    end
-    -- Colo/Rift coexist. Boss or Raid remain mutually exclusive with Colo.
-    if value==true then
-        if key=='AO_AutoColosseum' then
-            flags.AO_AutoBoss=false
-            flags.AO_AutoRaid=false
-            flags.AO_AutoSiege=false
-        elseif key=='AO_AutoBoss' or key=='AO_AutoRaid' or key=='AO_AutoSiege' then
-            flags.AO_AutoColosseum=false
-        end
     end
     if key=='AO_Colo_StopFloor' and not validStopSpec(value) then
         flags[key]=cfg.stopSpec
@@ -2677,588 +2669,50 @@ print('[ANIME ORIGIN / CONFIG] Loaded profile='..tostring(currentProfile)
     ..' Raid='..tostring(flags.AO_AutoRaid)
     ..' Siege='..tostring(flags.AO_AutoSiege))
 
-local themes={
-    Midnight={bg='101522',side='141C2B',panel='1B2536',row='232F43',text='EDF4FF',muted='96AAC5',accent='7C9EFF',line='33445E'},
-    Ocean={bg='0D1922',side='112635',panel='173247',row='204159',text='ECFAFF',muted='9BBCCC',accent='53C8E6',line='325267'},
-    Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267'},
-    Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454'},
-    Rose={bg='23171C',side='311D27',panel='3E2633',row='503442',text='FFEFF4',muted='D9A9BC',accent='FF8FB2',line='704859'},
-}
-local function rgb(hex)
-    return Color3.fromRGB(tonumber(hex:sub(1,2),16),tonumber(hex:sub(3,4),16),tonumber(hex:sub(5,6),16))
-end
-local themeColors={}
-local skinned={}
-local function color(role)
-    return themeColors[role] or Color3.fromRGB(255,255,255)
-end
-local function skin(obj,property,role)
-    skinned[#skinned+1]={obj=obj,property=property,role=role}
-    obj[property]=color(role)
-    return obj
-end
-local function make(class,parent,props)
-    local obj=Instance.new(class)
-    for key,value in pairs(props or {}) do obj[key]=value end
-    obj.Parent=parent
-    return obj
-end
-local function corner(obj,size)
-    make('UICorner',obj,{CornerRadius=UDim.new(0,size or 9)})
-end
-local function stroke(obj)
-    local s=make('UIStroke',obj,{Thickness=1,Transparency=0.15})
-    skin(s,'Color','line')
-end
-local function newText(parent,label,size,bold)
-    local l=make('TextLabel',parent,{
-        BackgroundTransparency=1,Text=tostring(label),
-        Font=bold and Enum.Font.GothamBold or Enum.Font.Gotham,
-        TextSize=size or 13,TextXAlignment=Enum.TextXAlignment.Left,
-        TextTruncate=Enum.TextTruncate.AtEnd,BorderSizePixel=0,
-    })
-    skin(l,'TextColor3',bold and 'text' or 'muted')
-    return l
-end
-local function uiButton(parent,caption,size)
-    local b=make('TextButton',parent,{
-        Text=caption,Size=size or UDim2.fromOffset(135,32),
-        BackgroundTransparency=0,BorderSizePixel=0,
-        Font=Enum.Font.GothamMedium,TextSize=12,AutoButtonColor=true,
-        TextTruncate=Enum.TextTruncate.AtEnd,
-    })
-    corner(b,8)
-    skin(b,'BackgroundColor3','row')
-    skin(b,'TextColor3','text')
-    return b
-end
-
-local root=make('ScreenGui',playerGui,{
-    Name='AnimeOriginV10_7_UI',ResetOnSpawn=false,IgnoreGuiInset=true,
-    ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=9900,
+local uiProfile=setmetatable({}, {
+    __index=function(_,key)
+        if key=='autoProfile' then return autoProfile end
+        if key=='configStatus' then return configStatus end
+        if key=='currentProfile' then return currentProfile end
+        if key=='revision' then return revision end
+        if key=='storedNames' then return storedNames end
+    end,
+    __newindex=function(_,key,value)
+        if key=='autoProfile' then autoProfile=value;return end
+        if key=='configStatus' then configStatus=value;return end
+        if key=='currentProfile' then currentProfile=value;return end
+        if key=='revision' then revision=value;return end
+        if key=='storedNames' then storedNames=value;return end
+        error('Unknown UI profile field: '..tostring(key))
+    end,
 })
-state.gui=root
-local main=make('Frame',root,{
-    Size=UDim2.fromOffset(805,565),Position=UDim2.new(.5,-402,.5,-282),
-    BorderSizePixel=0,BackgroundTransparency=0,
+local ui=UILibrary.Create({
+    profile=uiProfile,
+    playerGui=playerGui,
+    state=state,
+    flags=flags,
+    cfg=cfg,
+    Workspace=Workspace,
+    env=env,
+    UIS=UIS,
+    rift=rift,
+    boss=boss,
+    raid=raid,
+    siege=siege,
+    reconnect=reconnect,
+    handoff=handoff,
+    setFlag=setFlag,
+    applyFlags=applyFlags,
+    requestReconnect=requestReconnect,
+    loadIndex=loadIndex,
+    saveProfile=saveProfile,
+    loadProfile=loadProfile,
+    deleteProfile=deleteProfile,
+    setAutoProfile=setAutoProfile,
+    markCurrentForNextExecute=markCurrentForNextExecute,
 })
-corner(main,15)
-skin(main,'BackgroundColor3','bg')
-stroke(main)
-local scale=make('UIScale',main,{Scale=1})
-local function sizeForDevice()
-    local camera=Workspace.CurrentCamera
-    if not camera then return end
-    local view=camera.ViewportSize
-    local n=math.min(1,(view.X-24)/825,(view.Y-24)/585)
-    scale.Scale=math.max(.53,n)
-    main.Position=UDim2.new(.5,-402*scale.Scale,.5,-282*scale.Scale)
-end
-sizeForDevice()
-if Workspace.CurrentCamera then
-    local camera=Workspace.CurrentCamera
-    local c=camera:GetPropertyChangedSignal('ViewportSize'):Connect(sizeForDevice)
-    state.connections=state.connections or {}
-    state.connections[#state.connections+1]=c
-end
-local header=make('Frame',main,{
-    Size=UDim2.new(1,0,0,57),BackgroundTransparency=1,
-})
-local iconTile=make('Frame',header,{
-    Position=UDim2.fromOffset(16,12),Size=UDim2.fromOffset(34,34),BorderSizePixel=0,
-})
-corner(iconTile,10)
-skin(iconTile,'BackgroundColor3','accent')
-local monogram=newText(iconTile,'AO',12,true)
-monogram.TextColor3=Color3.fromRGB(17,23,37)
-monogram.TextXAlignment=Enum.TextXAlignment.Center
-monogram.Size=UDim2.fromScale(1,1)
-local bigTitle=newText(header,'ANIME ORIGIN',17,true)
-bigTitle.Position=UDim2.fromOffset(62,10)
-bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'Automation Hub  /  V10.7',11,false)
-smallTitle.Position=UDim2.fromOffset(63,32)
-smallTitle.Size=UDim2.fromOffset(260,16)
-local hide=uiButton(header,'—',UDim2.fromOffset(30,28))
-hide.Position=UDim2.new(1,-77,0,14)
-local dismiss=uiButton(header,'×',UDim2.fromOffset(30,28))
-dismiss.Position=UDim2.new(1,-42,0,14)
-
-local sidebar=make('Frame',main,{
-    Position=UDim2.fromOffset(0,57),Size=UDim2.new(0,174,1,-57),BorderSizePixel=0,
-})
-skin(sidebar,'BackgroundColor3','side')
-local divider=make('Frame',main,{
-    Position=UDim2.fromOffset(173,57),Size=UDim2.new(0,1,1,-57),BorderSizePixel=0,
-})
-skin(divider,'BackgroundColor3','line')
-make('UIListLayout',sidebar,{
-    Padding=UDim.new(0,8),FillDirection=Enum.FillDirection.Vertical,
-    HorizontalAlignment=Enum.HorizontalAlignment.Center,
-    SortOrder=Enum.SortOrder.LayoutOrder,
-})
-make('UIPadding',sidebar,{PaddingTop=UDim.new(0,22)})
-local body=make('Frame',main,{
-    Position=UDim2.fromOffset(175,57),Size=UDim2.new(1,-175,1,-57),
-    BackgroundTransparency=1,ClipsDescendants=true,
-})
-local selectedTab='Colosseum'
-local navButtons={}
-local tabPages={}
-local tabNames={'Colosseum','Rift Gate','Multi-Boss','Raid','Siege','Settings','Config'}
-for i,name in ipairs(tabNames) do
-    local tab=uiButton(sidebar,name,UDim2.new(1,-20,0,39))
-    tab.LayoutOrder=i
-    tab.TextXAlignment=Enum.TextXAlignment.Left
-    make('UIPadding',tab,{PaddingLeft=UDim.new(0,14)})
-    navButtons[name]=tab
-    local page=make('ScrollingFrame',body,{
-        Name=name,Position=UDim2.fromOffset(0,0),Size=UDim2.fromScale(1,1),
-        BackgroundTransparency=1,BorderSizePixel=0,Visible=name==selectedTab,
-        CanvasSize=UDim2.fromOffset(0,0),AutomaticCanvasSize=Enum.AutomaticSize.Y,
-        ScrollBarThickness=4,ScrollBarImageTransparency=.25,
-    })
-    skin(page,'ScrollBarImageColor3','accent')
-    make('UIPadding',page,{
-        PaddingTop=UDim.new(0,14),PaddingBottom=UDim.new(0,16),
-        PaddingLeft=UDim.new(0,18),PaddingRight=UDim.new(0,19),
-    })
-    make('UIListLayout',page,{
-        Padding=UDim.new(0,9),SortOrder=Enum.SortOrder.LayoutOrder,
-    })
-    tabPages[name]=page
-    tab.MouseButton1Click:Connect(function()
-        selectedTab=name
-        for title,p in pairs(tabPages) do p.Visible=(title==name) end
-        repaintControls()
-    end)
-end
-local widgets={}
-local statusLabels={}
-local orderCounter=0
-local function section(tab,label)
-    orderCounter=orderCounter+1
-    local t=newText(tabPages[tab],label,15,true)
-    t.Size=UDim2.new(1,0,0,30)
-    t.LayoutOrder=orderCounter
-    return t
-end
-local function row(tab,label)
-    orderCounter=orderCounter+1
-    local parent=tabPages[tab]
-    local r=make('Frame',parent,{
-        Size=UDim2.new(1,-2,0,49),BorderSizePixel=0,
-        LayoutOrder=orderCounter,
-    })
-    corner(r,9)
-    skin(r,'BackgroundColor3','panel')
-    local nameLabel=newText(r,label,13,true)
-    nameLabel.Position=UDim2.fromOffset(14,0)
-    nameLabel.Size=UDim2.new(1,-221,1,0)
-    return r
-end
-local function addStatus(tab,label,initial)
-    local r=row(tab,label)
-    local s=newText(r,initial or '--',12,false)
-    s.Position=UDim2.new(1,-260,0,0)
-    s.Size=UDim2.new(0,246,1,0)
-    s.TextXAlignment=Enum.TextXAlignment.Right
-    statusLabels[label]=s
-    return s
-end
-local function addToggle(tab,label,key)
-    local r=row(tab,label)
-    local b=uiButton(r,'OFF',UDim2.fromOffset(94,31))
-    b.Position=UDim2.new(1,-109,.5,-15)
-    b.MouseButton1Click:Connect(function() setFlag(key,not flags[key]) end)
-    widgets[#widgets+1]=function()
-        local on=flags[key]==true
-        b.Text=on and 'ON  ●' or 'OFF  ○'
-        b.BackgroundColor3=on and color('accent') or color('row')
-        b.TextColor3=on and color('bg') or color('muted')
-    end
-    return b
-end
-
-local menu=make('Frame',root,{
-    Visible=false,Size=UDim2.fromOffset(184,0),BorderSizePixel=0,
-    BackgroundTransparency=0,ZIndex=150,
-})
-corner(menu,10)
-skin(menu,'BackgroundColor3','side')
-stroke(menu)
-local function hideMenu() menu.Visible=false end
-local function openMenu(anchor,options,choose)
-    for _,child in ipairs(menu:GetChildren()) do
-        if child:IsA('GuiButton') then child:Destroy() end
-    end
-    if #options==0 then options={'(empty)'} end
-    local height=#options*35+10
-    local position=anchor.AbsolutePosition
-    local camera=Workspace.CurrentCamera
-    local viewport=camera and camera.ViewportSize or Vector2.new(1920,1080)
-    local top=position.Y+anchor.AbsoluteSize.Y+4
-    if top+height>viewport.Y-8 then top=math.max(10,position.Y-height-4) end
-    menu.Size=UDim2.fromOffset(184,height)
-    menu.Position=UDim2.fromOffset(math.max(5,math.min(position.X,viewport.X-194)),top)
-    for i,label in ipairs(options) do
-        local choice=uiButton(menu,tostring(label),UDim2.fromOffset(174,31))
-        choice.Position=UDim2.fromOffset(5,5+(i-1)*35)
-        choice.ZIndex=152
-        choice.MouseButton1Click:Connect(function()
-            hideMenu()
-            choose(i,label)
-        end)
-    end
-    menu.Visible=true
-end
-local function addDropdown(tab,label,key,choices,indexed)
-    local r=row(tab,label)
-    local b=uiButton(r,'--  ▾',UDim2.fromOffset(180,31))
-    b.Position=UDim2.new(1,-195,.5,-15)
-    b.MouseButton1Click:Connect(function()
-        if menu.Visible then hideMenu();return end
-        openMenu(b,choices,function(index,value)
-            setFlag(key,indexed and index or value)
-        end)
-    end)
-    widgets[#widgets+1]=function()
-        local v=flags[key]
-        if indexed then v=choices[math.clamp(tonumber(v) or 1,1,#choices)] end
-        b.Text=tostring(v or '--')..'  ▾'
-    end
-    return b
-end
-local function addInput(tab,label,key,placeholder)
-    local r=row(tab,label)
-    local box=make('TextBox',r,{
-        Size=UDim2.fromOffset(180,31),Position=UDim2.new(1,-195,.5,-15),
-        BackgroundTransparency=0,BorderSizePixel=0,TextSize=13,
-        Font=Enum.Font.GothamMedium,PlaceholderText=placeholder or '',
-        ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Center,
-    })
-    corner(box,8)
-    skin(box,'BackgroundColor3','row')
-    skin(box,'TextColor3','text')
-    skin(box,'PlaceholderColor3','muted')
-    box.FocusLost:Connect(function() setFlag(key,box.Text) end)
-    widgets[#widgets+1]=function()
-        if not box:IsFocused() then box.Text=tostring(flags[key] or '') end
-    end
-    return box
-end
-local function addAction(tab,label,caption,callback)
-    local r=row(tab,label)
-    local b=uiButton(r,caption,UDim2.fromOffset(180,31))
-    b.Position=UDim2.new(1,-195,.5,-15)
-    b.MouseButton1Click:Connect(callback)
-    return b
-end
-local function paintTheme()
-    local raw=themes[flags.AO_UI_Theme] or themes.Midnight
-    for role,hex in pairs(raw) do themeColors[role]=rgb(hex) end
-    for _,item in ipairs(skinned) do
-        if item.obj.Parent then
-            pcall(function() item.obj[item.property]=color(item.role) end)
-        end
-    end
-end
-repaintControls=function()
-    paintTheme()
-    for title,b in pairs(navButtons) do
-        b.BackgroundColor3=(title==selectedTab) and color('accent') or color('side')
-        b.TextColor3=(title==selectedTab) and color('bg') or color('muted')
-    end
-    for _,fn in ipairs(widgets) do fn() end
-end
-
-section('Colosseum','Colosseum')
-addToggle('Colosseum','Auto Colosseum','AO_AutoColosseum')
-addToggle('Colosseum','Hell Mode','AO_Colo_Hell')
-addToggle('Colosseum','Endless Mode','AO_Colo_Endless')
-addInput('Colosseum','Stop Floor','AO_Colo_StopFloor','35 or 30-40')
-section('Colosseum','Live Status')
-local colStatus=addStatus('Colosseum','Colo status','OFF')
-local colCarry=addStatus('Colosseum','Carry','--')
-local colProgress=addStatus('Colosseum','PB / Curse / Floor','--')
-
-section('Rift Gate','Rift Gate')
-addToggle('Rift Gate','Auto Rift','AO_AutoRift')
-addToggle('Rift Gate','Walk to NPC','AO_Rift_Walk')
-addToggle('Rift Gate','Auto Leave','AO_Rift_Leave')
-section('Rift Gate','Live Status')
-local riftStatus=addStatus('Rift Gate','Rift status','OFF')
-local riftTimer=addStatus('Rift Gate','Next Rift','READY')
-local riftClears=addStatus('Rift Gate','Clears','0')
-
-section('Multi-Boss','Multi-Boss')
-addToggle('Multi-Boss','Auto Boss','AO_AutoBoss')
-local bossStatus=addStatus('Multi-Boss','Boss status','OFF')
-for _,b in ipairs(boss.bosses) do
-    orderCounter=orderCounter+1
-    local r=make('Frame',tabPages['Multi-Boss'],{
-        Size=UDim2.new(1,-2,0,51),BorderSizePixel=0,LayoutOrder=orderCounter,
-    })
-    corner(r,9)
-    skin(r,'BackgroundColor3','panel')
-    local name=newText(r,b.name,13,true)
-    name.Position=UDim2.fromOffset(12,0)
-    name.Size=UDim2.fromOffset(117,51)
-    local toggle=uiButton(r,'OFF',UDim2.fromOffset(61,29))
-    toggle.Position=UDim2.fromOffset(132,11)
-    local dropdown=uiButton(r,'Normal ▾',UDim2.fromOffset(136,29))
-    dropdown.Position=UDim2.fromOffset(204,11)
-    local timer=newText(r,'CHECKING',12,true)
-    timer.Position=UDim2.new(1,-140,0,0)
-    timer.Size=UDim2.fromOffset(128,51)
-    timer.TextXAlignment=Enum.TextXAlignment.Right
-    toggle.MouseButton1Click:Connect(function()
-        setFlag('AO_Boss_'..b.id,not flags['AO_Boss_'..b.id])
-    end)
-    dropdown.MouseButton1Click:Connect(function()
-        if menu.Visible then hideMenu();return end
-        openMenu(dropdown,boss.borders,function(index)
-            setFlag('AO_Border_'..b.id,index)
-        end)
-    end)
-    widgets[#widgets+1]=function()
-        local on=flags['AO_Boss_'..b.id]==true
-        toggle.Text=on and 'ON' or 'OFF'
-        toggle.BackgroundColor3=on and color('accent') or color('row')
-        toggle.TextColor3=on and color('bg') or color('muted')
-        dropdown.Text=boss.borders[math.clamp(tonumber(flags['AO_Border_'..b.id]) or 1,1,6)]..' ▾'
-    end
-    b.displayCooldown=timer
-end
-local bossCounts=addStatus('Multi-Boss','Wins / Losses','0 / 0')
-
-section('Raid','Auto Raid')
-addToggle('Raid','Auto Raid','AO_AutoRaid')
-local raidStatus=addStatus('Raid','Raid status','OFF')
-section('Raid','Select Stages')
-for _,stage in ipairs(raid.stages) do
-    orderCounter=orderCounter+1
-    local item=make('Frame',tabPages['Raid'],{
-        Size=UDim2.new(1,-2,0,49),BorderSizePixel=0,LayoutOrder=orderCounter,
-    })
-    corner(item,9)
-    skin(item,'BackgroundColor3','panel')
-    local label=newText(item,'Stage '..stage.index..' - '..stage.name,13,true)
-    label.Position=UDim2.fromOffset(14,0)
-    label.Size=UDim2.new(1,-245,1,0)
-    local timer=newText(item,'SYNC',12,true)
-    timer.Position=UDim2.new(1,-229,0,0)
-    timer.Size=UDim2.fromOffset(112,49)
-    timer.TextXAlignment=Enum.TextXAlignment.Right
-    local toggle=uiButton(item,'OFF',UDim2.fromOffset(94,31))
-    toggle.Position=UDim2.new(1,-109,.5,-15)
-    local key='AO_Raid_Stage_'..stage.index
-    toggle.MouseButton1Click:Connect(function() setFlag(key,not flags[key]) end)
-    widgets[#widgets+1]=function()
-        local enabled=flags[key]==true
-        toggle.Text=enabled and 'ON  ●' or 'OFF  ○'
-        toggle.BackgroundColor3=enabled and color('accent') or color('row')
-        toggle.TextColor3=enabled and color('bg') or color('muted')
-    end
-    stage.displayCooldown=timer
-end
-local raidCounts=addStatus('Raid','Wins / Losses','0 / 0')
-
-section('Siege','Auto Siege — Round Robin')
-addToggle('Siege','Auto Siege','AO_AutoSiege')
-local siegeStatus=addStatus('Siege','Siege status','OFF')
-local siegeCounts=addStatus('Siege','Wins / Losses','0 / 0')
-section('Siege','Select multiple stages (1–12)')
-for _,stage in ipairs(siege.stages) do
-    orderCounter=orderCounter+1
-    local item=make('Frame',tabPages['Siege'],{
-        Size=UDim2.new(1,-2,0,49),BorderSizePixel=0,LayoutOrder=orderCounter,
-    })
-    corner(item,9);skin(item,'BackgroundColor3','panel')
-    local label=newText(item,string.format('%02d  %s',stage.index,stage.name),12,true)
-    label.Position=UDim2.fromOffset(14,0)
-    label.Size=UDim2.new(1,-238,1,0)
-    local timer=newText(item,'SYNC',12,true)
-    timer.Position=UDim2.new(1,-227,0,0)
-    timer.Size=UDim2.fromOffset(110,49)
-    timer.TextXAlignment=Enum.TextXAlignment.Right
-    local toggle=uiButton(item,'OFF',UDim2.fromOffset(91,31))
-    toggle.Position=UDim2.new(1,-107,.5,-15)
-    local key='AO_Siege_Stage_'..stage.index
-    toggle.MouseButton1Click:Connect(function() setFlag(key,not flags[key]) end)
-    widgets[#widgets+1]=function()
-        local on=flags[key]==true
-        toggle.Text=on and 'ON  ●' or 'OFF  ○'
-        toggle.BackgroundColor3=on and color('accent') or color('row')
-        toggle.TextColor3=on and color('bg') or color('muted')
-    end
-    stage.displayCooldown=timer
-end
-
-section('Settings','Appearance')
-addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose'},false)
-section('Settings','Connection')
-addToggle('Settings','Auto Reconnect','AO_Reconnect')
-local reconnectStatus=addStatus('Settings','Reconnect','Monitoring')
-addAction('Settings','Reconnect Now','REJOIN',function()
-    reconnect.attempts=0
-    reconnect.lastTry=-math.huge
-    requestReconnect(true)
-end)
-section('Settings','Session')
-addAction('Settings','Stop Script','STOP SCRIPT',function()
-    state.stop()
-    if env.AnimeOriginV10_7==state then env.AnimeOriginV10_7=nil end
-    if root.Parent then root:Destroy() end
-end)
-
-section('Config','Profiles')
-local configRow=row('Config','Config Name')
-local nameInput=make('TextBox',configRow,{
-    Size=UDim2.fromOffset(180,31),Position=UDim2.new(1,-195,.5,-15),
-    Font=Enum.Font.GothamMedium,TextSize=13,BorderSizePixel=0,
-    BackgroundTransparency=0,Text=currentProfile,ClearTextOnFocus=false,
-    TextXAlignment=Enum.TextXAlignment.Center,
-})
-corner(nameInput,8)
-skin(nameInput,'BackgroundColor3','row')
-skin(nameInput,'TextColor3','text')
-local savedDrop
-savedDrop=addAction('Config','Saved Config','SELECT  ▾',function()
-    if menu.Visible then hideMenu();return end
-    loadIndex()
-    openMenu(savedDrop,storedNames,function(index,name)
-        if name~='(empty)' then
-            currentProfile=name
-            nameInput.Text=name
-            configStatus='Selected: '..name
-        end
-    end)
-end)
-addAction('Config','Save','SAVE',function()
-    revision=revision+1
-    if saveProfile(nameInput.Text) then
-        nameInput.Text=currentProfile
-        if markCurrentForNextExecute() then
-            configStatus='Saved + will Auto Load: '..currentProfile
-        end
-    end
-end)
-addAction('Config','Load','LOAD',function()
-    revision=revision+1
-    if loadProfile(nameInput.Text) then applyFlags();repaintControls() end
-end)
-addAction('Config','Delete','DELETE',function()
-    revision=revision+1
-    if deleteProfile(nameInput.Text) then nameInput.Text=currentProfile end
-end)
-addAction('Config','Set as Auto Load','SET AUTO LOAD',function()
-    revision=revision+1
-    if setAutoProfile(nameInput.Text) then nameInput.Text=currentProfile end
-end)
-addAction('Config','Reload Auto Load','RELOAD',function()
-    revision=revision+1
-    if loadProfile(autoProfile) then
-        nameInput.Text=currentProfile
-        applyFlags()
-        repaintControls()
-    end
-end)
-section('Config','Profile Status')
-local configCurrent=addStatus('Config','Auto Load Profile','Default')
-local configResult=addStatus('Config','Storage','--')
-
--- Header drag; hide/minimize never stops an AUTO loop.
-local dragging=false
-local originMouse,originPosition
-header.InputBegan:Connect(function(input)
-    if input.UserInputType==Enum.UserInputType.MouseButton1 then
-        dragging=true
-        originMouse=input.Position
-        originPosition=main.Position
-    end
-end)
-local dragMove=UIS.InputChanged:Connect(function(input)
-    if dragging and input.UserInputType==Enum.UserInputType.MouseMovement then
-        local delta=input.Position-originMouse
-        main.Position=UDim2.new(originPosition.X.Scale,originPosition.X.Offset+delta.X,
-            originPosition.Y.Scale,originPosition.Y.Offset+delta.Y)
-    end
-end)
-local dragEnd=UIS.InputEnded:Connect(function(input)
-    if input.UserInputType==Enum.UserInputType.MouseButton1 then dragging=false end
-end)
-local hotkey=UIS.InputBegan:Connect(function(input,used)
-    if not used and input.KeyCode==Enum.KeyCode.RightShift and state.alive then
-        root.Enabled=not root.Enabled
-    end
-end)
-state.connections=state.connections or {}
-for _,conn in ipairs({dragMove,dragEnd,hotkey}) do
-    state.connections[#state.connections+1]=conn
-end
-hide.MouseButton1Click:Connect(function()
-    local small=main.Size.Y.Offset<100
-    main.Size=UDim2.fromOffset(805,small and 565 or 57)
-    sidebar.Visible=small
-    divider.Visible=small
-    body.Visible=small
-    hide.Text=small and '—' or '▢'
-end)
-dismiss.MouseButton1Click:Connect(function() root.Enabled=false end)
-local stopEverything=state.stop
-state.stop=function()
-    stopEverything()
-    for _,conn in ipairs(state.connections or {}) do pcall(function() conn:Disconnect() end) end
-end
-local function showStatus(widget,value)
-    if widget and widget.Parent and widget.Text~=value then widget.Text=value end
-end
-local overviewLast=0
-local function refreshOverview()
-    if os.clock()-overviewLast<0.7 then return end
-    overviewLast=os.clock()
-    if not root.Parent then return end
-    local colLabel=state.blocked and ('PAUSED: '..tostring(state.blockedReason or 'Unknown'))
-        or (state.enabled and (handoff.active and 'RIFT PRIORITY / Colo suspended'
-            or handoff.returning and ('RESUME COLO / '..tostring(state.transportStatus))
-            or tostring((state.phase~='' and state.phase) or state.transportStatus or 'ON')) or 'OFF')
-    showStatus(colStatus,colLabel)
-    showStatus(colCarry,tostring(state.carryName or '--')..'  /  Floor '..tostring(state.lastSeenWave))
-    showStatus(colProgress,tostring(state.supportCount)..'/8  /  '..tostring(state.curseCount)..'/3  /  '..tostring(state.stopFloor or cfg.stopSpec))
-    showStatus(riftStatus,(rift.state.on and 'ON / ' or 'OFF / ')..tostring(rift.state.status or 'WAITING'))
-    showStatus(riftTimer,rift.cooldownText())
-    showStatus(riftClears,tostring(rift.state.clears or 0))
-    showStatus(bossStatus,(boss.state.running and 'ON / ' or 'OFF / ')..tostring(boss.state.status or '--'))
-    showStatus(bossCounts,tostring(boss.state.wins)..' / '..tostring(boss.state.losses))
-    showStatus(raidStatus,(raid.state.on and 'ON / ' or 'OFF / ')..tostring(raid.state.status))
-    showStatus(raidCounts,tostring(raid.state.wins)..' / '..tostring(raid.state.losses))
-    showStatus(siegeStatus,(siege.state.on and 'ON / ' or 'OFF / ')..tostring(siege.state.status))
-    showStatus(siegeCounts,tostring(siege.state.wins)..' / '..tostring(siege.state.losses))
-    for _,stage in ipairs(siege.stages) do
-        local cd=siege.cooldownText(stage)
-        showStatus(stage.displayCooldown,cd)
-        stage.displayCooldown.TextColor3=cd=='READY' and Color3.fromRGB(104,225,168)
-            or cd=='LOCKED' and Color3.fromRGB(245,128,128) or color('muted')
-    end
-    for _,stage in ipairs(raid.stages) do
-        local text=raid.cooldownText(stage)
-        showStatus(stage.displayCooldown,text)
-        stage.displayCooldown.TextColor3=text=='READY' and Color3.fromRGB(104,225,168)
-            or text=='LOCKED' and Color3.fromRGB(245,128,128) or color('muted')
-    end
-    for _,b in ipairs(boss.bosses) do
-        local cd=boss.cooldownText(b)
-        showStatus(b.displayCooldown,cd)
-        b.displayCooldown.TextColor3=(cd=='READY') and Color3.fromRGB(104,225,168)
-            or (cd=='N/A' and Color3.fromRGB(245,128,128) or color('muted'))
-    end
-    showStatus(reconnectStatus,tostring(state.reconnectStatus or reconnect.status or '--'))
-    showStatus(configCurrent,tostring(autoProfile))
-    showStatus(configResult,configStatus)
-end
-repaintControls()
-refreshOverview()
+repaintControls=ui.Repaint
+local refreshOverview=ui.Refresh
 local function normalize(v)
     local s = tostring(v or '')
     s = s:gsub('<[^>]*>', '')
@@ -3267,50 +2721,7 @@ local function normalize(v)
     s = s:gsub('%s+$', '')
     return s:upper() -- single return, no gsub multiple-value error
 end
-local function visible(o)
-    local node = o
-    while node and node ~= playerGui do
-        if node:IsA('GuiObject') and not node.Visible then return false end
-        if node:IsA('LayerCollector') and not node.Enabled then return false end
-        node = node.Parent
-    end
-    return o ~= nil
-end
-local function validButton(o)
-    if not (o and o:IsA('GuiButton') and o.Active and visible(o)) then return false end
-    if o.Name == '__MenuClickShield' or o.Name == 'Close' then return false end
-    local sz, pos = o.AbsoluteSize, o.AbsolutePosition
-    if sz.X < 16 or sz.Y < 15 then return false end
-    local camera = Workspace.CurrentCamera
-    if camera then
-        local viewport = camera.ViewportSize
-        local middle = pos + sz / 2
-        if middle.X < 0 or middle.Y < 0 or middle.X > viewport.X or middle.Y > viewport.Y then return false end
-    end
-    return true
-end
--- Only own Text/descendants. Never siblings or inherited parent text.
-local function ownLabel(o)
-    if o:IsA('TextButton') then
-        local s = normalize(o.Text)
-        if s ~= '' then return s end
-    end
-    local labels, seen = {}, {}
-    for _, d in ipairs(o:GetDescendants()) do
-        if (d:IsA('TextLabel') or d:IsA('TextButton')) and visible(d) then
-            local s = normalize(d.Text)
-            if s ~= '' and not seen[s] then
-                seen[s] = true
-                table.insert(labels,s)
-            end
-        end
-    end
-    if #labels == 1 then return labels[1] end
-    return table.concat(labels, ' / ')
-end
--- Guide (pages 1-2, 4-8): choose ONE carry, make other slots supports,
--- concentrate the good People's Blessings on that carry; Dice stats/revive
--- target that exact card. No card quality is inferred from rarity.
+-- Shared strategy data used by the remote Colosseum controller.
 local PDF_CARRIES = {
     ['DEATHLESS OUTLAW']=100,
     ['DEMON VENERABLE']=99,
@@ -3331,1491 +2742,299 @@ local PDF_SUPPORTS = {
     ['AKATSUKI CLOUD CLOAK']=44, ['SUBSTITUTE SHINIGAMI BADGE']=42,
     ['DUEL DISK']=40,
 }
--- The Devil Play counter is an authoritative UI acknowledgement even when
--- the blessing page stays open after a curse click. Never infer success from
--- firesignal() returning true.
-local function readDevilCount(colo)
-    if not colo then return nil end
-    for _,d in ipairs(colo:GetDescendants()) do
-        if (d:IsA('TextLabel') or d:IsA('TextButton')) and visible(d) then
-            local n=normalize(d.Text):match('DEVIL PLAY%s*%((%d+)%s*/%s*3%)')
-            if n then return tonumber(n) end
-        end
+-- Remote protocol verified against the user's 70-call Colosseum capture.
+-- No NPC prompts, world teleports, GUI reads, or replay playback in this engine.
+local function createRemoteColo()
+    local engine={run=nil,synced=false,nextAt=0,busy=false,
+        replayPending=false,blessingRejected={},diceRejected={},resync=true}
+    local phaseNames={draft='DRAFT',ready='FIGHT WAVE',blessing='BLESSING',
+        dice='ROLL DIE',diceCard='DICE CHOICE'}
+    local function rank(card)
+        return PDF_CARRIES[normalize(card.name)] or 0
     end
-    return nil
-end
-local function ownedSupportCount()
-    local n=0
-    for _,yes in pairs(state.supportOwned or {}) do if yes then n=n+1 end end
-    return math.max(n, state.supportCount or 0)
-end
-local function confirmBlessingSuccess(p)
-    if p.key=='TAKE SUPPORTS' then
-        local count=0
-        for name,yes in pairs(p.supportBatch or {}) do
-            if yes and not state.supportOwned[name] then
-                state.supportOwned[name]=true
-                count=count+1
+    local function carry(run)
+        local best,bestScore=nil,-math.huge
+        for slot,card in ipairs(run.team or {}) do
+            local priority=rank(card)
+            local score=priority>0 and priority*1e9
+                or (tonumber(card.dmg) or 0)*10+(tonumber(card.maxHP) or 0)
+            if score>bestScore then best,bestScore=slot,score end
+        end
+        return best,best and run.team[best]
+    end
+    local function updateRun(run)
+        engine.run=run
+        if not run then return end
+        state.phase=phaseNames[run.phase] or tostring(run.phase)
+        state.lastSeenWave=math.max(0,(tonumber(run.wave) or 1)-1)
+        local slot,card=carry(run)
+        state.carrySlot=slot
+        state.noCarry=card~=nil and rank(card)==0 and cfg.restartUntilCarry and cfg.autoRerun
+        state.carryName=card and card.name or nil
+        state.carryHp=card and card.hp or nil
+        state.carryDmg=card and card.dmg or nil
+        state.supportCount=card and (tonumber(card.supportCount) or #(card.supports or {})) or 0
+        state.curseCount=#(run.devil or {})
+        state.carryImmunity=false
+        state.carryDodge=false
+        state.sacredChosen={}
+        for _,effect in ipairs(card and card.sacred or {}) do
+            if effect.id=='immune' then
+                state.carryImmunity=true
+                state.sacredChosen['STATUS IMMUNITY']=true
+            elseif effect.id=='dodge' then
+                state.carryDodge=true
+                state.sacredChosen['FIRST-HIT DODGE']=true
             end
         end
-        state.supportCount=math.min(8,math.max(state.supportCount or 0,ownedSupportCount()))
-        state.supportPendingNames=nil
-
+        if state.stopFloor==nil then state.stopFloor=chooseStopFloor() end
     end
-    local curse=p.key:match('^DEVIL:([A-Z ]+)$')
-    if curse then
-        state.devilChosen[curse]=true
-        state.curseUnavailable[curse]=nil
-        state.curseCount=math.min(3, math.max((state.curseCount or 0)+1, p.devilBefore and p.devilBefore+1 or 0))
-
-    end
-    local effect=p.key:match('^SACRED:BIND:(.*)$')
-    if effect then
-        state.sacredChosen[effect]=true
-        if effect=='STATUS IMMUNITY' then state.carryImmunity=true end
-        if effect=='FIRST-HIT DODGE' then state.carryDodge=true end
-
-    end
-end
-local function cleanCardName(label)
-    local s = normalize(label)
-    local cut=s:find(' / ',1,true)
-    if cut then s=s:sub(1,cut-1) end
-    return s
-end
-local function cardScore(name)
-    name=cleanCardName(name)
-    return PDF_CARRIES[name] or 0
-end
-local function sideScore(name)
-    name=cleanCardName(name)
-    return PDF_SIDES[name] or 0
-end
-local function numberFromText(v)
-    local t=(tostring(v or ''):gsub(',',''))
-    return tonumber(t)
-end
-local function getFrameLabels(frame)
-    local texts={}
-    if not frame then return texts end
-    for _,v in ipairs(frame:GetDescendants()) do
-        if (v:IsA('TextLabel') or v:IsA('TextButton')) and visible(v) then
-            local text=normalize(v.Text)
-            if text~='' then table.insert(texts,text) end
+    local function invoke(action,payload)
+        local remote=ReplicatedStorage:FindFirstChild('ColosseumRemote',true)
+        if not (remote and remote:IsA('RemoteFunction')) then
+            coloPause('ColosseumRemote missing; no teleport/NPC fallback')
+            return nil
         end
-    end
-    return texts
-end
--- Find exactly FOUR tall, sibling cards in preparation/Dice pages.
-local function getTallCards(colo)
-    local groups={}
-    if not colo then return {} end
-    for _,d in ipairs(colo:GetDescendants()) do
-        if d:IsA('GuiButton') and validButton(d) then
-            local z=d.AbsoluteSize
-            if z.X>=170 and z.X<=290 and z.Y>=210 and z.Y<=650 then
-                local parent=d.Parent
-                if parent then
-                    groups[parent]=groups[parent] or {}
-                    table.insert(groups[parent],d)
-                end
+        engine.busy=true
+        local ok,result=pcall(function()
+            if action=='replayDone' then return remote:InvokeServer(action) end
+            return remote:InvokeServer(action,payload)
+        end)
+        engine.busy=false
+        engine.nextAt=os.clock()+cfg.poll
+        -- A yielding response must not restart a stopped controller.
+        if not state.alive then return nil end
+        if not ok or type(result)~='table' then
+            -- Mutation may have reached the server: resync rather than replay it.
+            coloPause('Remote '..action..' response uncertain: '..tostring(result)..'; toggle AUTO to resync')
+            engine.resync=true
+            return nil
+        end
+        if result.ok~=true then
+            local retry=tonumber(result.retryIn)
+            state.transportStatus=tostring(result.reason or ('Remote '..action..' rejected'))
+            if retry and retry==retry and retry>=0 and retry<math.huge then
+                engine.nextAt=os.clock()+math.max(cfg.poll,retry)
+                return nil
             end
+            if action=='blessing' or action=='diceChoose' then return result end
+            coloPause('Remote '..action..': '..state.transportStatus)
+            return nil
         end
-    end
-    local out={}
-    for frame,arr in pairs(groups) do
-        if #arr==1 then
-            local btn=arr[1]
-            table.insert(out,{button=btn,parent=frame,x=btn.AbsolutePosition.X,y=btn.AbsolutePosition.Y,
-                sizeY=btn.AbsoluteSize.Y,labels=getFrameLabels(frame)})
-        end
-    end
-    if #out<4 then return {} end
-    table.sort(out,function(a,b) return a.x<b.x end)
-    -- Allow only a quartet sharing the same row (ignore tooltip/other UI).
-    for i=1,#out-3 do
-        local sub={out[i],out[i+1],out[i+2],out[i+3]}
-        local same=true
-        for j=2,4 do
-            if math.abs(sub[j].y-sub[1].y)>35 or math.abs(sub[j].sizeY-sub[1].sizeY)>65 then same=false end
-        end
-        if same then
-            for k,card in ipairs(sub) do
-                card.slot=k
-                card.name=state.teamNames[k]
-                local joined=table.concat(card.labels,' / ')
-                -- Use the *rendered* card names first, not the name from a previous run.
-                for _,txt in ipairs(card.labels) do
-                    if txt==state.carryName then card.name=txt end
-                    for _,candidate in ipairs(state.teamNames) do
-                        if txt==candidate then card.name=txt end
-                    end
-                end
-                local current,maxv=joined:match('([%d,]+)%s*/%s*([%d,]+)')
-                card.hp=numberFromText(current)
-                card.maxHp=numberFromText(maxv)
-                card.fallen=(card.hp==0) or joined:find('FALLEN',1,true)~=nil
-                card.dmg=numberFromText(joined:match('DMG%s*([%d,]+)'))
-            end
-            return sub
-        end
-    end
-    return {}
-end
-local function inspectCarryInTeam(colo)
-    local cards=getTallCards(colo)
-    for _,card in ipairs(cards) do
-        if card.name and state.carryName and card.name==state.carryName then
-            state.carrySlot=card.slot
-            if card.maxHp then state.carryHp=card.maxHp end
-            if card.dmg then state.carryDmg=card.dmg end
-            local joined=table.concat(card.labels or {},' ')
-            local visibleCount=tonumber(joined:match('(%d+)%s+SUPPORTS'))
-            if visibleCount and visibleCount>(state.supportCount or 0) then
-                state.supportCount=math.min(8,visibleCount)
-            end
-            return card
-        end
-    end
-end
-local function buttons(root)
-    local list = {}
-    for _, d in ipairs(root:GetDescendants()) do
-        if validButton(d) then
-            table.insert(list,{obj=d, text=ownLabel(d)})
-        end
-    end
-    return list
-end
-local function findExact(list, target)
-    target = normalize(target)
-    for _, b in ipairs(list) do
-        if b.text == target then return b.obj end
-    end
-end
-local function findPattern(list, pattern)
-    for _, b in ipairs(list) do
-        if b.text:match(pattern) then return b.obj end
-    end
-end
-local function hasText(root, needle)
-    local term = normalize(needle)
-    for _, d in ipairs(root:GetDescendants()) do
-        if (d:IsA('TextLabel') or d:IsA('TextButton')) and visible(d) then
-            if normalize(d.Text):find(term,1,true) then return true end
-        end
-    end
-    return false
-end
-local function sigPart(b)
-    -- Style changes on draft cards register when the selection is accepted.
-    -- Do not include volatile timers or decorative FX elements.
-    local s = tostring(b.BackgroundColor3)..':'..tostring(b.BackgroundTransparency)
-    if b:IsA('TextButton') then s = s..':'..tostring(b.TextColor3) end
-    for _, d in ipairs(b:GetDescendants()) do
-        if d:IsA('UIStroke') then
-            s = s..';stroke:'..tostring(d.Color)..':'..tostring(d.Thickness)..':'..tostring(d.Transparency)
-        elseif d:IsA('UIGradient') then
-            s = s..';gradient:'..tostring(d.Enabled)..':'..tostring(d.Rotation)
-        elseif d:IsA('GuiObject') then
-            s = s..';gui:'..d.Name..':'..tostring(d.Visible)..':'..tostring(d.BackgroundColor3)
-            if d:IsA('ImageLabel') or d:IsA('ImageButton') then
-                s=s..':'..tostring(d.ImageColor3)..':'..tostring(d.ImageTransparency)
-            end
-            if d:IsA('TextLabel') or d:IsA('TextButton') then
-                s=s..':'..normalize(d.Text)..':'..tostring(d.TextColor3)
-            end
-        end
-    end
-    return s
-end
-local function phaseSignature(guiRoot, phase, draftRows)
-    if phase == 'DRAFT' and draftRows then
-        local parts = {}
-        for r = 1, 4 do
-            for _, b in ipairs(draftRows[r] or {}) do
-                table.insert(parts, sigPart(b))
-            end
-        end
-        -- Detect both in-card highlighting and text changes in the draft panel.
-        -- Avoid decorative BorderFXComet nodes and volatile animation layers.
-        for _, d in ipairs(guiRoot:GetDescendants()) do
-            if d:IsA('TextLabel') and visible(d) and d.Parent
-                and d.Parent.Name ~= 'FX' then
-                local text=normalize(d.Text)
-                if text:find('SLOT',1,true) or text:find('SELECTED',1,true)
-                    or text:find('PICKED',1,true) or text:find('CHOSEN',1,true) then
-                    table.insert(parts,'hint:'..text)
-                end
-            end
-        end
-        return table.concat(parts,'|')
-    end
-    local labels = {}
-    for _, b in ipairs(buttons(guiRoot)) do
-        if #labels < 90 then table.insert(labels,b.text) end
-    end
-    return table.concat(labels, '||')
-end
-
-local function findDraftRows(colo)
-    -- Recorder proved exactly 16 card choices, 4 visual ROWS, each 4 siblings.
-    -- Each card is 337x144 at x=304/651/999/1346 and row y=190/352/515/678
-    -- at 1920x1080. Check structural grouping & text rather than exact pixels.
-    local rows = {}
-    for _, group in ipairs(colo:GetDescendants()) do
-        if group:IsA('GuiObject') and visible(group) then
-            local groupButtons = {}
-            for _, child in ipairs(group:GetChildren()) do
-                if child:IsA('GuiButton') and validButton(child) then
-                    local size = child.AbsoluteSize
-                    local t = ownLabel(child)
-                    if size.X >= 160 and size.Y >= 85 and size.Y <= 350
-                        and t:find(' HP',1,true) and t:find(' DMG',1,true)
-                        and not t:find('CASH OUT',1,true) then
-                        table.insert(groupButtons,child)
-                    end
-                end
-            end
-            if #groupButtons == 4 then
-                table.sort(groupButtons,function(a,b) return a.AbsolutePosition.X < b.AbsolutePosition.X end)
-                local y = groupButtons[1].AbsolutePosition.Y
-                local coherent = true
-                for i=2,4 do
-                    if math.abs(groupButtons[i].AbsolutePosition.Y-y)>26 then coherent=false end
-                end
-                if coherent then table.insert(rows,{y=y,options=groupButtons}) end
-            end
-        end
-    end
-    table.sort(rows,function(a,b) return a.y<b.y end)
-    if #rows ~= 4 then return nil end
-    -- no duplicate Y or overlapping rows: fail closed instead of clicking Shop.
-    for i=2,4 do if rows[i].y-rows[i-1].y<50 then return nil end end
-    return {rows[1].options,rows[2].options,rows[3].options,rows[4].options}
-end
-
-local function draftChosenCount(colo)
-    if not colo then return nil end
-    for _,v in ipairs(colo:GetDescendants()) do
-        if (v:IsA('TextLabel') or v:IsA('TextButton')) and visible(v) then
-            local n=normalize(v.Text):match('^(%d+)%s*/%s*4 SLOTS CHOSEN$')
-            if n then return tonumber(n) end
-        end
-    end
-    return nil
-end
-
-local function getDiceOffers(colo)
-    local result={}
-    for _,v in ipairs(getTallCards(colo)) do
-        -- Dice target cards are taller than prep cards (approx 500px in log).
-        if v.sizeY>=420 then table.insert(result,v.button) end
-    end
-    return #result==4 and result or {}
-end
-
-local function getPhase(colo, battle)
-    -- Restore the V10.4 battle detection verbatim. V10.5's FloorTitle-only
-    -- branch could skip hasText() and mistake an active Colosseum fight for
-    -- CLOSED, which also allowed Rift to steal control before CONTINUE.
-    if battle and battle:IsA('ScreenGui') and battle.Enabled and hasText(battle,'COLOSSEUM') then
-        return 'BATTLE', nil
-    end
-    if not (colo and colo:IsA('ScreenGui') and colo.Enabled) then return 'CLOSED', nil end
-    local all = buttons(colo)
-    -- Nested boss dialog has an outer TextButton containing all labels. Exact
-    -- match must select the INNER FACE MAN OF MEN button, not the outer popup.
-    local face = findPattern(all,'^FACE [%w%s%-]+$')
-    if face then return 'FACE CHAMPION',face end
-    local results = findExact(all,'SEE RESULTS')
-    if results then return 'SEE RESULTS',results end
-    local back = findExact(all,'BACK TO THE GATES')
-    if back then return 'BACK GATES',back end
-    local champion = findExact(all,'FIGHT THE CHAMPION')
-    if champion then return 'FIGHT CHAMPION',champion end
-    local fight = findPattern(all,'^FIGHT WAVE %d+$')
-    if fight then return 'FIGHT WAVE',fight end
-    local cont = findExact(all,'CONTINUE')
-    if cont then return 'CONTINUE',cont end
-    local die = findExact(all,'ROLL THE DIE')
-    if die then return 'ROLL DIE',die end
-    if hasText(colo,'CHOOSE 1 BLESSING') then return 'BLESSING',nil end
-    if hasText(colo,'ELITE DICE REWARD') then return 'DICE CHOICE',nil end
-    local start = findExact(all,'START THE RUN')
-    if start then return 'DRAFT',start end
-    local enter = findExact(all,'ENTER THE COLOSSEUM')
-    if enter then return 'ENTER',enter end
-    return 'UNKNOWN',nil
-end
-
-local function initiateInput(button, method)
-    if not validButton(button) then return false,'invalid/hidden button' end
-    if method == 'signal' then
-        if type(firesignal) ~= 'function' then return false,'firesignal unavailable' end
-        local ok,err = pcall(function() firesignal(button.MouseButton1Click) end)
-        return ok, ok and 'firesignal(MouseButton1Click)' or tostring(err)
-    elseif method == 'activated' then
-        if type(firesignal) ~= 'function' then return false,'firesignal unavailable' end
-        -- Some game UIs listen to Activated rather than MouseButton1Click.
-        -- Only use this as a retry AFTER no response to the first signal.
-        local ok,err = pcall(function() firesignal(button.Activated) end)
-        return ok, ok and 'firesignal(Activated)' or tostring(err)
-    end
-    local pos = button.AbsolutePosition+button.AbsoluteSize/2
-    local inset = Vector2.new(0,0)
-    local okInset, offset = pcall(function() return GuiService:GetGuiInset() end)
-    if okInset and typeof(offset)=='Vector2' then inset=offset end
-    -- Manual input logs show cursor Y about 58px below AbsolutePosition;
-    -- account for the game's GUI top inset for VirtualInputManager events.
-    pos = pos + inset
-    local ok,err = pcall(function()
-        VIM:SendMouseButtonEvent(pos.X,pos.Y,0,true,game,0)
-        task.wait(.12)
-        VIM:SendMouseButtonEvent(pos.X,pos.Y,0,false,game,0)
-    end)
-    return ok,ok and 'VirtualInput+GuiInset' or tostring(err)
-end
-
-local function actionKey(phase, button, extra)
-    return phase..'|'..tostring(button)..'|'..tostring(extra or '')
-end
-local function sendAction(phase, button, key, draftRows)
-    if not (button and validButton(button)) then
-        
-        return
-    end
-    if state.pending then return end
-    if os.clock()<state.delayUntil then return end
-    local sig = phaseSignature(playerGui:FindFirstChild('ColosseumGui'),phase,draftRows)
-    local method = cfg.useSignalFirst and 'signal' or 'input'
-    if method=='signal' and type(firesignal)~='function' then method='input' end
-    local ok,detail=initiateInput(button,method)
-    if not ok and cfg.inputFallback then
-        method='input'
-        ok,detail=initiateInput(button,method)
-    end
-    if not ok then
-        coloPause('Input failed '..tostring(phase)..' / '..tostring(key)..': '..tostring(detail))
-        return
-    end
-    state.pending={phase=phase,btn=button,key=key or actionKey(phase,button),
-        signature=sig,method=method,since=os.clock(),triedFallback=(method=='input'),triedActivated=false,attempts=1,
-        draftRows=draftRows, buttonStyle=sigPart(button), oldText=ownLabel(button),
-        devilBefore=(key and key:match('^DEVIL:')) and (readDevilCount(playerGui:FindFirstChild('ColosseumGui')) or state.curseCount) or nil,
-        supportBatch=key=='TAKE SUPPORTS' and state.supportPendingNames or nil,
-        draftCount=(phase=='DRAFT' and draftChosenCount(playerGui:FindFirstChild('ColosseumGui'))) or nil,
-        draftOffers=draftRows and (function()
-            local names={}
-            for r=1,4 do for _,v in ipairs(draftRows[r] or {}) do
-                table.insert(names,cleanCardName(ownLabel(v)))
-            end end
-            return table.concat(names,'|')
-        end)() or nil}
-    state.clickCount=state.clickCount+1
-    state.delayUntil=os.clock()+cfg.actionGap
-    
-end
-
-local function resolvePending(colo,phase)
-    local p=state.pending
-    if not p then return false end
-    if phase ~= p.phase then
-        if p.phase=='BLESSING' then confirmBlessingSuccess(p) end
         state.verified=state.verified+1
-        if p.phase=='DRAFT' then
-            state.draftDone[tonumber(p.key:match('row(%d+)')) or 0]=true
+        state.transportStatus='Remote: '..action
+        if result.run~=nil then updateRun(result.run)
+        elseif action=='lobby' or action=='forfeit' or result.summary then updateRun(nil) end
+        if action=='start' then
+            state.runCount=state.runCount+1
+            state.draftRerolls=0
+            state.stopFloor=chooseStopFloor()
         end
-        
-        state.pending=nil
-        return true
+        if action=='fight' and result.summary then engine.replayPending=true end
+        return result
     end
-    local now=os.clock()
-    if p.phase=='BLESSING' and p.key:match('^DEVIL:') then
-        local live=readDevilCount(colo)
-        local before=p.devilBefore or state.curseCount or 0
-        if live and live>before then
-            -- Count increment confirms selection even if we remain on the
-            -- same screen; V5 missed this and kept clicking the same curse.
-            local name=p.key:match('^DEVIL:(.*)$')
-            state.devilChosen[name]=true
-            state.curseCount=math.min(3,math.max(live,state.curseCount or 0))
-            state.pending=nil
-            state.verified=state.verified+1
-            state.delayUntil=now+0.6
-            
-            return true
+    local function draft(run)
+        local rows=run.draft and run.draft.rows
+        if type(rows)~='table' or #rows~=4 then
+            coloPause('Remote draft: expected four offer rows');return
         end
-    end
-    if p.phase=='ENTER' then
-        local mode,wanted=p.key:match('^MODE:([A-Z]+):([A-Z]+)$')
-        if mode and colo then
-            for _,item in ipairs(buttons(colo)) do
-                if item.text:find(mode..': '..wanted,1,true)==1 then
-                    state.verified=state.verified+1
-                    state.pending=nil
-                    
-                    return true
+        -- Preserve the original strategy: one best carry across all rows,
+        -- then PDF_SIDES (or 45% of carry rank) for every other row.
+        local bestCarry=nil
+        for row,offers in ipairs(rows) do
+            for index,card in ipairs(offers) do
+                local score=rank(card)
+                if score>0 and (not bestCarry or score>bestCarry.score) then
+                    bestCarry={row=row,index=index,score=score}
                 end
             end
         end
-    end
-    -- The draft stage doesn't change phase when one ROW selection is made.
-    local newSig=phaseSignature(colo,phase,p.draftRows)
-    if phase=='DRAFT' and p.key=='DRAFT:REROLL' then
-        local rows=findDraftRows(colo)
-        local names={}
-        if rows then for r=1,4 do for _,v in ipairs(rows[r]) do
-            table.insert(names,cleanCardName(ownLabel(v)))
-        end end end
-        if #names==16 and table.concat(names,'|')~=p.draftOffers then
-            state.draftRerolls=state.draftRerolls+1
-            state.draftDone={}; state.picked={}
-            state.pending=nil; state.verified=state.verified+1
-            
-            return true
+        local rerollsLeft=tonumber(run.rerollsLeft) or 0
+        if not bestCarry and rerollsLeft>0 and state.draftRerolls<cfg.maxDraftRerolls then
+            local result=invoke('reroll')
+            if result and result.ok then state.draftRerolls=state.draftRerolls+1 end
+            return
         end
-    elseif phase=='DRAFT' and p.key:match('^row%d+$')
-        and ((p.draftCount and draftChosenCount(colo) and draftChosenCount(colo)>p.draftCount)
-             or (p.draftCount==nil and newSig~=p.signature)) then
-        local row=tonumber(p.key:match('row(%d+)'))
-        if row then state.draftDone[row]=true end
-        state.verified=state.verified+1
-        state.pending=nil
-        
-        return true
-    end
-    if p.phase=='BLESSING' and p.key:find('^SUPPORT_ROUTE:',1,false) then
-        if ownLabel(p.btn)~=p.oldText then
-            state.pending=nil;state.verified=state.verified+1
-            
-            return true
-        end
-        if now-p.since<cfg.ackWait then return true end
-    end
-    if p.phase=='BLESSING' and p.key:find('^SACRED:STEP:',1,false) then
-        if sigPart(p.btn)~=p.buttonStyle or newSig~=p.signature then
-            state.pending=nil; state.verified=state.verified+1
-            state.sacredStep=state.sacredStep+1
-            state.sacredAt=now+.35
-            
-            return true
-        end
-        if now-p.since<cfg.ackWait then return true end
-    end
-    -- Dice has TWO possible steps: first choose REVIVE/HEAL/etc., then
-    -- choose one of four card targets. The UI header remains ELITE DICE
-    -- REWARD throughout, so a same-phase result is NOT automatically failure.
-    if p.phase == 'DICE CHOICE' then
-        local dice = state.dice
-        if not dice then
-            state.pending=nil
-            
-            return true
-        end
-        if now-p.since < cfg.ackWait then return true end
-        local modeName = p.key:match('^DICE MODE: (.*)$')
-        if modeName then
-            if modeName == 'REVIVE' or modeName == 'HEAL 25%' or modeName == '+10% STATS' then
-                -- Neither button guarantees immediate transition. Select a card.
-                state.pending=nil
-                dice.awaitingTarget=true
-                dice.targetTries={}
-                dice.nextAt=now+0.30
-                
-                return true
-            end
-            -- KEEP MY TEAM generally finishes immediately.
-            -- If still on the reward screen, try input once, then another mode.
-            if not p.triedActivated and type(firesignal)=='function' then
-                p.triedActivated=true
-                local ok,how=initiateInput(p.btn,'activated')
-                if ok then
-                    p.since=now
-                    state.clickCount=state.clickCount+1
-                    
-                    return true
-                end
-            end
-            if not p.triedFallback and cfg.inputFallback then
-                local ok,how=initiateInput(p.btn,'input')
-                if ok then
-                    p.since=now; p.triedFallback=true
-                    state.clickCount=state.clickCount+1
-                    
-                    return true
-                end
-            end
-            dice.triedModes[modeName]=true
-            dice.mode=nil; dice.awaitingTarget=false
-            dice.nextAt=now+0.35
-            state.pending=nil
-            
-            return true
-        end
-        if p.key:find('^DICE TARGET:',1,false) then
-            -- A replacement or REVIVE target normally exits the dice page.
-            -- A denied target may leave the exact same page; rotate choices.
-            if not p.triedActivated and type(firesignal)=='function' then
-                p.triedActivated=true
-                local ok,how=initiateInput(p.btn,'activated')
-                if ok then
-                    p.since=now
-                    state.clickCount=state.clickCount+1
-                    
-                    return true
-                end
-            end
-            if not p.triedFallback and cfg.inputFallback then
-                local ok,how=initiateInput(p.btn,'input')
-                if ok then
-                    p.since=now; p.triedFallback=true
-                    state.clickCount=state.clickCount+1
-                    
-                    return true
-                end
-            end
-            dice.triedTargets[p.btn]=true
-            local failedMode=dice.mode or 'REPLACE CARD'
-            if state.carryName and (failedMode=='+10% STATS' or failedMode=='REVIVE' or failedMode=='HEAL 25%') then
-                coloPause('Dice target rejected: '..tostring(failedMode)..' / '..tostring(state.carryName))
-                state.pending=nil
-                
-                return true
-            end
-            local offers=getDiceOffers(colo)
-            local unused=0
-            for _,b in ipairs(offers) do
-                if not dice.triedTargets[b] then unused=unused+1 end
-            end
-            if unused==0 then
-                dice.triedModes[failedMode]=true
-                dice.mode=nil; dice.awaitingTarget=false
-                dice.triedTargets={}
-                
+        local picks={}
+        for row,offers in ipairs(rows) do
+            local pick,score=nil,-1
+            if bestCarry and row==bestCarry.row then
+                pick=bestCarry.index
             else
-                
+                for index,card in ipairs(offers) do
+                    local value=PDF_SIDES[normalize(card.name)] or 0
+                    if value==0 then value=rank(card)*.45 end
+                    if value>score then pick,score=index,value end
+                end
             end
-            dice.nextAt=now+0.35
-            state.pending=nil
-            return true
+            if not pick then coloPause('Remote draft: empty offer row');return end
+            picks[row]=pick
         end
-        -- Safety: unknown dice key should not pause the entire run.
-        state.pending=nil
-        dice.nextAt=now+0.5
-        
-        return true
+        -- Commit the draft first, just like START THE RUN in the original.
+        -- No-carry runs are ended only after the server confirms ready/wave 1.
+        invoke('draft',{picks=picks})
     end
-    -- Dice rollout can animate in the same phase; only treat complete when
-    -- the roll button disappears and a reward choice appears.
-    if p.phase=='ROLL DIE' and not findExact(buttons(colo),'ROLL THE DIE') then
-        state.verified=state.verified+1
-        state.pending=nil
-        
-        return true
-    end
-    if now-p.since<cfg.ackWait then return true end
-    if p.phase=='BLESSING' and p.key:match('^DEVIL:') then
-        -- Fast, bounded curse acknowledgement: either the Devil counter goes
-        -- up or we make ONE real-input fallback, then mark that curse as
-        -- unavailable for this entire run. Do NOT spam the same curse.
-        if not p.triedFallback and cfg.inputFallback then
-            p.triedFallback=true
-            local ok,how=initiateInput(p.btn,'input')
-            if ok then
-                p.since=now
-                state.clickCount=state.clickCount+1
-                
-                return true
+    local function blessing(run)
+        local slot,card=carry(run)
+        if not card then coloPause('Remote blessing: team missing');return end
+        local key=tostring(run.wave)
+        engine.blessingRejected[key]=engine.blessingRejected[key] or {}
+        local rejected=engine.blessingRejected[key]
+        local candidates={}
+        local offers=run.offer and run.offer.peoples or {}
+        local count=tonumber(card.supportCount) or #(card.supports or {})
+        -- ColosseumConfig: MAX_SUPPORTS_PER_CARD=4, SKILL_SUPPORT_CAP=8.
+        -- Captured expanded teams retain supportMax=4 even at supportCount=8.
+        local expanded=run.skill and (tonumber(run.skill.supportExpand) or 0)>0
+        local capacity=expanded and 8 or (tonumber(card.supportMax) or 4)
+        local owned={}
+        for _,support in ipairs(card.supports or {}) do owned[normalize(support.name)]=true end
+        if cfg.allowSupports and #offers>0 and count<capacity then
+            local assign,staged={},{}
+            local left=capacity-count
+            local take,hasGood=0,false
+            for index,support in ipairs(offers) do
+                local name=normalize(support.name)
+                if name~='' and not owned[name] and not staged[name] and left>0 then
+                    assign[index]=slot
+                    staged[name]=true;left=left-1;take=take+1
+                    if (PDF_SUPPORTS[name] or 0)>=40 then hasGood=true end
+                else
+                    -- Skip sentinel is not present in the supplied capture.
+                    -- Do not guess its protocol: only submit fully observed
+                    -- assignment shapes; mixed batches fall through safely.
+                    assign[index]=false
+                end
             end
-        end
-        local failed=p.key:match('^DEVIL:(.*)$')
-        state.curseUnavailable[failed]=true
-        state.blessingTried=state.blessingTried or {}
-        state.blessingTried[p.key]=true
-        state.pending=nil
-        state.delayUntil=now+0.5
-        
-        return true
-    end
-    if p.phase=='BLESSING' and p.key:match('^SACRED:BIND:') then
-        -- SACRED HARD STOP: V6 retried the same refused BIND indefinitely
-        -- because actionForBlessing checked 'SACRED:BIND' while timeout
-        -- stored only 'SACRED:BIND:FIRST-HIT DODGE'. Limit to TWO total
-        -- clicks, remember failure across the run, then try WORLD STATS NOW.
-        local effect=p.key:match('^SACRED:BIND:(.*)$')
-        if (p.attempts or 1)<cfg.maxSacredBindAttempts
-            and p.method~='input' and cfg.inputFallback then
-            p.attempts=(p.attempts or 1)+1
-            p.triedFallback=true
-            local ok,how=initiateInput(p.btn,'input')
-            if ok then
-                p.since=now
-                state.clickCount=state.clickCount+1
-                
-                return true
+            if take==#offers and hasGood then
+                candidates[#candidates+1]={key='peoples',payload={cat='peoples',assign=assign}}
             end
         end
-        state.sacredUnavailable[effect]=true
-        state.blessingTried=state.blessingTried or {}
-        state.blessingTried[p.key]=true
-        state.blessingTried['SACRED:BIND']=true
-        state.sacredPlan=nil
-        state.sacredStep=nil
-        state.sacredAt=0
-        state.pending=nil
-        state.picked.blessing=nil
-        state.delayUntil=now+0.35
-        
-        return true
-    end
-    if p.phase == 'BLESSING' then
-        -- TRY CLICK -> ACTIVATED -> REAL INPUT before trying a different bonus.
-        -- A valid client-side signal is NOT proof the server accepted a blessing.
-        if not p.triedActivated and type(firesignal)=='function' then
-            p.triedActivated=true
-            local ok,how=initiateInput(p.btn,'activated')
-            if ok then
-                p.since=now
-                state.clickCount=state.clickCount+1
-                
-                return true
-            end
-        end
-        if not p.triedFallback and cfg.inputFallback then
-            p.triedFallback=true
-            local ok,how=initiateInput(p.btn,'input')
-            if ok then
-                p.since=now
-                state.clickCount=state.clickCount+1
-                
-                return true
-            end
-        end
-        -- No response to this choice. Move to the next WORLD option.
-        state.blessingTried=state.blessingTried or {}
-        state.blessingTried[p.key]=true
-        local failedCurse=p.key:match('^DEVIL:(.*)$')
-        if failedCurse then
-            state.curseUnavailable[failedCurse]=true
-            
-        end
-        if p.key=='TAKE SUPPORTS' then
-            state.badSupport=true
-            state.supportPendingNames=nil
-        end
-        if p.key:find('^SUPPORT_ROUTE:',1,false) then
-            state.supportRouteFailed=true
-            state.supportPendingNames=nil
-        elseif p.key:find('^SACRED:STEP:',1,false) then
-            local effect=state.sacredPlan and state.sacredPlan.effect
-            if effect then state.sacredUnavailable[effect]=true end
-            state.sacredStep=nil
-            state.sacredPlan=nil
-            state.blessingTried['SACRED:BIND']=true
-        end
-        state.pending=nil
-        state.picked.blessing=nil
-        state.delayUntil=now+0.5
-        
-        return true
-    end
-    if not p.triedFallback and cfg.inputFallback then
-        local ok,how=initiateInput(p.btn,'input')
-        if ok then
-            p.since=now
-            p.triedFallback=true
-            state.clickCount=state.clickCount+1
-            
-            return true
-        end
-        if p.phase=='BLESSING' and p.key=='TAKE SUPPORTS' then
-            state.badSupport=true
-            state.pending=nil
-            
-            return true
-        end
-    end
-    if p.phase=='BLESSING' and p.key=='TAKE SUPPORTS' then
-        state.badSupport=true
-        state.pending=nil
-        
-    elseif p.phase=='DRAFT' and p.key=='DRAFT:REROLL' then
-        state.pending=nil
-        state.draftRerollDisabled=true
-        state.delayUntil=now+.4
-        
-    elseif p.phase=='DRAFT' then
-        state.pending=nil
-        coloPause('Draft no acknowledgement: '..tostring(p.key))
-    else
-        state.pending=nil
-        coloPause('Action no acknowledgement: '..tostring(p.phase)..' / '..tostring(p.key))
-        
-    end
-    return true
-end
-
-local function makeChoice(phase,button,name,draftRows)
-    if not button then return end
-    sendAction(phase,button,name,draftRows)
-end
-
-local function getSacredButtons(colo)
-    local all=buttons(colo)
-    local bind=findExact(all,'BIND')
-    if not bind or not bind.Parent then return nil end
-    local parent=bind.Parent
-    local effects,targets={},{}
-    for _,o in ipairs(parent:GetChildren()) do
-        if validButton(o) and o~=bind then
-            local t=ownLabel(o)
-            if t:find('FIRST-HIT DODGE',1,true)==1 or t:find('SECOND WIND',1,true)==1
-                or t:find('OPENING SHIELD',1,true)==1 or t:find('STATUS IMMUNITY',1,true)==1 then
-                table.insert(effects,{button=o,text=t})
-            end
-        elseif o:IsA('Frame') then
-            for _,b in ipairs(o:GetChildren()) do
-                if validButton(b) and ownLabel(b)~='' then
-                    table.insert(targets,{button=b,text=ownLabel(b)})
+        -- Restore the original priority after People's Blessing: three
+        -- distinct preferred curses, then Sacred, then World stats.
+        local devilOwned={}
+        for _,curse in ipairs(run.devil or {}) do devilOwned[normalize(curse)]=true end
+        if #(run.devil or {})<3 then
+            for _,curse in ipairs({'Blinding','Confusion','Fatigue'}) do
+                if not devilOwned[normalize(curse)] then
+                    candidates[#candidates+1]={key='devil:'..curse,payload={cat='devil',opt=curse}}
                 end
             end
         end
-    end
-    return bind,effects,targets
-end
-local function getSupportRows(colo)
-    local take=findExact(buttons(colo),'TAKE SUPPORTS')
-    if not take then return nil end
-    local section=take.Parent
-    local scroll=section and section:FindFirstChildWhichIsA('ScrollingFrame',true)
-    if not scroll then return nil end
-    local rows={}
-    for _,frame in ipairs(scroll:GetChildren()) do
-        if frame:IsA('Frame') then
-            local target=nil
-            for _,v in ipairs(frame:GetChildren()) do
-                if validButton(v) and v:IsA('TextButton') then target=v break end
-            end
-            if target then
-                local supportName='UNKNOWN'
-                local textLabels={}
-                for _,v in ipairs(frame:GetChildren()) do
-                    if v:IsA('TextLabel') then table.insert(textLabels,v) end
-                end
-                table.sort(textLabels,function(a,b) return a.AbsolutePosition.Y<b.AbsolutePosition.Y end)
-                if #textLabels>0 then supportName=normalize(textLabels[1].Text) end
-                table.insert(rows,{button=target,name=supportName,score=PDF_SUPPORTS[supportName] or 5})
+        local sacredOwned={}
+        for _,effect in ipairs(card.sacred or {}) do sacredOwned[effect.id]=true end
+        -- Both effects bind to the ranked carry slot. Re-read the server's
+        -- sacred list after every success instead of marking a sent request.
+        for _,effect in ipairs({'immune','dodge'}) do
+            if not sacredOwned[effect] then
+                candidates[#candidates+1]={key='sacred:'..effect,
+                    payload={cat='sacred',opt=effect,slot=slot}}
             end
         end
-    end
-    table.sort(rows,function(a,b) return a.button.AbsolutePosition.Y<b.button.AbsolutePosition.Y end)
-    return {take=take,rows=rows}
-end
-local function scrollTo(button)
-    local parent=button.Parent
-    while parent and parent~=playerGui do
-        if parent:IsA('ScrollingFrame') then
-            local y=button.AbsolutePosition.Y
-            local top=parent.AbsolutePosition.Y
-            local bottom=top+parent.AbsoluteSize.Y
-            if y<top+8 or y+button.AbsoluteSize.Y>bottom-8 then
-                local shift=(y+button.AbsoluteSize.Y/2)-(top+parent.AbsoluteSize.Y/2)
-                parent.CanvasPosition=Vector2.new(parent.CanvasPosition.X,math.max(0,parent.CanvasPosition.Y+shift))
-                return false
-            end
+        local name=normalize(card.name)
+        local hp,dmg=tonumber(card.hp),tonumber(card.dmg)
+        local preferHp=not hp or not dmg or dmg>=hp or name=='DEATHLESS OUTLAW'
+            or name=='GHOUL HUNGER' or name=='DEMON VENERABLE'
+        for _,opt in ipairs(preferHp and {'hp','dmg','dr','crit'} or {'dmg','hp','dr','crit'}) do
+            candidates[#candidates+1]={key='world:'..opt,payload={cat='world',opt=opt}}
         end
-        parent=parent.Parent
-    end
-    return true
-end
--- Run-wide memory rules from the PDF and the user's latest constraints:
--- 1) Only unique People's supports on the carry, capped at EIGHT.
--- 2) Only three preferred Devil curses: Blinding, Confusion, Fatigue.
---    Remember accepted/failed names across all blessing screens in this run.
--- 3) Then bind Status Immunity and First-Hit Dodge to the carry, once each.
--- 4) World stats are the final fallback, never another unit's supports.
-local function actionForBlessing(colo)
-    local all=buttons(colo)
-    local tried=state.blessingTried or {}
-    state.blessingTried=tried
-    local observed=readDevilCount(colo)
-    if observed then state.curseCount=math.min(3,math.max(state.curseCount or 0,observed)) end
-    state.supportCount=math.min(8,ownedSupportCount())
-
-    local support=getSupportRows(colo)
-    -- Only select PB when there are genuinely NEW supports available for
-    -- carry. Track the four rows as a transaction: commit AFTER TAKE SUPPORTS
-    -- leaves the page, never when merely cycling a target label.
-    if cfg.allowSupports and support and #support.rows==4
-        and state.carryName and state.supportCount<8
-        and not state.badSupport and not state.supportRouteFailed
-        and not tried['TAKE SUPPORTS'] then
-        local staged={}
-        local slotsLeft=8-state.supportCount
-        local targetName='→ '..state.carryName
-        local wants={}
-        local hasGood=false
-        for i,row in ipairs(support.rows) do
-            local name=normalize(row.name)
-            local isUnique=(name~='' and name~='UNKNOWN'
-                and not state.supportOwned[name] and not staged[name])
-            local take=isUnique and slotsLeft>0
-            if take then
-                staged[name]=true
-                slotsLeft=slotsLeft-1
-                if row.score>=40 then hasGood=true end
-            end
-            wants[i]=take and targetName or 'SKIP THIS SUPPORT'
-        end
-        -- Prioritize PDF support quality, but don't take duplicate PB merely
-        -- to fill a slot. If every offered card is old, go to Devil/Sacred.
-        if hasGood then
-            for i,row in ipairs(support.rows) do
-                local current=ownLabel(row.button)
-                if current~=wants[i] then
-                    state.supportRouteCount[i]=(state.supportRouteCount[i] or 0)+1
-                    if state.supportRouteCount[i]>7 then
-                        state.supportRouteFailed=true
-                        
-                        break
-                    end
-                    if not scrollTo(row.button) then return end
-                    makeChoice('BLESSING',row.button,'SUPPORT_ROUTE:'..i)
-                    return
-                end
-            end
-            if not state.supportRouteFailed then
-                state.supportPendingNames=staged
-                makeChoice('BLESSING',support.take,'TAKE SUPPORTS')
+        for _,candidate in ipairs(candidates) do
+            if not rejected[candidate.key] then
+                local result=invoke('blessing',candidate.payload)
+                if result and result.ok==false then rejected[candidate.key]=true end
                 return
             end
         end
+        coloPause('Remote blessing: observed choices rejected; '..tostring(state.transportStatus))
     end
-
-    -- The game calls this "Blinding", NOT "Binding". The PDF's
-    -- screenshot shows Blinding and the live log confirms this exact label.
-    -- DEVIL PLAY (n/3) is read each tick; if n increases without a phase
-    -- change, the pending action is still confirmed and memorized.
-    if (state.curseCount or 0)<3 then
-        local curses={'BLINDING','CONFUSION','FATIGUE'}
-        local curseScroll=nil
-        -- The scroller belongs to the DEVIL PLAY section, not PB's scroller.
-        for _,o in ipairs(colo:GetDescendants()) do
-            if o:IsA('ScrollingFrame') then
-                for _,b in ipairs(o:GetDescendants()) do
-                    if b:IsA('TextButton') and ownLabel(b):find('CONFUSION ',1,true)==1 then
-                        curseScroll=o;break
-                    end
-                end
-                if curseScroll then break end
+    local function dice(run)
+        local slot,card=carry(run)
+        if not card then coloPause('Remote dice: team missing');return end
+        local key=tostring(run.wave)
+        engine.diceRejected[key]=engine.diceRejected[key] or {}
+        local rejected=engine.diceRejected[key]
+        if not card.dead and (tonumber(card.hp) or 0)>0 and not rejected.buff then
+            local result=invoke('diceChoose',{target=slot,bonus='buff'})
+            if result and result.ok==false then rejected.buff=true end
+            return
+        end
+        -- Replacement uses the captured {slot=...} protocol. Preserve the
+        -- carry unless it is dead; otherwise replace the weakest other slot.
+        local target=slot
+        if not card.dead and (tonumber(card.hp) or 0)>0 then
+            local weakest=math.huge
+            for index,other in ipairs(run.team) do
+                local score=(other.dead and -1e12 or 0)+rank(other)*1e6+(tonumber(other.dmg) or 0)
+                if index~=slot and not rejected[index] and score<weakest then target,weakest=index,score end
             end
         end
-        if curseScroll then
-            for _,name in ipairs(curses) do
-                if not state.devilChosen[name] and not state.curseUnavailable[name]
-                    and not tried['DEVIL:'..name] then
-                    local candidate=nil
-                    for _,b in ipairs(curseScroll:GetDescendants()) do
-                        if b:IsA('GuiButton') and ownLabel(b):find(name..' ',1,true)==1 then
-                            candidate=b;break
-                        end
-                    end
-                    if candidate then
-                        if not scrollTo(candidate) then return end
-                        if validButton(candidate) then
-                            makeChoice('BLESSING',candidate,'DEVIL:'..name)
-                            return
-                        end
-                    else
-                        state.curseUnavailable[name]=true
-                    end
-                end
+        if rejected[target] then coloPause('Remote dice: observed choices rejected');return end
+        local result=invoke('diceChoose',{slot=target})
+        if result and result.ok==false then rejected[target]=true end
+    end
+    function engine.tick()
+        if engine.busy or os.clock()<engine.nextAt then return end
+        if handoff.active then return end
+        if handoff.returning then
+            handoff.returning=false;handoff.requireResume=false
+            engine.resync=true
+        end
+        if engine.replayPending then
+            local result=invoke('replayDone')
+            if result and result.ok then engine.replayPending=false;engine.resync=true end
+            return
+        end
+        if state.remoteNeedsSync then engine.resync=true;state.remoteNeedsSync=false end
+        if engine.resync or not engine.synced then
+            local result=invoke('lobby')
+            if result and result.ok then engine.synced=true;engine.resync=false end
+            return
+        end
+        local run=engine.run
+        if handoff.requested and (not run or run.phase=='ready') then
+            handoff.active=true;handoff.requested=false;handoff.startedAt=os.clock()
+            handoff.fromPhase=state.phase;handoff.fromRun=state.runCount
+            handoff.fromWave=state.lastSeenWave;handoff.requireResume=run~=nil
+            state.transportStatus='Remote run paused for Rift'
+            return
+        end
+        if not run then
+            engine.blessingRejected={};engine.diceRejected={}
+            state.phase='ENTER'
+            if cfg.autoRerun or state.runCount==0 then
+                invoke('start',{hell=cfg.wantHell,endless=cfg.wantEndless})
             end
-        end
-    end
-
-    -- Give only these two Sacred effects to the carry. If both are already
-    -- bound, go to World stats. Never bind a fallback to a random support.
-    if not tried['SACRED:BIND'] then
-        if os.clock()<state.sacredAt then return end
-        local bind,effects,targets=getSacredButtons(colo)
-        if bind and #effects>0 and #targets>0 and state.carryName then
-            if not state.sacredPlan then
-                for _,needle in ipairs({'STATUS IMMUNITY','FIRST-HIT DODGE'}) do
-                    if not state.sacredChosen[needle] and not state.sacredUnavailable[needle] then
-                        for _,e in ipairs(effects) do
-                            if e.text:find(needle,1,true)==1 then
-                                state.sacredPlan={effect=needle,effectBtn=e.button}
-                                state.sacredStep=1
-                                break
-                            end
-                        end
-                    end
-                    if state.sacredPlan then break end
-                end
-            end
-            local plan=state.sacredPlan
-            if plan then
-                local targetBtn=nil
-                for _,t in ipairs(targets) do
-                    if t.text==state.carryName then targetBtn=t.button break end
-                end
-                if targetBtn then
-                    if state.sacredStep==1 then
-                        makeChoice('BLESSING',plan.effectBtn,'SACRED:STEP:EFFECT')
-                    elseif state.sacredStep==2 then
-                        makeChoice('BLESSING',targetBtn,'SACRED:STEP:TARGET')
-                    else
-                        makeChoice('BLESSING',bind,'SACRED:BIND:'..plan.effect)
-                    end
-                    return
-                else
-                    
-                end
-            end
-        end
-        tried['SACRED:BIND']=true
-    end
-
-    -- Stats only after PB and preferred curses/sacred are not applicable.
-    -- HP-heavy carry follows the guide's percentage-based healing advice.
-    local hp,dmg=state.carryHp,state.carryDmg
-    local preferHp=(not hp or not dmg or dmg>=hp) or state.carryName=='DEATHLESS OUTLAW'
-        or state.carryName=='GHOUL HUNGER' or state.carryName=='DEMON VENERABLE'
-    local opts=preferHp
-        and {{'+15% MAX HP','WORLD:+15% MAX HP'},{'+20% DMG','WORLD:+20% DMG'},
-             {'+10% DAMAGE REDUCTION','WORLD:+10% DAMAGE REDUCTION'},
-             {'+25% CRIT DMG','WORLD:+25% CRIT DMG'}}
-        or {{'+20% DMG','WORLD:+20% DMG'},{'+15% MAX HP','WORLD:+15% MAX HP'},
-             {'+10% DAMAGE REDUCTION','WORLD:+10% DAMAGE REDUCTION'},
-             {'+25% CRIT DMG','WORLD:+25% CRIT DMG'}}
-    for _,v in ipairs(opts) do
-        if not tried[v[2]] then
-            local btn=findExact(all,v[1])
-            if btn then makeChoice('BLESSING',btn,v[2]); return end
-            tried[v[2]]=true
-        end
-    end
-    -- No safe choice. Never go back to PB once the carry is full.
-    coloPause('Blessing: no safe choice')
-    
-end
-local function actionForDice(colo)
-    local dice=state.dice
-    if not dice then
-        dice={mode=nil,triedModes={},triedTargets={},awaitingTarget=false,nextAt=0}
-        state.dice=dice
-    end
-    if os.clock()<(dice.nextAt or 0) then return end
-    local all=buttons(colo)
-    local offers=getDiceOffers(colo)
-    local named={
-        ['REVIVE']=findExact(all,'REVIVE'),
-        ['HEAL 25%']=findExact(all,'HEAL 25%'),
-        ['+10% STATS']=findExact(all,'+10% STATS'),
-        ['KEEP MY TEAM']=findExact(all,'KEEP MY TEAM'),
-    }
-    if #offers==0 and not named.REVIVE and not named['HEAL 25%']
-        and not named['+10% STATS'] and not named['KEEP MY TEAM'] then
-        
-        return
-    end
-    local info=getTallCards(colo)
-    local targets={}
-    for _,card in ipairs(info) do
-        if card.sizeY>=420 then table.insert(targets,card) end
-    end
-    if #targets~=4 then targets={} end
-    local carryCard
-    for _,card in ipairs(targets) do
-        if state.carryName and card.name==state.carryName then carryCard=card;break end
-    end
-    if not carryCard and state.carrySlot and #targets==4 then
-        carryCard=targets[state.carrySlot]
-    end
-    local carryFallen=carryCard and carryCard.fallen
-    local deadSupport
-    for _,card in ipairs(targets) do
-        if card.fallen and (not carryCard or card.slot~=carryCard.slot) then
-            deadSupport=card
-            break
-        end
-    end
-    if not dice.mode then
-        -- Guide p3 + p8: revive fallen carry, otherwise +10% Stats to carry.
-        if carryFallen and named.REVIVE and not dice.triedModes.REVIVE then
-            dice.mode='REVIVE'
-        elseif named['+10% STATS'] and not dice.triedModes['+10% STATS'] then
-            dice.mode='+10% STATS'
-        elseif deadSupport and not dice.triedModes['REPLACE CARD'] then
-            dice.mode='REPLACE CARD'
-        elseif named['HEAL 25%'] and not dice.triedModes['HEAL 25%'] then
-            dice.mode='HEAL 25%'
-        elseif named['KEEP MY TEAM'] and not dice.triedModes['KEEP MY TEAM'] then
-            dice.mode='KEEP MY TEAM'
+        elseif run.phase=='draft' then draft(run)
+        elseif run.phase=='blessing' then blessing(run)
+        elseif run.phase=='dice' then invoke('dice')
+        elseif run.phase=='diceCard' then dice(run)
+        elseif run.phase=='ready' then
+            if state.noCarry and cfg.restartUntilCarry and cfg.autoRerun
+                and tonumber(run.wave)==1 then
+                state.transportStatus='No PDF carry after rerolls; ending wave-1 run'
+                invoke('forfeit')
+            elseif cfg.wantEndless and state.stopFloor and state.lastSeenWave>=state.stopFloor then
+                -- The supplied capture proves forfeit returns earned rewards;
+                -- it does not contain a separate cashout command.
+                invoke('forfeit')
+            else invoke('fight') end
         else
-            coloPause('Dice: no reward mode available')
-            return
+            coloPause('Remote phase not present in capture: '..tostring(run.phase))
         end
-        dice.awaitingTarget=dice.mode=='REPLACE CARD'
-        dice.triedTargets={}
-        
     end
-    if dice.awaitingTarget then
-        if #targets~=4 then return end
-        local target
-        if dice.mode=='REPLACE CARD' then
-            if deadSupport and not dice.triedTargets[deadSupport.button] then
-                target=deadSupport
-            else
-                for _,card in ipairs(targets) do
-                    if not dice.triedTargets[card.button] and (not carryCard or card.slot~=carryCard.slot) then
-                        target=card break
-                    end
-                end
-            end
-        else
-            target=carryCard
-            if not target and not state.carryName then
-                -- Fallback for manually-started run without a tracked PDF carry:
-                for _,card in ipairs(targets) do
-                    if (dice.mode~='REVIVE' or card.fallen) and
-                        (dice.mode=='REVIVE' or not card.fallen) then
-                        target=card break
-                    end
-                end
-            end
-        end
-        if not target then
-            if state.carryName then
-                coloPause('Dice: cannot find carry target '..tostring(state.carryName))
-                
-            else
-                dice.triedModes[dice.mode]=true
-                dice.mode=nil;dice.awaitingTarget=false
-                dice.nextAt=os.clock()+.4
-            end
-            return
-        end
-        makeChoice('DICE CHOICE',target.button,'DICE TARGET: '..dice.mode)
-        return
-    end
-    local btn=named[dice.mode]
-    if not btn then
-        dice.triedModes[dice.mode]=true
-        dice.mode=nil
-        dice.nextAt=os.clock()+.4
-        return
-    end
-    makeChoice('DICE CHOICE',btn,'DICE MODE: '..dice.mode)
+    return engine
 end
-local function actionForDraft(colo,start)
-    local rows=findDraftRows(colo)
-    if not rows then
-        
-        return
-    end
-    local bestCarry=nil
-    for r=1,4 do
-        for c=1,4 do
-            local b=rows[r][c]
-            local name=cleanCardName(ownLabel(b))
-            local score=cardScore(name)
-            if score>0 and (not bestCarry or score>bestCarry.score) then
-                bestCarry={row=r,col=c,name=name,score=score}
-            end
-        end
-    end
-    if not bestCarry and not state.draftRerollDisabled
-        and state.draftRerolls<cfg.maxDraftRerolls then
-        local reroll=findPattern(buttons(colo),'^REROLL ALL %([1-9]%d*%)$')
-        if reroll then
-            makeChoice('DRAFT',reroll,'DRAFT:REROLL',rows)
-            return
-        end
-        state.draftRerollDisabled=true
-    end
-    if not state.carryName then
-        if bestCarry then
-            state.carryName=bestCarry.name
-            state.carrySlot=bestCarry.row
-            state.noCarry=false
-            
-        else
-            -- Only auto-cashout a no-carry run when PDF restart and rerun
-            -- are enabled; never override user stop-floor in an ordinary run.
-            state.noCarry=cfg.restartUntilCarry and cfg.autoRerun
-            
-        end
-    end
-    for row=1,4 do
-        if not state.draftDone[row] then
-            if not state.picked[row] or not validButton(state.picked[row]) then
-                local chosen,score
-                if bestCarry and row==bestCarry.row then
-                    chosen=rows[row][bestCarry.col]
-                else
-                    score=-1
-                    for col,b in ipairs(rows[row]) do
-                        local name=cleanCardName(ownLabel(b))
-                        local value=sideScore(name)
-                        if value==0 then value=cardScore(name)*.45 end
-                        if value>score then chosen=b;score=value end
-                    end
-                end
-                state.picked[row]=chosen
-                state.teamNames[row]=cleanCardName(ownLabel(chosen))
-            end
-            makeChoice('DRAFT',state.picked[row],'row'..row,rows)
-            return
-        end
-    end
-    makeChoice('DRAFT',start,'START THE RUN',rows)
-end
-local cachedColoPrompt=nil
-local cachedPromptUntil=0
-local function findPrompt()
-    if cachedColoPrompt and cachedColoPrompt.Parent and cachedColoPrompt.Enabled then
-        return cachedColoPrompt
-    end
-    local now=os.clock()
-    if now<cachedPromptUntil then return nil end
-    cachedPromptUntil=now+0.6
-    local p=Workspace:FindFirstChild('ColosseumPrompt',true)
-        or Workspace:FindFirstChild('ColosseumTeleportPrompt',true)
-    if p and p:IsA('ProximityPrompt') then cachedColoPrompt=p;return p end
-    cachedColoPrompt=nil
-    return nil
-end
-local function tryOpenNpc()
-    if not cfg.autoApproachNPC or os.clock()-state.lastPrompt<0.8 then return end
-    local now=os.clock()
-    -- Required order: request world teleport, wait for it to settle,
-    -- confirm the Colosseum NPC is reasonably near, THEN start walking.
-    if state.transportStage=='idle' then
-        local remote=ReplicatedStorage:FindFirstChild('WorldsTeleportRequest')
-        if not (remote and remote:IsA('RemoteEvent')) then
-            state.transportStatus='Teleport remote missing; staying put'
-            state.lastPrompt=now
-            return
-        end
-        local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
-        state.transportOrigin=root and root.Position or nil
-        local ok=pcall(function() remote:FireServer('Colosseum') end)
-        state.lastPrompt=now
-        if not ok then
-            state.transportStatus='Teleport failed; waiting before retry'
-            return
-        end
-        state.transportStage='waiting'
-        state.transportAt=now
-        state.transportAttempts=state.transportAttempts+1
-        state.transportStatus='Teleport requested; awaiting arrival'
-        return
-    end
-    if state.transportStage=='waiting' then
-        if now-state.transportAt<1.8 then return end
-        local prompt=findPrompt()
-        local char=player.Character
-        local root=char and char:FindFirstChild('HumanoidRootPart')
-        local par=prompt and prompt.Parent
-        local pos=par and (par:IsA('Attachment') and par.WorldPosition
-            or (par:IsA('BasePart') and par.Position))
-        if prompt and not pos then
-            local part=prompt:FindFirstAncestorWhichIsA('BasePart')
-            pos=part and part.Position
-        end
-        local distance=(root and pos) and (pos-root.Position).Magnitude or math.huge
-        local moved=(root and state.transportOrigin)
-            and (root.Position-state.transportOrigin).Magnitude>15
-        if distance<140 and (moved or now-state.transportAt>2.7) then
-            state.transportStage='arrived'
-            state.transportStatus='At Colosseum; approaching NPC'
-        elseif now-state.transportAt>10 then
-            if state.transportAttempts<3 then
-                state.transportStage='idle'
-                state.transportStatus='Teleport not confirmed; retrying'
-            else
-                state.transportStatus='Teleport not confirmed; AUTO paused'
-                coloPause('Teleport to Colosseum not confirmed in 3 attempts')
-            end
-        end
-        return
-    end
-    if state.transportStage~='arrived' then return end
-    if now-state.lastPrompt<1.8 then return end
-    state.lastPrompt=now
-    local prompt=findPrompt()
-    if not prompt or not prompt.Enabled then return end
-    local char=player.Character
-    local root=char and char:FindFirstChild('HumanoidRootPart')
-    local hum=char and char:FindFirstChildOfClass('Humanoid')
-    local par=prompt.Parent
-    local pos=par:IsA('Attachment') and par.WorldPosition
-        or (par:IsA('BasePart') and par.Position)
-    if not pos then
-        local part=prompt:FindFirstAncestorWhichIsA('BasePart')
-        pos=part and part.Position
-    end
-    if not (root and hum and pos) then return end
-    local distance=(pos-root.Position).Magnitude
-    if distance>math.max(3,prompt.MaxActivationDistance-1) then
-        if distance<180 then hum:MoveTo(pos) end
-    elseif type(fireproximityprompt)=='function' then
-        pcall(function() fireproximityprompt(prompt) end)
-    else
-        -- Executor without fireproximityprompt: use the prompt's real keyboard key.
-        task.spawn(function()
-            local key=prompt.KeyboardKeyCode
-            if key==Enum.KeyCode.Unknown then key=Enum.KeyCode.E end
-            pcall(function()
-                VIM:SendKeyEvent(true,key,false,game)
-                task.wait(math.max(0.1,prompt.HoldDuration+0.09))
-                VIM:SendKeyEvent(false,key,false,game)
-            end)
-        end)
-    end
-end
-local function getCurrentMode(colo,mode)
-    for _,v in ipairs(buttons(colo)) do
-        if v.text:find(mode..': ON',1,true)==1 then return true,v.obj end
-        if v.text:find(mode..': OFF',1,true)==1 then return false,v.obj end
-    end
-    return nil,nil
-end
-local function setupMode(colo)
-    local currentHell,hellButton=getCurrentMode(colo,'HELL')
-    if currentHell==nil or not hellButton then
-        
-        return
-    end
-    if currentHell~=cfg.wantHell then
-        makeChoice('ENTER',hellButton,'MODE:HELL:'..(cfg.wantHell and 'ON' or 'OFF'))
-        return
-    end
-    local currentEndless,endlessButton=getCurrentMode(colo,'ENDLESS')
-    if currentEndless==nil or not endlessButton then
-        
-        return
-    end
-    if currentEndless~=cfg.wantEndless then
-        makeChoice('ENTER',endlessButton,'MODE:ENDLESS:'..(cfg.wantEndless and 'ON' or 'OFF'))
-        return
-    end
-    local enter=findExact(buttons(colo),'ENTER THE COLOSSEUM')
-    if enter then makeChoice('ENTER',enter,'ENTER THE COLOSSEUM') end
-end
-
--- CASH OUT becomes available on the NEXT fight preparation screen, after
--- the target wave has finished. E.g. FIGHT WAVE 36 means floors 1..35 cleared.
--- The log shows a real button reading 'Cash out (end run, keep banked rewards)'.
-local function maybeCashOut(colo,phase,button)
-    if phase~='FIGHT WAVE' and phase~='FIGHT CHAMPION' then return false end
-    -- PDF p2: if all rerolls exhausted and no listed carry, cash out at wave 1,
-    -- then automatically start a fresh run. Not an early exit for good teams.
-    if state.noCarry and cfg.restartUntilCarry and cfg.autoRerun then
-        local exit=findPattern(buttons(colo),'^CASH OUT %(')
-        if exit then
-            
-            makeChoice(phase,exit,'PDF:NO_CARRY_CASHOUT')
-        else
-            coloPause('No-carry cashout button missing')
-        end
-        return true
-    end
-    if not (cfg.wantEndless and state.stopFloor) then return false end
-    local nextWave=nil
-    if phase=='FIGHT WAVE' and button then
-        nextWave=tonumber(ownLabel(button):match('^FIGHT WAVE (%d+)$'))
-    elseif phase=='FIGHT CHAMPION' then
-        -- In Endless, champions occur at 14, 19, 24, 29, ...
-        -- The last ordinary FIGHT WAVE number is authoritative.
-        if state.lastSeenWave>0 then nextWave=state.lastSeenWave+1 end
-    end
-    if not nextWave then return false end
-    state.lastSeenWave=math.max(state.lastSeenWave,nextWave)
-    local cleared=nextWave-1
-    if cleared < state.stopFloor then return false end
-    local cash=findPattern(buttons(colo),'^CASH OUT %(')
-    if cash then
-        
-        makeChoice(phase,cash,'CASHOUT:'..state.stopFloor)
-    else
-        -- Missing button: never accidentally start a wave past the chosen stop.
-        coloPause('Cashout button missing at floor '..tostring(state.stopFloor))
-        
-    end
-    return true
-end
-
-
-
--- Restore the interrupted Colo run without clearing its draft, blessings,
--- carry, picked cards, pending acknowledgements or target floor.
-local function handleColoHandoff(current)
-    if handoff.requested and not handoff.active and not handoff.returning then
-        -- Rift may take control only AFTER Continue / post-battle choices have
-        -- been processed. In V10.5, taking ownership on 'CONTINUE' or the
-        -- short CLOSED transition froze the visible Continue button.
-        -- Do not interrupt live fights, Draft, Blessing or Dice, or an ACK.
-        if state.pending then return false end
-        local safe=(current=='FIGHT WAVE' or current=='FIGHT CHAMPION'
-            or current=='ENTER'
-            or (current=='CLOSED' and state.runCount==0))
-        if not safe then return false end
-        handoff.active=true
-        handoff.requested=false
-        handoff.startedAt=os.clock()
-        handoff.fromPhase=current
-        handoff.fromRun=state.runCount
-        handoff.fromWave=state.lastSeenWave
-        handoff.requireResume=(current~='CLOSED' and current~='ENTER')
-        state.transportStatus='Rift priority; Colosseum run held at next-wave menu'
-        return true
-    end
-    if handoff.active then return true end
-    if not handoff.returning then return false end
-    local now=os.clock()
-    if not handoff.returnTeleportSent then
-        local remote=ReplicatedStorage:FindFirstChild('WorldsTeleportRequest')
-        if not (remote and remote:IsA('RemoteEvent')) then
-            coloPause('Cannot return to Colosseum: WorldsTeleportRequest missing')
-            return true
-        end
-        local root=player.Character and player.Character:FindFirstChild('HumanoidRootPart')
-        state.transportOrigin=root and root.Position or nil
-        local ok=pcall(function() remote:FireServer('Colosseum') end)
-        if not ok then
-            coloPause('Return teleport to Colosseum rejected')
-            return true
-        end
-        handoff.returnTeleportSent=true
-        handoff.returnAt=now
-        state.transportStage='waiting'
-        state.transportAt=now
-        state.transportAttempts=1
-        state.transportStatus='Returning to Colosseum area'
-        return true
-    end
-    if state.transportStage~='arrived' then
-        -- Existing Colosseum teleport confirmation/retry logic, reused.
-        tryOpenNpc()
-        return true
-    end
-    local colo=playerGui:FindFirstChild('ColosseumGui')
-    local battle=playerGui:FindFirstChild('BattleGui2')
-    local phase=getPhase(colo,battle)
-    if phase=='CLOSED' then
-        if now-handoff.returnAt>55 then
-            coloPause('Colosseum menu not reopened after Rift; old run state still held')
-        else
-            tryOpenNpc()
-        end
-        return true
-    end
-    if handoff.requireResume then
-        -- ENTER is the 'new run' screen. If the game forgot the existing run,
-        -- do NOT enter and wipe the run that the user wanted to keep.
-        if phase=='ENTER' or (phase=='DRAFT' and handoff.fromPhase~='DRAFT') then
-            if now-handoff.returnAt>13 then
-                coloPause('Old Colosseum run not restored after Rift; refusing to create a new run')
-            end
-            return true
-        end
-    end
-    handoff.returning=false
-    handoff.returnTeleportSent=false
-    state.transportStatus='Colosseum previous run resumed'
-    state.delayUntil=now+0.25
-    return false
-end
+local remoteColo=createRemoteColo()
 
 task.spawn(function()
     while state.alive do
         if state.enabled and not state.blocked then
-            local ok,err=pcall(function()
-                if (handoff.active or handoff.returning) and handleColoHandoff(nil) then return end
-                local colo=playerGui:FindFirstChild('ColosseumGui')
-                local battle=playerGui:FindFirstChild('BattleGui2')
-                local phase,button=getPhase(colo,battle)
-                if state.stopFloor==nil and state.runCount==0 and phase~='ENTER' and phase~='CLOSED' then
-                    state.stopFloor=chooseStopFloor()
-                end
-                if phase~=state.phase then
-                    local prior=state.phase
-                    state.phase=phase
-                    state.picked={}
-                    state.badSupport=false
-                    state.blessingTried={}
-                    state.sacredStep=nil
-                    state.sacredPlan=nil
-                    state.sacredAt=0
-                    state.supportRouteCount={}
-                    state.supportRouteFailed=false
-                    if phase=='DICE CHOICE' and prior~='DICE CHOICE' then
-                        state.dice={mode=nil,triedModes={},triedTargets={},awaitingTarget=false,nextAt=0}
-                    elseif phase~='DICE CHOICE' then
-                        state.dice=nil
-                    end
-                    if phase=='DRAFT' and prior~='DRAFT' then
-                        state.draftDone={}
-                        state.carryName=nil; state.carrySlot=nil; state.teamNames={}
-                        state.carryHp=nil;state.carryDmg=nil
-                        state.carryImmunity=false;state.carryDodge=false;state.devilChosen={}
-                        state.supportOwned={};state.supportCount=0;state.supportPendingNames=nil
-                        state.curseCount=0;state.curseUnavailable={};state.sacredChosen={};state.sacredUnavailable={}
-                        state.draftRerolls=0;state.draftRerollDisabled=false
-                        state.noCarry=false;state.noCarryCashout=false
-                        state.runCount=state.runCount+1
-                        state.stopFloor=chooseStopFloor()
-                        state.lastSeenWave=0
-                    end
-                    if phase=='ENTER' and prior~='ENTER' then
-                        state.lastSeenWave=0
-                        state.transportStage='arrived'
-                        state.transportStatus='Colosseum menu opened'
-                    end
-                    
-                end
-                if state.pending then
-                    resolvePending(colo,phase)
-                    return
-                end
-                if os.clock()<state.delayUntil then return end
-                if phase=='FIGHT WAVE' or phase=='FIGHT CHAMPION' then
-                    inspectCarryInTeam(colo)
-                end
-                if (phase=='FIGHT WAVE' or phase=='FIGHT CHAMPION')
-                    and maybeCashOut(colo,phase,button) then return end
-                if handoff.requested and handleColoHandoff(phase) then return end
-                if phase=='BATTLE' then
-                    
-                elseif phase=='DRAFT' then
-                    actionForDraft(colo,button)
-                elseif phase=='BLESSING' then
-                    actionForBlessing(colo)
-                elseif phase=='DICE CHOICE' then
-                    actionForDice(colo)
-                elseif phase=='ENTER' then
-                    if cfg.autoRerun or state.runCount==0 then setupMode(colo) end
-                elseif phase=='FIGHT WAVE' or phase=='FIGHT CHAMPION' or phase=='FACE CHAMPION'
-                    or phase=='CONTINUE' or phase=='ROLL DIE' or phase=='SEE RESULTS'
-                    or phase=='BACK GATES' then
-                    makeChoice(phase,button,phase)
-                elseif phase=='CLOSED' then
-                    if cfg.autoRerun or state.runCount==0 then tryOpenNpc() end
-                else
-                    -- Unknown view: never guess button clicks.
-                    
-                end
-            end)
+            local ok,err=pcall(remoteColo.tick)
             if not ok then
                 coloPause('Lua error: '..tostring(err))
             end
         end
-        -- Fixed V10.4 0.25s action cadence, unaffected by Rift polling/UI.
-        -- A longer sleep is allowed ONLY while Colo is fully suspended/OFF.
+        -- Keep the remote cadence while AUTO is active.
         task.wait((state.enabled and not handoff.active and not handoff.returning)
             and cfg.poll or 0.60)
     end
