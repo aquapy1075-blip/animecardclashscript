@@ -10,6 +10,7 @@ local cfg=ctx.cfg
 local Workspace=ctx.Workspace
 local env=ctx.env
 local UIS=ctx.UIS
+local GuiService=ctx.GuiService
 local rift=ctx.rift
 local boss=ctx.boss
 local raid=ctx.raid
@@ -67,6 +68,7 @@ local function make(class,parent,props)
     local obj=Instance.new(class)
     for key,value in pairs(props or {}) do obj[key]=value end
     obj.Parent=parent
+    if obj:IsA('GuiObject') then obj.Selectable=false end
     if obj:IsA('GuiObject') and obj.BackgroundTransparency<1 then
         local base=obj.BackgroundTransparency
         surfaces[obj]=base
@@ -411,7 +413,7 @@ end
 
 section('Rift Gate','Rift Gate')
 addToggle('Rift Gate','Auto Rift','AO_AutoRift')
-addToggle('Rift Gate','Walk to NPC','AO_Rift_Walk')
+addStatus('Rift Gate','Mode','Remote entry / native battle engine')
 addToggle('Rift Gate','Auto Leave','AO_Rift_Leave')
 section('Rift Gate','Live Status')
 local riftStatus=addStatus('Rift Gate','Rift status','OFF')
@@ -574,6 +576,24 @@ end)
 state.connections[#state.connections+1]=UIS.InputEnded:Connect(function(input)
     if input==sliderInput then sliderInput=nil end
 end)
+local navigationBefore={}
+local navigationChanged={}
+local function restoreGameInput()
+    if not GuiService then return end
+    pcall(function() GuiService.SelectedObject=nil end)
+    -- One-time reset for keyboard users. Do not bind WASD/Enter or alter any
+    -- native button's Visible, Enabled, transparency, size or position.
+    if not UIS.GamepadEnabled then
+        for _,property in ipairs({'GuiNavigationEnabled','AutoSelectGuiEnabled'}) do
+            pcall(function()
+                if navigationBefore[property]==nil then navigationBefore[property]=GuiService[property] end
+                GuiService[property]=false;navigationChanged[property]=true
+            end)
+        end
+    end
+end
+restoreGameInput()
+addAction('Settings','Game keyboard input','RESET INPUT',restoreGameInput)
 section('Settings','Connection')
 addToggle('Settings','Auto Reconnect','AO_Reconnect')
 local reconnectStatus=addStatus('Settings','Reconnect','Monitoring')
@@ -689,6 +709,13 @@ dismiss.MouseButton1Click:Connect(function() root.Enabled=false end)
 local stopEverything=state.stop
 state.stop=function()
     stopEverything()
+    if GuiService then
+        for property in pairs(navigationChanged) do
+            pcall(function()
+                if GuiService[property]==false then GuiService[property]=navigationBefore[property] end
+            end)
+        end
+    end
     for _,conn in ipairs(state.connections or {}) do pcall(function() conn:Disconnect() end) end
 end
 local function showStatus(widget,value)

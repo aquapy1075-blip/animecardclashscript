@@ -55,6 +55,7 @@ function Instance.new(class)
 end
 local noop=function() end
 local UIS={InputBegan=signal(),InputChanged=signal(),InputEnded=signal()}
+local GuiService={SelectedObject='old selection',GuiNavigationEnabled=true,AutoSelectGuiEnabled=true}
 local state={alive=true,enabled=true,phase='DRAFT',lastSeenWave=0,supportCount=0,curseCount=0,
  connections={},stop=function() stateStopped=true end}
 local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,AO_AutoColosseum=true}
@@ -72,7 +73,7 @@ flags.AO_Border_test=1
 local parent=Instance.new('Folder');parent.Parent=true
 local camera={ViewportSize={X=1280,Y=800},GetPropertyChangedSignal=function() return signal() end}
 local ctx={state=state,flags=flags,cfg={stopSpec='30-40'},profile=profile,playerGui=parent,
- Workspace={CurrentCamera=camera},UIS=UIS,env={},boss=boss,raid=raid,siege=siege,rift=rift,
+ Workspace={CurrentCamera=camera},UIS=UIS,GuiService=GuiService,env={},boss=boss,raid=raid,siege=siege,rift=rift,
  reconnect={status='Ready'},handoff={},applyFlags=noop,requestReconnect=noop,loadIndex=noop,
  saveProfile=function(name) profile.currentProfile=name;return true end,
  loadProfile=function() profile.currentProfile='Loaded';flags.AO_UI_Theme='Ocean';flags.AO_UI_Transparency=35;return true end,
@@ -81,7 +82,11 @@ local ui
 ctx.setFlag=function(key,value) flags[key]=value;if ui then ui.Repaint() end end
 '''
 checks=r'''
+local nativeButton=Instance.new('TextButton');nativeButton.Parent=parent
+nativeButton.Text='Native game';nativeButton.Visible=true;nativeButton.Selectable=true;nativeButton.BackgroundTransparency=.4
 ui=Library.Create(ctx)
+assert(GuiService.SelectedObject==nil and GuiService.GuiNavigationEnabled==false and GuiService.AutoSelectGuiEnabled==false,'reset stuck keyboard GUI navigation')
+assert(nativeButton.Visible and nativeButton.Selectable and nativeButton.BackgroundTransparency==.4,'native buttons remain unchanged')
 assert(ui.Root.Parent==parent and #state.connections>=6)
 local function find(predicate)
  for _,obj in ipairs(objects) do if obj.Parent and predicate(obj) then return obj end end
@@ -132,6 +137,7 @@ print('PASS: World Blessing totals, latest wave gain, no-buff wave, resumed unkn
 
 local before=#state.connections
 state.stop();assert(stateStopped)
+assert(GuiService.GuiNavigationEnabled and GuiService.AutoSelectGuiEnabled,'restore navigation settings on stop')
 for _,c in ipairs(state.connections) do assert(not c.Connected,'external connections disconnected') end
 print('PASS: UI creation, unchanged repaint, transparency, touch slider, live profiles, visible-tab refresh, hidden idle, profile load, cleanup ('..before..' connections)')
 '''

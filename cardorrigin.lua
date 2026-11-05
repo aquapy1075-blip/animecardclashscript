@@ -14,7 +14,6 @@ local Workspace = game:GetService('Workspace')
 local ReplicatedStorage = game:GetService('ReplicatedStorage')
 local GuiService = game:GetService('GuiService')
 local TeleportService = game:GetService('TeleportService')
-local VIM = game:GetService('VirtualInputManager')
 local player = Players.LocalPlayer
 if not player then return end
 local playerGui = player:WaitForChild('PlayerGui')
@@ -133,39 +132,11 @@ end
 
 -- RIFT GATE | exact live-event flow without its former independent UI.
 local function createRiftGateController()
-    local Players=game:GetService('Players')
-    local Workspace=game:GetService('Workspace')
-    local RS=game:GetService('ReplicatedStorage')
-    local VIM=game:GetService('VirtualInputManager')
-    local player=Players.LocalPlayer
-    local pg=player:WaitForChild('PlayerGui')
-local cfg = {
-    poll = 0.35,
-    actionGap = 1.3,
-    ackTime = 2.3,
-    usePrompt = true,
-    autoLeave = true,
-    autoOpenChip = true,
-    moveToFightNPC = true,
-    maxMoveDistance = 85, -- walk only when inside Rift and NPC is nearby
-    leaveDelay = 3.0,
-    minEntryGap = 15 * 60,  -- no more than one new Rift per rolling 15 minutes
-    postClearGap = 10 * 60, -- do not enter a Rift until 10 minutes after clear
-}
-local s = {
-    alive = true, on = false, connections = {},
-    phase = 'WAITING', status = 'OFF',
-    actions = 0, clears = 0, lastAction = 0, pending = nil,
-    rewardAt = 0, clearedAt = 0, isCleared = false, battleFinishedAt = 0,
-    lastPrompt = 0, lastWalk = 0, lastSearch = 0, cachedFight = nil,
-    eventAttempt = {}, fails = {}, lastEvent = '', lastPhase = '',
-    runActive = false, didEnter = false, fightStarted = false,
-    lastEntryEpoch = 0, lastClearEpoch = 0,
-}
-env.RiftGateAutoLogV2 = s
-
--- Persistent, wall-clock Rift cooldown. Not part of the UI profile: swapping
--- profiles or re-executing the script must NOT reset the run rate limit.
+    local cfg={minEntryGap=5*60,postClearGap=5*60,autoLeave=true}
+    local s={alive=true,on=false,connections={},phase='WAITING',status='AUTO OFF',
+        clears=0,runActive=false,isCleared=false,lastEntryEpoch=0,lastClearEpoch=0,
+        rewardAt=0,clearedAt=0,fails={},nextAt=0,stage='idle',available=false}
+    env.RiftGateAutoLogV2=s
 local wallTime = function() return os.time() end
 local timerFile = 'AnimeOriginV9/rift_rate_limit.json'
 local hsvc = game:GetService('HttpService')
@@ -228,7 +199,7 @@ end
 local function recordClear()
     if s.isCleared then return end -- reward and CLEARED GUI may fire together
     -- A stale CLEARED banner after reload is not another victory.
-    -- It must never extend the 10-minute lock indefinitely.
+    -- It must never extend the clear cooldown indefinitely.
     if not s.runActive and s.lastClearEpoch>0
         and s.lastClearEpoch>=s.lastEntryEpoch then
         s.isCleared=true
@@ -244,541 +215,186 @@ local function recordClear()
     persistTimers()
 end
 
-local function tnow() return os.clock() end
-local function trim(x)
-    return tostring(x or ''):gsub('<[^>]*>', ''):gsub('%s+', ' '):gsub('^%s+', ''):gsub('%s+$', '')
-end
-local function upper(x) return trim(x):upper() end
-local function has(x, y) return x:find(y, 1, true) ~= nil end
-local function shown(obj)
-    local v = obj
-    while v and v ~= pg do
-        if v:IsA('GuiObject') and not v.Visible then return false end
-        if v:IsA('LayerCollector') and not v.Enabled then return false end
-        v = v.Parent
+    local router,queue
+    local function remote(name,class)
+        local folder=ReplicatedStorage:FindFirstChild('EventRemotes')
+        local value=folder and folder:FindFirstChild(name)
+        return value and value:IsA(class) and value or nil
     end
-    return v == pg
-end
--- Legacy recorder output disabled in Anime Origin.
-local function log(_message) end
-local function findAlert()
-    local g = pg:FindFirstChild('RiftGateAlertGui')
-    if g and g:IsA('ScreenGui') and g.Enabled then return g end
-    return nil
-end
-local function visibleContains(root, text)
-    if not root then return false end
-    for _, d in ipairs(root:GetDescendants()) do
-        if (d:IsA('TextLabel') or d:IsA('TextButton')) and shown(d) then
-            if has(upper(d.Text), text) then return true end
+    local function modulesReady()
+        if router and queue then return true end
+        local r=ReplicatedStorage:FindFirstChild('BattleRouter')
+        local q=ReplicatedStorage:FindFirstChild('AutoBattleQueue')
+        if not r or not q then return false end
+        local ok,a,b=pcall(function() return require(r),require(q) end)
+        if not ok or type(a)~='table' or type(b)~='table'
+            or type(a.playDummy)~='function' or type(a.ready)~='function'
+            or type(b.acquire)~='function' then return false end
+        router,queue=a,b;return true
+    end
+    local function fire(name)
+        local value=remote(name,'RemoteEvent')
+        if not value then return false end
+        return pcall(function() value:FireServer() end)
+    end
+    local function finish(reason)
+        s.runActive=false;s.stage='idle';s.status=reason
+        s.available=false
+        freeCombat('rift')
+    end
+    local function leave(reason)
+        if cfg.autoLeave then
+            if not fire('RiftGateLeave') then
+                s.status='RiftGateLeave unavailable; leave Rift manually'
+                s.stage='leave';s.nextAt=os.clock()+5
+                return
+            end
         end
+        finish(reason)
     end
-    return false
-end
-local function visibleNamed(root, name)
-    local o = root and root:FindFirstChild(name, true)
-    if o and shown(o) then return o end
-    return nil
-end
-local function buttonInside(o)
-    if not o then return nil end
-    if o:IsA('GuiButton') and shown(o) then return o end
-    for _, c in ipairs(o:GetDescendants()) do
-        if c:IsA('GuiButton') and shown(c) and c.Active then return c end
+    local function connect(name,callback)
+        local value=remote(name,'RemoteEvent')
+        if value then s.connections[#s.connections+1]=value.OnClientEvent:Connect(callback) end
     end
-    return nil
-end
-local function popupTeleportButton(alert)
-    local popup = visibleNamed(alert, 'RiftPopup')
-    if not popup or not visibleContains(popup, 'TAKE ME THERE') then return nil end
-    -- In manual log the real button is RiftPopup.Frame[#5].TextButton[#1].
-    -- It has no own text; sibling TextLabel says TAKE ME THERE.
-    local frames = {}
-    for _, c in ipairs(popup:GetChildren()) do
-        if c.Name == 'Frame' and c:IsA('GuiObject') then frames[#frames+1] = c end
-    end
-    for _, frame in ipairs(frames) do
-        if visibleContains(frame, 'TAKE ME THERE') then
-            local b = buttonInside(frame)
-            if b then return b end
+    connect('RiftGateSpawned',function()
+        s.available=true
+    end)
+    connect('RiftGateClosed',function()
+        s.available=false
+    end)
+    connect('RiftGateReward',function()
+        if not s.alive or s.stage~='reward' then return end
+        s.rewardAt=os.clock();recordClear()
+        s.stage='leave';s.nextAt=os.clock()+1
+        s.status='Rift reward confirmed'
+    end)
+    -- On startup a Spawned event may already have happened. Read the native
+    -- popup for availability only; never click it or change its properties.
+    local function liveEntryPopup()
+        local gui=playerGui:FindFirstChild('RiftGateAlertGui')
+        if not (gui and gui.Enabled) then return false end
+        for _,obj in ipairs(gui:GetDescendants()) do
+            if obj:IsA('TextButton') or obj:IsA('TextLabel') then
+                local text=tostring(obj.Text):upper()
+                if text:find('TAKE ME THERE',1,true) or text:find('LEAVE RIFT',1,true) then
+                    local node,visible=obj,true
+                    while node and node~=gui do
+                        if node:IsA('GuiObject') and not node.Visible then visible=false;break end
+                        node=node.Parent
+                    end
+                    if visible then return true end
+                end
+            end
         end
+        return false
     end
-    if #frames >= 5 then
-        local b = buttonInside(frames[5])
-        if b then return b end
+    local function tick()
+        if not s.alive or not state.alive or os.clock()<s.nextAt then return end
+        if s.stage=='battle' then
+            if os.clock()>s.deadline then
+                -- Do not unlock a battle that may still be running or invent a win.
+                s.on=false;s.status='Rift battle timed out; waiting for its real result'
+            end
+            return
+        end
+        if s.stage=='reward' then
+            if os.clock()>s.deadline then
+                s.on=false;s.status='No RiftGateReward acknowledgement; no repeated victory report'
+                leave(s.status)
+            end
+            return
+        end
+        if s.stage=='leave' then leave('Rift finished / '..clockString(secondsUntilNext()));return end
+        if not s.on then
+            if s.stage=='enter' then leave('Rift disabled before battle') end
+            return
+        end
+        if s.stage=='enter' then
+            if not modulesReady() or not router.ready() then s.status='Waiting for battle engine';return end
+            local builder=remote('BuildRiftGateBattle','RemoteFunction')
+            if not builder then s.on=false;leave('BuildRiftGateBattle missing');return end
+            local unlock=queue.acquire()
+            if not s.alive or not s.on or not state.alive then unlock();return end
+            local ok,data=pcall(function() return builder:InvokeServer(true) end)
+            if not s.alive or not state.alive then unlock();return end
+            if not s.on then unlock();leave('Rift disabled before battle');return end
+            if not ok or type(data)~='table' or data.ok~=true
+                or type(data.party)~='table' or type(data.enemies)~='table' then
+                unlock();s.on=false
+                leave('Rift build rejected: '..tostring(type(data)=='table' and (data.reason or data.error) or data))
+                return
+            end
+            s.stage='battle';s.phase='BATTLE';s.deadline=os.clock()+240
+            s.status='Rift remote / battle engine running'
+            local completed=false
+            local function onDone(won)
+                if completed then return end
+                completed=true
+                if not s.alive or not state.alive then return end
+                if won==true then
+                    s.stage='reward';s.deadline=os.clock()+20
+                    s.status='Victory verified; waiting for reward'
+                    if not fire('ReportRiftGateVictory') then
+                        s.on=false;leave('ReportRiftGateVictory unavailable')
+                    end
+                else
+                    s.stage='leave';s.nextAt=os.clock()+1
+                    s.status=won==false and 'Rift lost' or 'Rift interrupted; no victory report'
+                end
+            end
+            local played,started,reason=pcall(function()
+                return router.playDummy({party=data.party,enemies=data.enemies,
+                    title='RIFT GATE',startHidden=true,onDone=onDone},2)
+            end)
+            unlock()
+            if not played or not started then
+                completed=true;s.on=false;leave('Rift battle did not start: '..tostring(reason or started))
+            end
+            return
+        end
+        local remaining=secondsUntilNext()
+        if remaining>0 then
+            s.status='Next Rift in '..clockString(remaining);s.nextAt=os.clock()+1
+            return
+        end
+        if not (s.available or liveEntryPopup()) then
+            s.status='Waiting for RiftGateSpawned';s.nextAt=os.clock()+1
+            return
+        end
+        if not modulesReady() or not router.ready() then s.status='Waiting for battle engine';return end
+        if not tryCombat('rift') then s.status='Waiting for '..tostring(combat.owner or 'another battle');return end
+        if not remote('RiftGateEnterRequest','RemoteEvent')
+            or not remote('BuildRiftGateBattle','RemoteFunction')
+            or not remote('ReportRiftGateVictory','RemoteEvent')
+            or not remote('RiftGateLeave','RemoteEvent') then
+            freeCombat('rift');s.on=false;s.status='Required Rift remotes missing';return
+        end
+        s.isCleared=false
+        -- Persist admission before the request so an uncertain response cannot
+        -- trigger repeated entries or defeat the existing per-run rate limit.
+        recordEntry()
+        if not fire('RiftGateEnterRequest') then s.on=false;finish('Rift entry failed');return end
+        s.stage='enter';s.nextAt=os.clock()+3;s.status='Entered via remote; waiting for server'
     end
-    return nil
-end
-local function chipButton(alert)
-    local chip = visibleNamed(alert, 'RiftChip')
-    if chip and chip:IsA('GuiButton') and chip.Active then return chip end
-    return nil
-end
-local function leaveButton(alert)
-    local bar = visibleNamed(alert, 'InRiftBar')
-    if not bar or not visibleContains(bar, 'LEAVE RIFT') then return nil end
-    -- Exact manual GUI structure: InRiftBar.Frame.Frame.TextButton.
-    local frame = bar:FindFirstChild('Frame')
-    local frame2 = frame and frame:FindFirstChild('Frame')
-    if frame2 then return buttonInside(frame2) end
-    return buttonInside(bar)
-end
-local function inGate(alert)
-    return visibleNamed(alert, 'InRiftBar') ~= nil and visibleContains(alert, 'LEAVE RIFT')
-end
-local function battleActive()
-    local g = pg:FindFirstChild('BattleGui2')
-    local r = g and g:FindFirstChild('BattleRoot', true)
-    if r and shown(r) and r.AbsoluteSize.X > 250 and r.AbsoluteSize.Y > 160 then
-        return true
-    end
-    return false
-end
-local function clearText(alert)
-    return visibleContains(alert, 'RIFT CLEARED')
-end
-local function findPrompt(name)
-    local q = s.cachedFight
-    if name == 'RiftFightPrompt' and q and q.Parent and q.Enabled then return q end
-    -- Common location from the captured log, other Rift bosses may be named differently.
-    local npc = Workspace:FindFirstChild('Sung Jin-woo')
-    if npc then
-        local p = npc:FindFirstChild(name, true)
-        if p and p:IsA('ProximityPrompt') and p.Enabled then return p end
-    end
-    local p = Workspace:FindFirstChild(name, true)
-    if p and p:IsA('ProximityPrompt') and p.Enabled then
-        if name == 'RiftFightPrompt' then s.cachedFight = p end
-        return p
-    end
-    return nil
-end
-local function promptDistance(p)
-    local char = player.Character
-    local root = char and char:FindFirstChild('HumanoidRootPart')
-    if not root or not p or not p.Parent then return math.huge, nil, nil end
-    local host = p.Parent
-    local pos
-    if host:IsA('Attachment') then pos = host.WorldPosition
-    elseif host:IsA('BasePart') then pos = host.Position
-    elseif host:IsA('Model') then
-        local pp = host.PrimaryPart or host:FindFirstChildWhichIsA('BasePart')
-        if pp then pos = pp.Position end
-    end
-    if not pos then return math.huge, nil, root end
-    return (root.Position-pos).Magnitude, pos, root
-end
-local function firePrompt(p)
-    if not p or not p.Enabled then return false, 'Prompt unavailable' end
-    local distance = promptDistance(p)
-    local maxD = p.MaxActivationDistance or 10
-    if distance > maxD + 1.5 then return false, 'too far '..math.floor(distance) end
-    if type(fireproximityprompt) == 'function' then
-        local ok, err = pcall(function() fireproximityprompt(p) end)
-        if ok then return true, 'fireproximityprompt' end
-        
-    end
-    local hold = math.max(0.1, p.HoldDuration + 0.08)
-    local ok, err = pcall(function()
-        local key = p.KeyboardKeyCode
-        if key == Enum.KeyCode.Unknown then key = Enum.KeyCode.E end
-        VIM:SendKeyEvent(true, key, false, game)
-        task.wait(hold)
-        VIM:SendKeyEvent(false, key, false, game)
-    end)
-    return ok, ok and 'VirtualInput E' or tostring(err)
-end
-local function mouseClick(btn)
-    local p,z = btn.AbsolutePosition,btn.AbsoluteSize
-    local x,y = p.X + z.X/2, p.Y + z.Y/2
-    local ok, err = pcall(function()
-        VIM:SendMouseButtonEvent(x,y,0,true,game,0)
-        task.wait(0.11)
-        VIM:SendMouseButtonEvent(x,y,0,false,game,0)
-    end)
-    if ok then return true,'VirtualInput' end
-    return false,tostring(err)
-end
-local function signalClick(btn, event)
-    if type(firesignal) ~= 'function' then return false,'firesignal missing' end
-    local ok,err = pcall(function()
-        if event == 'Activated' then firesignal(btn.Activated)
-        else firesignal(btn.MouseButton1Click) end
-    end)
-    return ok,ok and ('firesignal '..event) or tostring(err)
-end
-local function clickAttempt(btn, n)
-    if not btn or not btn.Parent or not shown(btn) then return false,'button no longer visible' end
-    if n == 1 then
-        local ok,what = signalClick(btn,'Activated')
-        if ok then return ok,what end
-        return mouseClick(btn)
-    elseif n == 2 then
-        return mouseClick(btn)
-    else
-        return signalClick(btn,'MouseButton1Click')
-    end
-end
-local function phase()
-    local alert = findAlert()
-    if battleActive() then return 'BATTLE',alert,nil end
-    if alert and clearText(alert) then return 'CLEARED',alert,nil end
-    if alert and inGate(alert) then return 'INSIDE',alert,leaveButton(alert) end
-    if alert then
-        local b = popupTeleportButton(alert)
-        if b then return 'TAKE_ME_THERE',alert,b end
-        local chip = chipButton(alert)
-        if chip then return 'RIFT_CHIP',alert,chip end
-    end
-    return 'WAITING',alert,nil
-end
-local function expectDone(action)
-    local p = phase()
-    if action == 'TAKE_ME_THERE' then return p == 'INSIDE' or p == 'BATTLE' or p == 'CLEARED' end
-    if action == 'RIFT_CHIP' then return p == 'TAKE_ME_THERE' or p == 'INSIDE' end
-    if action == 'LEAVE' then return not (findAlert() and inGate(findAlert())) end
-    if action == 'FIGHT' then return p == 'BATTLE' or p == 'CLEARED' or s.rewardAt > s.lastAction end
-    if action == 'LEAVE_PROMPT' then return not (findAlert() and inGate(findAlert())) end
-    return false
-end
-local function schedule(action, btn)
-    if not s.on or s.pending then return end
-    if tnow()-s.lastAction < cfg.actionGap then return end
-    local n = (s.fails[action] or 0)+1
-    if n > 3 then
-        s.status = 'NEED MANUAL: '..action
-        
-        s.fails[action] = 99
-        return
-    end
-    local ok,method
-    if action == 'FIGHT' or action == 'LEAVE_PROMPT' then
-        ok,method = firePrompt(btn)
-    else
-        ok,method = clickAttempt(btn,n)
-    end
-    if not ok then
-
-        s.fails[action] = n
-        s.lastAction=tnow()
-        return
-    end
-    s.actions=s.actions+1
-    s.lastAction=tnow()
-    s.pending={action=action,at=tnow(),attempt=n,method=method}
-    s.status='Sent '..action..' via '..method
-
-end
-local function checkPending()
-    local q=s.pending
-    if not q then return end
-    if expectDone(q.action) then
-        if q.action=='FIGHT' then s.fightStarted=true end
-        if q.action=='TAKE_ME_THERE' then s.didEnter=true end
-        s.fails[q.action]=nil
-        s.pending=nil
-        return
-    end
-    local waitTime = (q.action == 'FIGHT') and 3.2 or cfg.ackTime
-    if tnow()-q.at >= waitTime then
-
-        s.fails[q.action]=q.attempt
-        s.pending=nil
-    end
-end
-local function walkToFight(prompt)
-    if not cfg.moveToFightNPC or not prompt or not prompt.Enabled then return end
-    if tnow()-s.lastWalk < 2.5 then return end
-    local d,pos = promptDistance(prompt)
-    if not pos or d > cfg.maxMoveDistance or d < prompt.MaxActivationDistance then return end
-    local char=player.Character
-    local humanoid=char and char:FindFirstChildWhichIsA('Humanoid')
-    if humanoid then
-        s.lastWalk=tnow()
-        humanoid:MoveTo(pos)
-        s.status='Walking to Rift NPC ('..math.floor(d)..' studs)'
-    end
-end
-local function startNewEvent()
-    s.isCleared=false
-    s.clearedAt=0
-    s.runActive=false
-    s.didEnter=false
-    s.fightStarted=false
-    s.rewardAt=0
-    s.battleFinishedAt=0
-    s.fails={}
-    s.pending=nil
-    
-end
-
-
-    local function connect(signal, callback)
-        local con=signal:Connect(callback)
-        s.connections[#s.connections+1]=con
-        return con
-    end
-    local remotes=RS:FindFirstChild('EventRemotes')
-    local reward=remotes and remotes:FindFirstChild('RiftGateReward')
-    if reward and reward:IsA('RemoteEvent') then
-        connect(reward.OnClientEvent,function(data)
-            if not s.alive then return end
-            s.rewardAt=tnow()
-            recordClear()
-            local remaining=secondsUntilNext()
-            s.status='Rift cleared. Next in '..clockString(remaining)
-        end)
-    end
-    local lastPhase=''
     task.spawn(function()
         while s.alive and state.alive do
-            local ok=pcall(function()
-                if not s.on then s.phase='WAITING';s.status='AUTO OFF';return end
-                local p,alert,btn=phase()
-                s.phase=p
-                if p~=lastPhase then
-                    if lastPhase=='BATTLE' and (s.runActive or s.didEnter) then
-                        s.battleFinishedAt=tnow()
-                        s.fightStarted=true -- don't re-prompt a finished battle
-                    end
-                    lastPhase=p
-                end
-                if alert and clearText(alert) then recordClear() end
-                checkPending()
-                if not s.on or s.pending then return end
-
-                local remaining,entryWait,clearWait=secondsUntilNext()
-                -- Request preemption only when a fresh Rift can actually be
-                -- entered (or an already-entered Rift must be finished).
-                -- During a Colosseum wave BattleGui2 is owned by Colo, so
-                -- do not take it away until that battle UI has completed.
-                local eligible=(not s.isCleared and remaining<=0
-                    and (p=='TAKE_ME_THERE' or p=='RIFT_CHIP' or p=='INSIDE'))
-                    or s.runActive
-                    or (s.isCleared and alert and inGate(alert))
-                    or (p=='INSIDE' and s.lastEntryEpoch>s.lastClearEpoch)
-                if state.enabled and not state.blocked and not state.remoteColo then
-                    if handoff.returning then
-                        s.status='Colosseum resuming; Rift standing by'
-                        return
-                    end
-                    if not handoff.active then
-                        -- An unresponsive Rift popup must not keep stealing
-                        -- the Colo next-wave screen every tick.
-                        if tnow()<handoff.suppressUntil then
-                            handoff.requested=false
-                            s.status='Rift entry retry deferred; Colo farming normally'
-                        elseif eligible and p~='BATTLE' then
-                            handoff.requested=true
-                            handoff.requestedAt=tnow()
-                            s.status='Rift ready: waiting for safe Colo boundary'
-                        else
-                            handoff.requested=false
-                        end
-                        return
-                    end
-                else
-                    handoff.requested=false
-                    if handoff.active and not handoff.returning then
-                        -- Colosseum was disabled manually while Rift was up.
-                        -- Do not force a return if its AUTO switch is OFF.
-                        handoff.active=false
-                    end
-                end
-                if handoff.active and s.isCleared and s.clearedAt>0
-                    and tnow()-s.clearedAt>22 then
-                    -- Emergency release if Rift's Leave button vanished after
-                    -- clear. Returning uses the normal Colosseum world remote.
-                    beginColoReturn()
-                    s.status='Rift cleared; returning to Colosseum'
-                    return
-                end
-                if handoff.active and not (alert and inGate(alert)) and
-                    (s.isCleared or ((s.runActive or s.didEnter) and s.fightStarted and s.battleFinishedAt>0
-                        and p~='BATTLE')) then
-                    if not s.isCleared then
-                        -- Loss / no reward: close this admission. Otherwise
-                        -- runActive=true would request Rift again forever.
-                        s.runActive=false
-                        s.pending=nil
-                        s.fightStarted=false
-                        s.battleFinishedAt=0
-                    end
-                    beginColoReturn()
-                    s.status='Rift finished; back to Colosseum'
-                    return
-                end
-                if handoff.active and not s.isCleared and not s.didEnter
-                    and p~='BATTLE' and p~='INSIDE'
-                    and (tnow()-handoff.startedAt>35
-                        or s.fails.TAKE_ME_THERE==99
-                        or s.fails.RIFT_CHIP==99) then
-                    -- V10.5 could freeze Colo indefinitely on an unclickable
-                    -- Rift popup. Close only this failed admission and pause
-                    -- preemption for 60s. Wall-clock 15min limit is untouched.
-                    s.runActive=false
-                    s.pending=nil
-                    s.fightStarted=false
-                    handoff.suppressUntil=tnow()+60
-                    beginColoReturn()
-                    s.status='Rift entry not acknowledged; returning to Colo'
-                    return
-                end
-                if handoff.active and s.runActive and not s.isCleared
-                    and s.battleFinishedAt>0 and tnow()-s.battleFinishedAt>45 then
-                    s.runActive=false
-                    s.fightStarted=false
-                    s.battleFinishedAt=0
-                    s.pending=nil
-                    beginColoReturn()
-                    s.status='Rift no result / leave missing; returning to Colo'
-                    return
-                end
-                if p=='BATTLE' then
-                    s.status='Battle in progress'
-                    return
-                end
-                if s.isCleared then
-                    -- On a cleared gate we may only LEAVE. Never reset
-                    -- isCleared merely because the old TAKE ME THERE popup
-                    -- reappears: that caused the V9 join/leave loop.
-                    if (cfg.autoLeave or (state.enabled and handoff.active)) and alert and inGate(alert)
-                        and tnow()-s.clearedAt>=cfg.leaveDelay then
-                        local exit=findPrompt('RiftLeavePrompt')
-                        if exit then
-                            local d=promptDistance(exit)
-                            if d<=exit.MaxActivationDistance+1.5 then
-                                schedule('LEAVE_PROMPT',exit)
-                            elseif leaveButton(alert) then
-                                schedule('LEAVE',leaveButton(alert))
-                            end
-                        elseif leaveButton(alert) then
-                            schedule('LEAVE',leaveButton(alert))
-                        end
-                    end
-                    if remaining>0 or (alert and inGate(alert)) then
-                        s.status='Cleared / cooldown '..clockString(remaining)
-                        return
-                    end
-                    -- Cooldown is over and we're outside: only a fresh
-                    -- popup/chip may start a new run. Never rejoin immediately.
-                    if p~='TAKE_ME_THERE' and p~='RIFT_CHIP' then
-                        s.status='Ready for next Rift event'
-                        return
-                    end
-                    startNewEvent()
-                end
-                -- One gate entry per 15 minutes, plus 10 minutes post-clear.
-                -- Keep the current admitted run usable so that retries of
-                -- its first click or its existing fight are not blocked.
-                if (p=='TAKE_ME_THERE' or p=='RIFT_CHIP') then
-                    if s.didEnter then
-                        -- This Rift was already entered. During the 15-minute
-                        -- lock never click its old popup; after the lock,
-                        -- allow a fresh event (including after a failed run).
-                        if remaining>0 then
-                            s.status='Rift already entered / next '..clockString(remaining)
-                            return
-                        end
-                        startNewEvent()
-                    end
-                    if not s.runActive and remaining>0 then
-                        s.status='Next Rift in '..clockString(remaining)
-                        return
-                    end
-                end
-                if (p=='TAKE_ME_THERE' or p=='RIFT_CHIP' or p=='INSIDE')
-                    and not s.runActive and combat.owner then
-                    s.status='Waiting for '..tostring(combat.owner)..' battle'
-                    return
-                end
-                if p=='TAKE_ME_THERE' then
-                    if not s.runActive then
-                        -- Record the entry on the first attempt. Failed click
-                        -- retries are allowed for THIS admission only.
-                        startNewEvent()
-                        recordEntry()
-                    end
-                    schedule('TAKE_ME_THERE',btn)
-                elseif p=='RIFT_CHIP' and cfg.autoOpenChip then
-                    if not s.runActive then startNewEvent() end
-                    schedule('RIFT_CHIP',btn)
-                elseif p=='INSIDE' then
-                    if not s.runActive then
-                        -- Resume an in-progress run after re-execution;
-                        -- do not silently start a NEW fight during cooldown.
-                        if s.lastEntryEpoch>s.lastClearEpoch
-                            and s.lastEntryEpoch>0 then
-                            s.runActive=true
-                            s.didEnter=true
-                        elseif remaining==0 then
-                            recordEntry()
-                            s.didEnter=true
-                        else
-                            s.status='Rift cooldown '..clockString(remaining)
-                            return
-                        end
-                    else
-                        s.didEnter=true
-                    end
-                    if s.fightStarted or (s.battleFinishedAt>0) then
-                        if s.battleFinishedAt>0 and tnow()-s.battleFinishedAt>=16
-                            and (cfg.autoLeave or (state.enabled and handoff.active)) and not s.isCleared then
-                            local exit=findPrompt('RiftLeavePrompt')
-                            local exitButton=leaveButton(alert)
-                            local distance=exit and promptDistance(exit) or math.huge
-                            if exit and distance<=exit.MaxActivationDistance+1.5 then
-                                schedule('LEAVE_PROMPT',exit)
-                            elseif exitButton then
-                                schedule('LEAVE',exitButton)
-                            end
-                            s.status='Rift fight ended; leaving after no reward'
-                        else
-                            s.status='Waiting for Rift result / reward'
-                        end
-                        return
-                    end
-                    local fight=findPrompt('RiftFightPrompt')
-                    if fight then
-                        local d=promptDistance(fight)
-                        if d<=(fight.MaxActivationDistance or 12)+1.5 then
-                            schedule('FIGHT',fight)
-                        else
-                            walkToFight(fight)
-                        end
-                    else
-                        s.status='Waiting for Rift NPC'
-                    end
-                else
-                    s.status=remaining>0 and ('Next Rift in '..clockString(remaining))
-                        or 'Waiting for Rift Gate event'
-                end
-            end)
-            if not ok then
-                s.status='Paused: Rift state error'
-                s.on=false
-            end
-            local cool=s.on and not s.runActive and not s.pending
-                and not handoff.active and secondsUntilNext()>0
-            task.wait(not s.on and 1.0 or (cool and 1.25 or cfg.poll))
+            local ok,err=pcall(tick)
+            if not ok then s.on=false;s.status='Rift error: '..tostring(err) end
+            task.wait((s.on or s.runActive) and .35 or 1)
         end
     end)
     return {
-        state=s,
-        enable=function(on)
-            s.on=(on==true)
-            if not s.on then s.pending=nil end
-            s.status=s.on and 'Monitoring Rift event' or 'AUTO OFF'
-        end,
-        setWalk=function(on) cfg.moveToFightNPC=(on==true) end,
-        setLeave=function(on) cfg.autoLeave=(on==true) end,
+        state=s,tick=tick,
+        enable=function(on) s.on=on==true end,
+        setWalk=function() end, -- compatibility with previously saved profiles
+        setLeave=function(on) cfg.autoLeave=on==true end,
         cooldownText=function()
             local remaining=secondsUntilNext()
             return remaining>0 and clockString(remaining) or 'READY'
         end,
         stop=function()
-            s.alive=false;s.on=false
-            for _,con in ipairs(s.connections) do pcall(function() con:Disconnect() end) end
+            s.alive=false;s.on=false;freeCombat('rift')
+            for _,connection in ipairs(s.connections) do pcall(function() connection:Disconnect() end) end
         end,
     }
 end
@@ -1489,21 +1105,10 @@ local function createRaidController(mainState)
     end
     local function click(btn,mode)
         if not (btn and btn:IsA('GuiButton') and live(btn)) then return false,'not visible' end
-        if mode~='mouse' and type(firesignal)=='function' then
-            local ok=pcall(function() firesignal(btn.Activated) end)
-            if ok then return true,'Activated' end
-            ok=pcall(function() firesignal(btn.MouseButton1Click) end)
-            if ok then return true,'MouseButton1Click' end
-        end
-        -- Physical GUI click fallback, only after prior click was not acknowledged.
-        local position,size=btn.AbsolutePosition,btn.AbsoluteSize
-        local x,y=position.X+size.X/2,position.Y+size.Y/2
-        local ok,err=pcall(function()
-            VIM:SendMouseButtonEvent(x,y,0,true,game,0)
-            task.wait(.09)
-            VIM:SendMouseButtonEvent(x,y,0,false,game,0)
-        end)
-        return ok,ok and 'VirtualInput' or tostring(err)
+        if type(firesignal)~='function' then return false,'firesignal required; physical clicks disabled' end
+        local signal=mode=='mouse' and btn.MouseButton1Click or btn.Activated
+        local ok,err=pcall(function() firesignal(signal) end)
+        return ok,ok and (mode=='mouse' and 'MouseButton1Click' or 'Activated') or tostring(err)
     end
     local function incoming(data)
         if type(data)~='table' then return end
@@ -1569,15 +1174,7 @@ local function createRaidController(mainState)
             local ok=pcall(function() fireproximityprompt(prompt) end)
             if ok then return true end
         end
-        -- Optional fallback when the executor lacks fireproximityprompt.
-        local key=prompt.KeyboardKeyCode
-        if key==Enum.KeyCode.Unknown then key=Enum.KeyCode.E end
-        local ok=pcall(function()
-            VIM:SendKeyEvent(true,key,false,game)
-            task.wait(math.max(.1,prompt.HoldDuration+.08))
-            VIM:SendKeyEvent(false,key,false,game)
-        end)
-        return ok
+        return false -- do not send keyboard input into the player's UI
     end
     local function approachRaid(token)
         local started=os.clock()
@@ -2695,6 +2292,7 @@ local ui=UILibrary.Create({
     Workspace=Workspace,
     env=env,
     UIS=UIS,
+    GuiService=GuiService,
     rift=rift,
     boss=boss,
     raid=raid,
@@ -2731,10 +2329,24 @@ local PDF_CARRIES = {
     ['TOWER KING']=88,
 }
 local PDF_SIDES = {
-    ['SORCERER SUPREME']=100, ['HOLLOW HARVESTER']=85,
-    ['SNIPER MAGE']=80, ['USELESS GODDESS (MUTATED)']=78,
-    ['USELESS GODDESS']=58,
+    ['SORCERER SUPREME']=100, ['USELESS GODDESS']=96,
+    ['HOLLOW HARVESTER']=92, ['ABYSSAL PIANIST']=90,
+    ['CRIMSON RUIN DEVIL']=88, ['THE GRINNING SPECTATOR']=86,
+    ['IDOL']=84, ['BLACKWING DEVIL']=82, ['SNIPER MAGE']=80,
+    ['GOLDEN KING']=78, ['GAME PRINCESS']=76, ["REALITY'S WORST DUET"]=60,
+    ['SWIFT']=45, ['ACCELERATED HEAVEN']=25, ['INTROVERT GUITARIST']=10,
 }
+local function baseCardName(card)
+    return normalize(card.name):gsub(' %(MUTATED%)$',''):gsub(' %(CURSED%)$','')
+end
+local function sideScore(card)
+    local score=PDF_SIDES[baseCardName(card)] or 0
+    -- Variant names/flags describe the same passive family, not a second
+    -- independent aura. Prefer a variant without drafting duplicate auras.
+    if score>0 and (card.isMutated or card.IsMutated
+        or normalize(card.name):find('(MUTATED)',1,true)) then score=score+1 end
+    return score
+end
 local PDF_SUPPORTS = {
     ['SENZU BEAN']=100, ['POTARA EARRINGS']=96,
     ['CURSED TOOL: PLAYFUL CLOUD']=88, ['LOG']=80,
@@ -2750,7 +2362,7 @@ local function createRemoteColo()
     local phaseNames={draft='DRAFT',ready='FIGHT WAVE',blessing='BLESSING',
         dice='ROLL DIE',diceCard='DICE CHOICE'}
     local function rank(card)
-        return PDF_CARRIES[normalize(card.name)] or 0
+        return PDF_CARRIES[baseCardName(card)] or 0
     end
     local function carry(run)
         local best,bestScore=nil,-math.huge
@@ -2758,7 +2370,7 @@ local function createRemoteColo()
             local priority=rank(card)
             local score=priority>0 and priority*1e9
                 or (tonumber(card.dmg) or 0)*10+(tonumber(card.maxHP) or 0)
-            if score>bestScore then best,bestScore=slot,score end
+            if score>bestScore or (score==bestScore and slot==2 and best~=2) then best,bestScore=slot,score end
         end
         return best,best and run.team[best]
     end
@@ -2769,12 +2381,21 @@ local function createRemoteColo()
         for _,key in ipairs(worldStats) do copy[key]=tonumber(world[key]) or 0 end
         return copy
     end
-    local function observeWorld(action,result)
+    local function observeWorld(action,result,payload)
         local current=copyWorld(result.run and result.run.world)
         if action=='lobby' or action=='start' then
             -- A resumed run provides totals, but no history of its last reward.
             engine.worldSnapshot=current
             state.worldBuffs=current
+            local skill=result.run and result.run.skill or {}
+            local upgraded=(tonumber(skill.worldUp) or 0)>0
+            -- Recover pick counts from the documented per-pick bonus on resume.
+            -- Equal picks differ in percentages with World's Favor (15% / 20%).
+            engine.worldPicks={
+                hp=current and math.max(0,math.floor(current.hpPct/(upgraded and .15 or .1)+.5)) or 0,
+                dmg=current and math.max(0,math.floor(current.dmgPct/(upgraded and .2 or .1)+.5)) or 0,
+            }
+            state.worldBlessPicks=engine.worldPicks
             state.worldBuffWave=action=='lobby' and result.run
                 and math.max(0,(tonumber(result.run.wave) or 1)-1) or nil
             state.worldBuffDelta=nil
@@ -2786,6 +2407,14 @@ local function createRemoteColo()
             state.worldBuffDelta={hpPct=0,dmgPct=0,dr=0,critDmg=0}
         end
         if current then
+            if action=='blessing' and payload and payload.cat=='world' then
+                local key=payload.opt=='hp' and 'hpPct' or payload.opt=='dmg' and 'dmgPct'
+                if key and engine.worldSnapshot and current[key]>engine.worldSnapshot[key]+.000001 then
+                    engine.worldPicks=engine.worldPicks or {hp=0,dmg=0}
+                    engine.worldPicks[payload.opt]=engine.worldPicks[payload.opt]+1
+                    state.worldBlessPicks=engine.worldPicks
+                end
+            end
             if engine.worldSnapshot and state.worldBuffDelta then
                 for _,key in ipairs(worldStats) do
                     state.worldBuffDelta[key]=state.worldBuffDelta[key]
@@ -2857,7 +2486,7 @@ local function createRemoteColo()
         end
         state.verified=state.verified+1
         state.transportStatus='Remote: '..action
-        observeWorld(action,result)
+        observeWorld(action,result,payload)
         if result.run~=nil then updateRun(result.run)
         elseif action=='lobby' or action=='forfeit' or result.summary then updateRun(nil) end
         if action=='start' then
@@ -2879,7 +2508,8 @@ local function createRemoteColo()
         for row,offers in ipairs(rows) do
             for index,card in ipairs(offers) do
                 local score=rank(card)
-                if score>0 and (not bestCarry or score>bestCarry.score) then
+                if score>0 and (not bestCarry or score>bestCarry.score
+                    or (score==bestCarry.score and row==2 and bestCarry.row~=2)) then
                     bestCarry={row=row,index=index,score=score}
                 end
             end
@@ -2891,19 +2521,28 @@ local function createRemoteColo()
             return
         end
         local picks={}
-        for row,offers in ipairs(rows) do
-            local pick,score=nil,-1
+        local chosen={}
+        if bestCarry then chosen[baseCardName(rows[bestCarry.row][bestCarry.index])]=true end
+        -- Rows fix the resulting slots. Prefer bench supports in rows 3/4;
+        -- a real swap remote is not present in the supplied protocol capture.
+        for _,row in ipairs({3,4,1,2}) do
+            local offers=rows[row]
+            local pick,score=nil,-math.huge
             if bestCarry and row==bestCarry.row then
                 pick=bestCarry.index
             else
                 for index,card in ipairs(offers) do
-                    local value=PDF_SIDES[normalize(card.name)] or 0
-                    if value==0 then value=rank(card)*.45 end
+                    local support=sideScore(card)
+                    local value
+                    if row>=3 then value=support>0 and support or rank(card)*.45
+                    else value=rank(card)>0 and rank(card)*.75 or support*.4 end
+                    if (support>0 or rank(card)>0) and chosen[baseCardName(card)] then value=-1 end
                     if value>score then pick,score=index,value end
                 end
             end
             if not pick then coloPause('Remote draft: empty offer row');return end
             picks[row]=pick
+            chosen[baseCardName(offers[pick])]=true
         end
         -- Commit the draft first, just like START THE RUN in the original.
         -- No-carry runs are ended only after the server confirms ready/wave 1.
@@ -2966,10 +2605,16 @@ local function createRemoteColo()
                     payload={cat='sacred',opt=effect,slot=slot}}
             end
         end
-        local name=normalize(card.name)
-        local hp,dmg=tonumber(card.hp),tonumber(card.dmg)
-        local preferHp=not hp or not dmg or dmg>=hp or name=='DEATHLESS OUTLAW'
-            or name=='GHOUL HUNGER' or name=='DEMON VENERABLE'
+        local picks=engine.worldPicks
+        if not picks then
+            local upgraded=run.skill and (tonumber(run.skill.worldUp) or 0)>0
+            local world=run.world or {}
+            picks={hp=math.floor((tonumber(world.hpPct) or 0)/(upgraded and .15 or .1)+.5),
+                dmg=math.floor((tonumber(world.dmgPct) or 0)/(upgraded and .2 or .1)+.5)}
+            engine.worldPicks=picks
+            state.worldBlessPicks=picks
+        end
+        local preferHp=picks.hp<=picks.dmg
         for _,opt in ipairs(preferHp and {'hp','dmg','dr','crit'} or {'dmg','hp','dr','crit'}) do
             candidates[#candidates+1]={key='world:'..opt,payload={cat='world',opt=opt}}
         end
@@ -2988,6 +2633,28 @@ local function createRemoteColo()
         local key=tostring(run.wave)
         engine.diceRejected[key]=engine.diceRejected[key] or {}
         local rejected=engine.diceRejected[key]
+        local offer=run.diceCard
+        if offer and sideScore(offer)>0 and not card.dead and (tonumber(card.hp) or 0)>0 then
+            local target,weakest=nil,math.huge
+            for _,index in ipairs({3,4}) do
+                local other=run.team[index]
+                if other and index~=slot and not rejected[index] then
+                    local duplicate=false
+                    for teamSlot,member in ipairs(run.team) do
+                        if teamSlot~=index and baseCardName(member)==baseCardName(offer) then duplicate=true end
+                    end
+                    local score=sideScore(other)
+                    if not duplicate and sideScore(offer)>score and score<weakest then
+                        target,weakest=index,score
+                    end
+                end
+            end
+            if target then
+                local result=invoke('diceChoose',{slot=target})
+                if result and result.ok==false then rejected[target]=true end
+                return
+            end
+        end
         if not card.dead and (tonumber(card.hp) or 0)>0 and not rejected.buff then
             local result=invoke('diceChoose',{target=slot,bonus='buff'})
             if result and result.ok==false then rejected.buff=true end
