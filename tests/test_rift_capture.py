@@ -1,4 +1,4 @@
-"""Verify the manual recorder observes RPCs without changing their results."""
+"""The lightweight recorder must leave unrelated calls and UI untouched."""
 from pathlib import Path
 import os
 import shutil
@@ -7,35 +7,37 @@ import tempfile
 
 source=(Path(__file__).resolve().parents[1]/'rift_remote_capture.lua').read_text()
 mock=r'''
-local env={}
+local disabled=0
+local legacy={Version=1,active=true,connections={{Disconnect=function() disabled+=1 end}}}
+local env={AnimeOriginRiftCapture=legacy}
 local getgenv=function() return env end
 local warnings={}
 local warn=function(message) warnings[#warnings+1]=message end
-local task={defer=function(fn) fn() end}
-local function signal()
- local listeners={}
- return {Connect=function(_,fn)
-  local c={Connected=true}
-  function c:Disconnect() self.Connected=false end
-  listeners[#listeners+1]={fn=fn,c=c};return c
- end,Fire=function(_,...) for _,v in ipairs(listeners) do if v.c.Connected then v.fn(...) end end end}
-end
 local function remote(class,path)
- return {_instance=true,ClassName=class,GetFullName=function() return path end,
- IsA=function(_,kind) return class==kind end,OnClientEvent=signal()}
+ return {ClassName=class,GetFullName=function() return path end,
+ IsA=function(_,kind) return class==kind end}
 end
-local rf=remote('RemoteFunction','ReplicatedStorage.EventRemotes.TestRift')
-local re=remote('RemoteEvent','ReplicatedStorage.EventRemotes.RiftGateReward')
-local chat=remote('RemoteEvent','ReplicatedStorage.DefaultChatSystemChatEvents.Chat')
-local root={DescendantAdded=signal(),GetDescendants=function() return {rf,re,chat} end}
-local exports={}
-local http={JSONEncode=function(_,obj) exports[#exports+1]=obj;return 'json' end}
-local game={GetService=function(_,name) return name=='HttpService' and http or root end}
-local typeof=function(obj) return type(obj)=='table' and obj._instance and 'Instance' or type(obj) end
-local saved={}
-local writefile=function(path,data) saved[path]=data end
+local rf=remote('RemoteFunction','ReplicatedStorage.EventRemotes.BuildRiftGateBattle')
+local re=remote('RemoteEvent','ReplicatedStorage.EventRemotes.RiftGateEnterRequest')
+local unrelated=remote('RemoteFunction','ReplicatedStorage.Roll')
+local searches=0
+local root={FindFirstChild=function(_,name)
+ searches+=1
+ if name=='BuildRiftGateBattle' then return rf end
+ if name=='RiftGateEnterRequest' then return re end
+end,GetDescendants=function() error('must not scan all game instances') end}
+local encodes=0
+local http={JSONEncode=function(_,obj) encodes+=1;return 'json' end}
+local game={GetService=function(_,name)
+ if name=='ReplicatedStorage' then return root end
+ assert(name=='HttpService','must not inspect other services');return http
+end}
+local typeof=type
+local saves=0
+local writefile=function(path,data) assert(path=='rift_remote_capture.json' and data=='json');saves+=1 end
 local method='InvokeServer'
-local getnamecallmethod=function() return method end
+local methodReads=0
+local getnamecallmethod=function() methodReads+=1;return method end
 local installed
 local forwarded=0
 local hooks=0
@@ -49,36 +51,34 @@ local hookmetamethod=function(_,_,fn) installed=fn;hooks+=1;return original end
 '''
 checks=r'''
 local c=env.AnimeOriginRiftCapture
-assert(c.active and forwarded==0,'starting capture must send no remote requests')
+assert(c.active and forwarded==0,'starting capture must send no requests')
+assert(not legacy.active and disabled==1,'deactivate old recorder listeners without exporting')
+assert(encodes==0 and searches==11,'fixed remote lookup only; no background export')
 local result=table.pack(installed(rf,'enter',{party={1,2,3,4}}))
-assert(result.n==3 and result[1].ok and result[2]==nil and result[3]==7,'preserve exact returned tuple')
-assert(#c.records==1 and c.records[1].status=='returned' and c.records[1].method=='InvokeServer')
-method='FireServer';installed(re,'claim')
+assert(result.n==3 and result[1].ok and result[2]==nil and result[3]==7,'preserve returned tuple')
+assert(#c.records==1 and c.records[1].status=='returned' and c.records[1].remote=='BuildRiftGateBattle')
+method='FireServer';installed(re,'enter')
 assert(c.records[2].status=='sent')
-re.OnClientEvent:Fire({reward=25})
-assert(c.records[3].direction=='server_to_client' and c.records[3].method=='OnClientEvent')
-local count=#c.records
-installed(chat,'chat');chat.OnClientEvent:Fire('chat')
-assert(#c.records==count,'omit chat')
+local count=#c.records;local reads=methodReads
+installed(unrelated,'roll')
+assert(#c.records==count and methodReads==reads,'unrelated calls bypass immediately')
+method='GetFullName';installed(rf,'read');assert(#c.records==count,'non-RPC calls bypass')
 method='InvokeServer';local ok=pcall(installed,rf,'fail')
-assert(not ok and c.records[#c.records].status=='error','preserve remote errors')
+assert(not ok and c.records[#c.records].status=='error','preserve errors')
+local cyclic={};cyclic.self=cyclic
+installed(rf,'cycle',cyclic);assert(c.records[#c.records].status=='returned')
+assert(encodes==0 and saves==0 and searches==11,'no IO, listeners, periodic scans or autosave during capture')
 local thread=coroutine.create(function() return installed(rf,'slow') end)
 local ok,value=coroutine.resume(thread);assert(ok and value=='pending' and c.pending==1)
-c.stop();assert(not pcall(c.start),'cannot overwrite a session with pending replies')
+c.stop();assert(not pcall(c.start),'do not overwrite a pending session')
 ok,value=coroutine.resume(thread);assert(ok and value==42 and c.pending==0)
-assert(c.records[#c.records].status=='returned' and saved[c.path]=='json','late reply saved after stop')
-count=#c.records;re.OnClientEvent:Fire('after stop');installed(rf,'after stop')
-assert(#c.records==count,'stop disconnects observers and bypasses outgoing capture')
-c.start();assert(#c.records==0 and c.active and hooks==1)
-re.OnClientEvent:Fire('one incoming record')
-assert(#c.records==1,'restart does not duplicate incoming listeners')
-local cyclic={};cyclic.self=cyclic
-installed(rf,'cycle',cyclic)
-assert(c.records[2].status=='returned','cycles cannot break the game RPC')
-c.maxRecords=#c.records
-local before=forwarded;installed(rf,'over limit')
-assert(not c.active and c.limitReason and forwarded==before+1,'limit stops recording, not the game RPC')
-print('PASS: no proactive RPC, outgoing/events/replies, nil returns, errors, pending replies, stop/restart, chat exclusion, cycles, record limit')
+assert(c.records[#c.records].status=='returned' and saves==1,'late reply does not autosave')
+c.stop();assert(saves==2,'manual stop saves completed reply')
+count=#c.records;installed(rf,'after stop');assert(#c.records==count)
+c.start();assert(#c.records==0 and c.active and hooks==1 and searches==11,'restart reuses hook without rescanning')
+c.limit=1;local before=forwarded;installed(rf,'last record')
+assert(not c.active and #c.records==1 and forwarded==before+1 and saves==2,'limit stops only recording, not game or IO')
+print('PASS: fixed Rift filter, unrelated fast path, no proactive RPC/listeners/autosave/UI changes, tuples/errors, legacy cleanup, manual save, limits')
 '''
 binary=os.environ.get('LUAU_BIN') or shutil.which('luau')
 if not binary:
