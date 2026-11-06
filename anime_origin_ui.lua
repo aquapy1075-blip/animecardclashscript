@@ -900,25 +900,25 @@ if ctx.pullWebhook then
     local webhookRow=row('Settings','Discord webhook URL')
     local webhookInput=make('TextBox',webhookRow,{Name='WebhookInput',Size=UDim2.fromOffset(200,34),
         Position=UDim2.new(1,-214,.5,-17),BackgroundTransparency=0,BorderSizePixel=0,
-        Font=Enum.Font.Gotham,TextSize=12,Text='',PlaceholderText='Paste URL · session only',ClearTextOnFocus=false})
+        Font=Enum.Font.Gotham,TextSize=12,Text='',PlaceholderText=ctx.pullWebhook.state.hasEndpoint and 'Configured · click to replace' or 'Paste URL · saved locally',ClearTextOnFocus=false})
     corner(webhookInput,10);skin(webhookInput,'BackgroundColor3','row')
     skin(webhookInput,'TextColor3','text');skin(webhookInput,'PlaceholderColor3','muted')
-    tooltip(webhookInput,'Base rarity only, strictly above 1 billion. URL stays in memory and is not saved to profiles.')
+    tooltip(webhookInput,'Base rarity only, strictly above 1 billion. URL saves locally in AnimeOriginV9/webhook.json, separately from profiles. Keep that file private.')
     webhookInput.FocusLost:Connect(function()
         if not lifecycle.alive then return end
         local value=webhookInput.Text
         if value=='' then return end
         local accepted=ctx.pullWebhook.setEndpoint(value)
         webhookInput.Text=''
-        webhookInput.PlaceholderText=ctx.pullWebhook.state.hasEndpoint and 'Configured · click to replace' or 'Paste URL · session only'
-        notify(accepted and 'Webhook configured for this session' or 'Invalid Discord webhook URL',accepted and 'success' or 'error')
+        webhookInput.PlaceholderText=ctx.pullWebhook.state.hasEndpoint and 'Configured · click to replace' or 'Paste URL · saved locally'
+        notify(accepted and ctx.pullWebhook.state.status or 'Invalid Discord webhook URL',accepted and 'success' or 'error')
     end)
     addAction('Settings','Test webhook','SEND TEST',function()
         local queued=ctx.pullWebhook.test()
         notify(queued and 'Webhook test queued; check delivery status below' or ctx.pullWebhook.state.status,queued and 'info' or 'warning')
     end)
     addAction('Settings','Clear webhook','CLEAR URL',function()
-        ctx.pullWebhook.setEndpoint('');webhookInput.Text='';webhookInput.PlaceholderText='Paste URL · session only'
+        ctx.pullWebhook.setEndpoint('');webhookInput.Text='';webhookInput.PlaceholderText=ctx.pullWebhook.state.hasEndpoint and 'Configured · click to replace' or 'Paste URL · saved locally'
     end)
     webhookStatus=addStatus('Settings','Webhook delivery','OFF')
     webhookCounts=addStatus('Settings','Matched / Sent / Failed','0 / 0 / 0')

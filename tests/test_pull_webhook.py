@@ -30,7 +30,15 @@ local ReplicatedStorage={FindFirstChild=function(_,name)
  if name=='GameDatabase' then return {FindFirstChild=function() return db end} end
 end}
 local encoded
-local HttpService={JSONEncode=function(_,value) encoded=value;return 'body' end,JSONDecode=function(_,body) if body=='image' then return {data={{state='Completed',imageUrl='https://tr.rbxcdn.com/card.png'}}} end;return {retry_after=2} end}
+local stored=nil
+local savedJSON=nil
+local diskFailure=false
+local makefolder=function() end
+local writefile=function(path,value)
+ assert(path=='AnimeOriginV9/webhook.json');if diskFailure then error('disk unavailable') end;stored=value
+end
+local readfile=function(path) assert(path=='AnimeOriginV9/webhook.json');return stored end
+local HttpService={JSONEncode=function(_,value) if value.url~=nil then savedJSON=table.clone(value);return 'settings' end;encoded=value;return 'body' end,JSONDecode=function(_,body) if body=='settings' then return savedJSON end;if body=='image' then return {data={{state='Completed',imageUrl='https://tr.rbxcdn.com/card.png'}}} end;return {retry_after=2} end}
 local requests={}
 local response={StatusCode=204}
 local request=function(options) if options.Method=='GET' then assert(options.Url:find('assetIds=12345',1,true));return {StatusCode=200,Body='image'} end;requests[#requests+1]=options;if response=='error' then error('private URL error') end;return response end
@@ -66,7 +74,14 @@ w.enable(false);response={StatusCode=204};assert(w.test());w.tick();assert(#requ
 w.enable(true);now+=11;w.tick();assert(#requests==count+1,'re-enable establishes a fresh baseline')
 w.stop();count=#requests;now+=20;w.tick();assert(#requests==count and not w.state.hasEndpoint)
 w.enable(true);assert(not w.setEndpoint('https://discord.com/api/webhooks/123/test') and not w.test())
-print('PASS: all-source inventory gains, baseline, polling, duplicate suppression, border conversions, strict base rarity, images, rate limits, cleanup')
+local restored=createPullWebhook()
+assert(restored.state.hasEndpoint and restored.state.endpointSaved,'URL restores after script restart')
+assert(restored.setEndpoint('') and savedJSON.url=='','CLEAR URL overwrites saved secret')
+local cleared=createPullWebhook();assert(not cleared.state.hasEndpoint,'cleared secret cannot reappear on restart')
+diskFailure=true
+assert(cleared.setEndpoint('https://discord.com/api/webhooks/123/test') and not cleared.state.endpointSaved,'save failure keeps session URL but reports failure')
+restored.stop();cleared.stop()
+print('PASS: endpoint persistence, restore, clear, save failure; all-source inventory gains, baseline, polling, duplicate suppression, border conversions, strict base rarity, images, rate limits, cleanup')
 '''
 binary=os.environ.get('LUAU_BIN') or shutil.which('luau')
 if not binary:raise SystemExit('Set LUAU_BIN or add luau to PATH')

@@ -2043,7 +2043,7 @@ local HttpService=game:GetService('HttpService')
 local UIS=game:GetService('UserInputService')
 -- Personal roll results only: no remote hooks, chat scraping or UI scanning.
 local function createPullWebhook()
-    local s={on=false,alive=true,status='OFF',matched=0,sent=0,failed=0,lastCard='--',hasEndpoint=false}
+    local s={on=false,alive=true,status='OFF',matched=0,sent=0,failed=0,lastCard='--',hasEndpoint=false,endpointSaved=false}
     local endpoint=nil
     local generation=0
     local snapshot=nil
@@ -2230,7 +2230,7 @@ local function createPullWebhook()
             task.wait(#queue>0 and .5 or 1)
         end
     end)
-    return {
+    local api={
         state=s,tick=tick,
         setEndpoint=function(value)
             if not s.alive then return false end
@@ -2245,7 +2245,16 @@ local function createPullWebhook()
             end
             endpoint=value~='' and value or nil
             generation=generation+1;queue={};nextAt=0;snapshot=nil;inventoryAt=0;s.hasEndpoint=endpoint~=nil
-            s.status=endpoint and 'Webhook configured for this session' or 'Webhook cleared'
+            s.endpointSaved=false
+            if type(writefile)=='function' then
+                local saved=pcall(function()
+                    if type(makefolder)=='function' then pcall(makefolder,'AnimeOriginV9') end
+                    writefile('AnimeOriginV9/webhook.json',HttpService:JSONEncode({url=endpoint or ''}))
+                end)
+                s.endpointSaved=saved
+            end
+            s.status=endpoint and (s.endpointSaved and 'Webhook saved locally' or 'Webhook active; local save unavailable')
+                or (s.endpointSaved and 'Webhook cleared locally' or 'Webhook cleared; local save unavailable')
             return true
         end,
         enable=function(on)
@@ -2266,6 +2275,15 @@ local function createPullWebhook()
             snapshot=nil
         end,
     }
+    if type(readfile)=='function' then
+        local ok,saved=pcall(function()
+            return HttpService:JSONDecode(readfile('AnimeOriginV9/webhook.json'))
+        end)
+        if ok and type(saved)=='table' and type(saved.url)=='string' and saved.url~='' then
+            api.setEndpoint(saved.url)
+        end
+    end
+    return api
 end
 local pullWebhook=createPullWebhook()
 local stopBeforePullWebhook=state.stop
@@ -2835,15 +2853,21 @@ local function createRemoteColo()
             end
             return true -- One mutation per tick; re-read server slots before planning another.
         end
-        if slot~=2 then return swap(slot,2) end
-        local ordered={1,3,4}
+        local supports=0
+        for index,member in ipairs(run.team) do
+            if index~=slot and sideScore(member)>0 then supports=supports+1 end
+        end
+        local carryTarget=supports==3 and 1 or 2
+        if slot~=carryTarget then return swap(slot,carryTarget) end
+        local positions=carryTarget==1 and {2,3,4} or {1,3,4}
+        local ordered=table.clone(positions)
         table.sort(ordered,function(a,b)
             local sa,sb=sideScore(run.team[a]),sideScore(run.team[b])
             if sa==sb then return a<b end
             return sa<sb
         end)
         -- Weakest side card in front, strongest support furthest back.
-        for index,target in ipairs({1,3,4}) do
+        for index,target in ipairs(positions) do
             if ordered[index]~=target then return swap(target,ordered[index]) end
         end
         return false
@@ -2871,28 +2895,36 @@ local function createRemoteColo()
             if result and result.ok then state.draftRerolls=state.draftRerolls+1 end
             return
         end
-        local picks={}
-        local chosen={}
-        if bestCarry then chosen[baseCardName(rows[bestCarry.row][bestCarry.index])]=true end
-        -- Draft rows initially fix slots; arrangeTeam uses the verified swap
-        -- protocol before fighting to move carry/supports into position.
-        for _,row in ipairs({3,4,1,2}) do
-            local offers=rows[row]
-            local pick,score=nil,-math.huge
-            if bestCarry and row==bestCarry.row then
-                pick=bestCarry.index
-            else
-                for index,card in ipairs(offers) do
-                    local support=sideScore(card)
-                    -- After securing one carry, all three remaining slots prefer supports.
-                    local value=support>0 and 1000+support or rank(card)*.45
-                    if (support>0 or rank(card)>0) and chosen[baseCardName(card)] then value=-1 end
-                    if value>score then pick,score=index,value end
+        local picks,working,chosen=nil,{},{}
+        local bestValue=-math.huge
+        -- Search all four small offer rows together: a greedy pick can consume
+        -- the only unique card available in a later row. Never draft duplicates.
+        local function search(row,value)
+            if row>4 then
+                if value>bestValue then bestValue=value;picks=table.clone(working) end
+                return
+            end
+            for index,card in ipairs(rows[row]) do
+                if not bestCarry or row~=bestCarry.row or index==bestCarry.index then
+                    local name=baseCardName(card)
+                    if not chosen[name] then
+                        local support=sideScore(card)
+                        local score=(bestCarry and row==bestCarry.row) and 0
+                            or (support>0 and 1000+support or rank(card)*.45)
+                        chosen[name]=true;working[row]=index
+                        search(row+1,value+score)
+                        chosen[name]=nil
+                    end
                 end
             end
-            if not pick then coloPause('Remote draft: empty offer row');return end
-            picks[row]=pick
-            chosen[baseCardName(offers[pick])]=true
+        end
+        search(1,0)
+        if not picks then
+            if rerollsLeft>0 and state.draftRerolls<cfg.maxDraftRerolls then
+                local result=invoke('reroll')
+                if result and result.ok then state.draftRerolls=state.draftRerolls+1 end
+            else coloPause('No duplicate-free draft available; choose a new run manually') end
+            return
         end
         -- Commit the draft first, just like START THE RUN in the original.
         -- No-carry runs are ended only after the server confirms ready/wave 1.
@@ -3018,6 +3050,14 @@ local function createRemoteColo()
             for index,other in ipairs(run.team) do
                 local score=(other.dead and -1e12 or 0)+rank(other)*1e6+(tonumber(other.dmg) or 0)
                 if index~=slot and not rejected[index] and score<weakest then target,weakest=index,score end
+            end
+        end
+        if offer then
+            for index,member in ipairs(run.team) do
+                if index~=target and baseCardName(member)==baseCardName(offer) then
+                    coloPause('Remote dice: duplicate card blocked; choose this offer manually')
+                    return
+                end
             end
         end
         if rejected[target] then coloPause('Remote dice: observed choices rejected');return end

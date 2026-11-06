@@ -300,7 +300,7 @@ assert(find(function(o) return o.Text=='Delivered' end))
 button('CLEAR URL').MouseButton1Click:Fire();assert(not webhookModel.state.hasEndpoint)
 assert(webhookContext.flags.WebhookURL==nil,'URL never enters profile flags')
 webhookUI.Destroy()
-print('PASS: optional webhook UI, session-only URL field, manual test, delivery status, clear endpoint, old context compatibility')
+print('PASS: optional webhook UI, cleared URL field, manual test, delivery status, clear endpoint, old context compatibility')
 
 
 

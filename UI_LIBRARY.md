@@ -67,8 +67,11 @@ third support at slot 1) via the observed
 
 The supplied slot capture confirms `ColosseumRemote:InvokeServer("swap", {a=2,b=3})`
 returns `ok=true` and the swapped server team in phase `ready`. Before each fight,
-the controller moves the ranked carry to slot 2 and sorts the other cards by side
-support priority: weakest at slot 1, stronger at slot 3, strongest at slot 4.
+the controller puts the carry at slot 1 when all three other cards are supports
+(supports at slots 2–4). Otherwise it puts the carry at slot 2. Remaining cards
+are sorted by side priority with the strongest support furthest back. Draft searches
+the four offer rows together and never picks duplicate base names, including
+Mutated/Cursed variants. This also limits Goddess and Hollow Harvester to one each.
 It sends at most one swap per tick, then uses the returned server snapshot for the
 next decision. Missing/unchanged swap confirmation pauses automation for resync;
 no local-only reordering is used. Existing wave-1 restart and stop-floor exits run
@@ -181,7 +184,7 @@ not qualify. Borders are shown in the notification but never multiply this filte
 Several above-threshold entries in the supplied database are custom/admin cards;
 normal rolls may produce few or no eligible events under this base-only setting.
 
-Paste a Discord webhook URL in the session-only input, click **SEND TEST** and
+Paste a Discord webhook URL in the input, click **SEND TEST** and
 check **Webhook delivery**, then enable **Rare pull alerts**. Notifications include
 the account name, card, base rarity, border, card ID and received count. Card artwork
 is resolved through Roblox thumbnails to an HTTPS CDN URL when available; image
@@ -189,9 +192,12 @@ failures do not prevent text delivery. Messages are not copied from global chat.
 The watcher does not request rolls, hook remotes, scan UI, or listen to other
 players' chat. No real Discord request was made during development tests.
 
-The URL stays only in the controller's memory, is cleared from the textbox after
-entry, and is not included in JSON profiles. Re-enter it after restarting the
-script. The enabled flag can be saved in profiles. **CLEAR URL** drops queued
+The URL is saved automatically in `AnimeOriginV9/webhook.json` and restored on
+restart when executor file APIs are available. It is plaintext: keep that file private.
+The textbox clears after entry and the URL is excluded from shareable profiles.
+If saving fails, delivery can still use the current session URL and status reports
+that local saving is unavailable. **CLEAR URL** overwrites the saved URL with an
+empty string so it does not return on restart. The enabled flag can be saved in profiles. **CLEAR URL** drops queued
 messages for the old URL. Disabling the feature stops inventory polling and clears pending alerts;
 stopping the script also clears the endpoint and pending queue.
 

@@ -62,6 +62,23 @@ local e=createRemoteColo();e.synced=true;e.resync=false;e.run={phase='diceCard',
  team={card('Other'),carry,card('Sorcerer Supreme'),card('Useless Goddess')},diceCard=card('Introvert Guitarist')}
 calls={};response={ok=true};now+=1;e.tick()
 assert(calls[1].action=='diceChoose' and calls[1].payload.slot==1,'dice can add a third support without replacing carry or stronger supports')
+-- Goddess/Harvester variants count as one family; pick a unique alternative.
+local e=createRemoteColo();e.synced=true;e.resync=false;e.run={phase='draft',wave=1,rerollsLeft=0,draft={rows={
+ {card('Useless Goddess'),card('Hollow Harvester')},
+ {card('Deathless Outlaw')},
+ {card('Useless Goddess (Mutated)')},
+ {card('Hollow Harvester (Cursed)'),card('Idol')},
+}}}
+calls={};response={ok=true};now+=1;e.tick()
+local p=calls[1].payload.picks
+assert(p[1]==2 and p[3]==1 and p[4]==2,'global draft search keeps exactly one Goddess and one Harvester')
+local e=createRemoteColo();e.synced=true;e.resync=false
+local t={card('Hollow Harvester'),card('Deathless Outlaw'),card('Idol'),card('Useless Goddess')}
+e.run={phase='ready',wave=2,team=t}
+local nt=table.clone(t);nt[1],nt[2]=nt[2],nt[1]
+calls={};response={ok=true,run={phase='ready',wave=2,team=nt}};now+=1;e.tick()
+assert(calls[1].action=='swap' and calls[1].payload.a==2 and calls[1].payload.b==1,'three supports moves carry to slot 1')
+assert(e.run.team[1].name=='Deathless Outlaw')
 -- Verified swap protocol: one request per tick, server-authoritative result.
 local e=createRemoteColo();e.synced=true;e.resync=false
 local team={card('Useless Goddess'),card('Other'),card('Deathless Outlaw'),card('Idol')}
