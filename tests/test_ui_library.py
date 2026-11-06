@@ -98,7 +98,7 @@ local function mode(key)
 end
 local boss,raid,siege,rift=mode('boss'),mode('raid'),mode('siege'),mode('rift')
 -- Representative rows exercise dropdowns, stage switches and cooldown text.
-boss.bosses={{id='test',name='Test Boss'}};boss.borders={'Normal','Gold','Rainbow','Uni','Astral','Origin'}
+boss.bosses={{id='test',name='Test Boss'},{id='mini_test',name='Test Mini Boss',kind='mini'}};boss.borders={'Normal','Gold','Rainbow','Uni','Astral','Origin'}
 raid.stages={{index=1,name='Test Raid'}};siege.stages={{index=1,name='Test Siege'}}
 flags.AO_Border_test=1
 local parent=Instance.new('Folder');parent.Parent=true
@@ -189,6 +189,15 @@ themeDrop.MouseButton1Click:Fire()
 local search=find(function(o) return o.Name=='DropdownSearch' end)
 search.Text='Light';button('Light').MouseButton1Click:Fire()
 assert(flags.AO_UI_Theme=='Light','filtered dropdown selects the original value')
+local miniLabel=find(function(o) return o.Text=='Auto Mini Boss' end)
+local miniToggle=find(function(o) return o.Parent==miniLabel.Parent and o:IsA('TextButton') end)
+local priorBoss=flags.AO_AutoBoss
+miniToggle.MouseButton1Click:Fire()
+assert(flags.AO_AutoMiniBoss==true and flags.AO_AutoBoss==priorBoss,'independent mini master switch')
+local miniDropdown=find(function(o) return o.Parent==boss.bosses[2].displayCooldown.Parent and o:IsA('TextButton') and o.Text:find('▾',1,true) end)
+miniDropdown.MouseButton1Click:Fire();search.Text='Origin';button('Origin').MouseButton1Click:Fire()
+assert(flags.AO_Border_mini_test==6 and flags.AO_Border_test==1,'mini border dropdown preserves internal index independently')
+
 assert(randomName.TextColor3~=carryName.TextColor3,'Light theme retains role distinction')
 -- Profile geometry loads at runtime and dragging cannot lose the window.
 flags.AO_UI_WindowW=900;flags.AO_UI_WindowH=620;flags.AO_UI_WindowX=.9;flags.AO_UI_WindowY=.8

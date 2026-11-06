@@ -721,7 +721,13 @@ local riftClears=addStatus('Rift Gate','Clears','0')
 section('Multi-Boss','Multi-Boss')
 addToggle('Multi-Boss','Auto Boss','AO_AutoBoss')
 local bossStatus=addStatus('Multi-Boss','Boss status','OFF')
+local miniSectionAdded=false
 for _,b in ipairs(boss.bosses) do
+    if b.kind=='mini' and not miniSectionAdded then
+        miniSectionAdded=true
+        section('Multi-Boss','Mini Bosses')
+        addToggle('Multi-Boss','Auto Mini Boss','AO_AutoMiniBoss')
+    end
     orderCounter=orderCounter+1
     local r=make('Frame',tabPages['Multi-Boss'],{
         Size=UDim2.new(1,-2,0,51),BorderSizePixel=0,LayoutOrder=orderCounter,

@@ -577,6 +577,60 @@ local function createBossController(mainState)
         {name='Kurumi',id='kurumi',build='BuildKurumiBattle',selected=true,border=1},
         {name='Klein',id='klein',build='BuildKleinBattle',selected=true,border=1},
     }
+    for _,entry in ipairs({
+        {'Cha Hae-In','chahaein'}, {'Boothill','boothill'}, {'Ragna','ragna'},
+        {'Guildmaster','guildmaster'}, {'Yuta','yuta'}, {'Sword Empress','swordempress'},
+        {'Yuno','yuno'}, {'Sukuna','sukuna'},
+    }) do
+        bosses[#bosses+1]={name=entry[1],id='mini_'..entry[2],kind='mini',
+            build='BuildMini_'..entry[2],open='OpenMini_'..entry[2],selected=false,border=1}
+    end
+    local function resolveServerId(b)
+        if b.kind~='mini' then return true end
+        if b.serverId then return true end
+        if os.clock()<(b.configRetryAt or 0) then return false end
+        b.configRetryAt=os.clock()+10
+        -- BossPanel.Start's open-event handler closes over build(), which
+        -- closes over the actual config. Read it without firing/opening UI.
+        local open=ReplicatedStorage:FindFirstChild(b.open)
+        local getUpvalues=debug and debug.getupvalues or getupvalues
+        if not open or type(getconnections)~='function' or type(getUpvalues)~='function' then
+            b.cdState='config';return false
+        end
+        local visited={};local budget=60
+        local function inspect(value,depth)
+            if budget<=0 or depth>5 or visited[value] then return end
+            if type(value)~='function' and type(value)~='table' then return end
+            visited[value]=true;budget=budget-1
+            if type(value)=='table' then
+                if rawget(value,'buildRemote')==b.build and type(rawget(value,'id'))=='string' then
+                    return rawget(value,'id')
+                end
+                return -- never walk arbitrary game tables
+            end
+            local ok,values=pcall(getUpvalues,value)
+            if ok and type(values)=='table' then
+                -- Check direct config tables before exploring nested closures.
+                for _,kind in ipairs({'table','function'}) do
+                    for _,upvalue in pairs(values) do
+                        if type(upvalue)==kind then
+                            local id=inspect(upvalue,depth+1)
+                            if id then return id end
+                        end
+                    end
+                end
+            end
+        end
+        local ok,connections=pcall(getconnections,open.OnClientEvent)
+        if ok and type(connections)=='table' then
+            for _,connection in ipairs(connections) do
+                local got,fn=pcall(function() return connection.Function end)
+                local id=got and inspect(fn,0)
+                if id then b.serverId=id;b.cdState=nil;return true end
+            end
+        end
+        b.cdState='config';return false
+    end
     -- Sung Jinwoo/queen mapping remains unconfirmed; server responses are authoritative.
     local function debugLog(tag,message)
         print('[ANIME ORIGIN / BOSS] '..os.date('%H:%M:%S')..' | '..tostring(tag)..' | '..tostring(message):sub(1,280))
@@ -612,6 +666,7 @@ local function fmtSeconds(value)
 end
 local function pollCooldown(b)
     if state.stopped or b.cdPolling then return end
+    if not resolveServerId(b) then return end
     b.cdPolling=true
     local epoch=b.cdEpoch or 0
     local selectedIndex=b.border
@@ -632,7 +687,7 @@ local function pollCooldown(b)
     local progress=getRemote('GetBossBorderProgress','RemoteFunction')
     if progress then
         if not b.cdProgressAt or now>=b.cdProgressAt then
-            local ok,level=pcall(function() return progress:InvokeServer(b.id) end)
+            local ok,level=pcall(function() return progress:InvokeServer(b.serverId or b.id) end)
             if ok and type(level)=='number' then
                 b.cdUnlocked=math.clamp(math.floor(level),1,#borders)
             else
@@ -645,7 +700,7 @@ local function pollCooldown(b)
     end
     local actualKey=borderKeys[effectiveIndex]
     local ok,seconds=pcall(function()
-        return cdRemote:InvokeServer(b.id,actualKey)
+        return cdRemote:InvokeServer(b.serverId or b.id,actualKey)
     end)
     b.cdPolling=false
     if state.stopped or not mainState.alive then return end
@@ -720,9 +775,11 @@ local function nativeAutoRunning()
     if check then
         -- Prefer server state, since the attribute is only client UI state.
         for _,b in ipairs(bosses) do
-            local ok,value=pcall(function() return check:InvokeServer(b.id) end)
+            if resolveServerId(b) then
+            local ok,value=pcall(function() return check:InvokeServer(b.serverId or b.id) end)
             if ok and type(value)=="string" and value~="" then
-                return b.id,value,"server"
+                return b.serverId or b.id,value,"server"
+            end
             end
         end
     end
@@ -751,6 +808,7 @@ end
 
 local function runBoss(b)
     if not state.running then return end
+    if not resolveServerId(b) then notify(b.name..' / waiting for native boss config (no guessed ID)');b.nextTry=os.clock()+10;return end
     local cooldown=getRemote("GetBossCooldown","RemoteFunction")
     local builder=getRemote(b.build,"RemoteFunction")
     local reward=getRemote("ReportBossVictory","RemoteEvent")
@@ -765,7 +823,7 @@ local function runBoss(b)
     debugLog('BOSS',b.name..' id='..b.id..' builder='..b.build..' selected='..chosen..' key='..borderKeys[b.border])
     local progress=getRemote("GetBossBorderProgress","RemoteFunction")
     if progress then
-        local ok,level=pcall(function() return progress:InvokeServer(b.id) end)
+        local ok,level=pcall(function() return progress:InvokeServer(b.serverId or b.id) end)
         debugLog('PROGRESS',b.name..' ok='..tostring(ok)..' level='..readable(level))
         if ok and type(level)=="number" then
             effectiveIndex=math.min(b.border,math.clamp(math.floor(level),1,#borders))
@@ -782,7 +840,7 @@ local function runBoss(b)
         notify(b.name.." / "..chosen.." locked; using "..actual)
     end
 
-    local okCd,seconds=pcall(function() return cooldown:InvokeServer(b.id,actualKey) end)
+    local okCd,seconds=pcall(function() return cooldown:InvokeServer(b.serverId or b.id,actualKey) end)
     debugLog('COOLDOWN',b.name..' ok='..tostring(okCd)..' '..readable(seconds))
     if not okCd then
         notify(b.name.." / cooldown request failed")
@@ -852,7 +910,7 @@ local function runBoss(b)
         if won==true then
             state.wins=state.wins+1
             -- Same order as BossPanel: report only AFTER genuine battle victory.
-            local okReward,errReward=pcall(function() reward:FireServer(b.id,actualKey) end)
+            local okReward,errReward=pcall(function() reward:FireServer(b.serverId or b.id,actualKey) end)
             debugLog('REWARD',b.name..' id='..b.id..' borderKey='..actualKey..' fireOK='..tostring(okReward)..' '..tostring(errReward or ''))
             b.cdNextPoll=os.clock()+2 -- refresh verified server timer after reward
             b.cdProgressAt=0   -- a victory may unlock the next border
@@ -894,7 +952,7 @@ local function runBoss(b)
 end
 
 
-    local function enable(on)
+    local function setRunning(on)
         on=on==true
         if state.stopped or state.running==on then return end
         state.running=on
@@ -966,7 +1024,7 @@ end
                     local any=false
                     for _,b in ipairs(bosses) do
                         if not state.running or state.stopped or token~=state.epoch then break end
-                        if b.selected then
+                        if b.selected and (b.kind=='mini' and state.miniEnabled or b.kind~='mini' and state.bossEnabled) then
                             any=true
                             if (b.nextTry or 0)<=os.clock() then
                                 -- Run at most one battle across Raid and Boss.
@@ -993,6 +1051,14 @@ end
             end
         end
     end)
+    end
+    local function enable(on)
+        state.bossEnabled=on==true
+        setRunning(state.bossEnabled or state.miniEnabled==true)
+    end
+    local function enableMini(on)
+        state.miniEnabled=on==true
+        setRunning(state.bossEnabled==true or state.miniEnabled)
     end
     local function setBorder(id,index)
         index=math.clamp(math.floor(tonumber(index) or 1),1,6)
@@ -1024,17 +1090,19 @@ end
         end
     end
     local function cooldownText(b)
+        if b.cdState=='config' then return 'CONFIG NEEDED' end
         if b.cdState=='error' then return 'N/A' end
         if b.cdState=='checking' or not b.cdUntil then return 'CHECKING' end
         local remain=math.max(0,b.cdUntil-os.clock())
         return remain>0 and fmtSeconds(remain) or 'READY'
     end
     local function stop()
-        enable(false)
+        state.bossEnabled=false;state.miniEnabled=false
+        setRunning(false)
         state.stopped=true
     end
     return {state=state,bosses=bosses,borders=borders,borderKeys=borderKeys,
-        enable=enable,setBorder=setBorder,selectBoss=selectBoss,
+        enable=enable,enableMini=enableMini,setBorder=setBorder,selectBoss=selectBoss,
         cooldownText=cooldownText,stop=stop}
 end
 local boss=createBossController(state)
@@ -1983,7 +2051,7 @@ local currentProfile='Default'
 local autoProfile='Default'
 local storedNames={'Default'}
 local flags={
-    AO_AutoColosseum=false, AO_AutoRift=false, AO_AutoBoss=false, AO_AutoRaid=false, AO_AutoSiege=false,
+    AO_AutoColosseum=false, AO_AutoRift=false, AO_AutoBoss=false, AO_AutoMiniBoss=false, AO_AutoRaid=false, AO_AutoSiege=false,
     AO_Colo_Hell=true, AO_Colo_Endless=true, AO_Colo_StopFloor='30-40',
     AO_Rift_Walk=true, AO_Rift_Leave=true,
     AO_Reconnect=true, AO_UI_Theme='Midnight', AO_UI_Transparency=15,
@@ -2189,6 +2257,7 @@ local function applyFlags()
     local wantColo=flags.AO_AutoColosseum==true
     local wantRift=flags.AO_AutoRift==true
     local wantBoss=flags.AO_AutoBoss==true
+    local wantMini=flags.AO_AutoMiniBoss==true
     local wantRaid=flags.AO_AutoRaid==true
     local wantSiege=flags.AO_AutoSiege==true
     -- Remote Colo owns no battle UI and can run alongside other modes.
@@ -2198,7 +2267,7 @@ local function applyFlags()
     flags.AO_AutoRaid=wantRaid
     flags.AO_AutoSiege=wantSiege
     state.raidRequested=wantRaid
-    state.bossRequested=wantBoss
+    state.bossRequested=wantBoss or wantMini
     state.siegeRequested=wantSiege
     if wantColo and not state.enabled then
         state.transportStage='idle'
@@ -2221,6 +2290,7 @@ local function applyFlags()
     end
     rift.enable(wantRift)
     boss.enable(wantBoss)
+    boss.enableMini(wantMini)
     raid.enable(wantRaid)
     siege.enable(wantSiege)
 end
@@ -2247,7 +2317,7 @@ local function setFlag(key,value)
     end
     applyFlags()
     repaintControls()
-    if key=='AO_AutoColosseum' or key=='AO_AutoRift'
+    if key=='AO_AutoColosseum' or key=='AO_AutoRift' or key=='AO_AutoMiniBoss'
         or key=='AO_AutoBoss' or key=='AO_AutoRaid' or key=='AO_AutoSiege' then
         -- Do not wait for the 0.9s debouncer for AUTO modes. Persist both
         -- the actual flags AND profile chosen for next execution now.

@@ -135,3 +135,28 @@ components such as ColorPicker and multi-dropdown remain outside this iteration.
 No FPS or memory benchmark against these libraries has been performed. Current
 validation consists of Luau compilation and mock Roblox UI/controller tests;
 visual appearance still needs confirmation in Roblox.
+
+## Mini bosses with borders
+
+Under **Multi-Boss → Mini Bosses**, enable **Auto Mini Boss**, select individual
+mini bosses, and choose a border for each. This includes Cha Hae-In, Boothill,
+Ragna, Guildmaster, Yuta, Sword Empress, Yuno and Sukuna from the new place.
+The existing Auto Boss switch continues to control regular bosses independently.
+Both sets share battle scheduling and take turns with Raid/Siege/Rift.
+
+Each mini boss has independent selection and border profile flags. Display names
+Normal/Calamity/Umbral/Astral/Paradox/Origin map to the game's internal
+Normal/Gold/Rainbow/Uni/Astral/Origin keys. Server border progress determines the
+highest unlocked border; the existing controller falls back to an unlocked tier.
+Victory reports are sent only after a successful native battle result.
+
+The new place contains the named mini-boss remotes and shared BossPanel code but
+not the mini-specific caller configs. The controller therefore reads the actual
+`id` from the native BossPanel open-event closure, using executor `getconnections`
+and `debug.getupvalues` (or `getupvalues`). This bounded read does not hook, invoke
+or open the native UI. Config IDs are cached; unavailable or mismatched configs
+show **CONFIG NEEDED** and send no guessed cooldown/reward requests. A live-game
+check is still needed to verify discovery on the user's executor.
+
+Existing controller methods remain unchanged. `enableMini(on)` is an additive
+method; Library.Create/Repaint/Refresh/Root and the GitHub loader are unchanged.
