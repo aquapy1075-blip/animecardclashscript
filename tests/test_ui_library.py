@@ -278,6 +278,30 @@ local legacy=Library.Create(oldContext)
 assert(type(legacy.Repaint)=='function' and type(legacy.Refresh)=='function' and legacy.Root.Parent==parent and Library.Version==1)
 legacy.Repaint();legacy.Refresh();legacy.Destroy()
 print('PASS: old Create(ctx), Version=1 and Repaint/Refresh/Root contract without new fields')
+local webhookModel={state={status='OFF',matched=0,sent=0,failed=0,lastCard='--',hasEndpoint=false}}
+local endpointCalls=0
+webhookModel.setEndpoint=function(value)
+ endpointCalls+=1
+ webhookModel.state.hasEndpoint=value~='';webhookModel.state.status=value~='' and 'Configured' or 'Cleared'
+ return true
+end
+local testsSent=0
+webhookModel.test=function() testsSent+=1;return true end
+local webhookContext=table.clone(oldContext)
+webhookContext.state={alive=true,enabled=false,lastSeenWave=0,supportCount=0,curseCount=0,stop=noop}
+webhookContext.pullWebhook=webhookModel
+local webhookUI=Library.Create(webhookContext)
+local input=find(function(o) return o.Name=='WebhookInput' end)
+input.Text='https://discord.com/api/webhooks/123/example';input.FocusLost:Fire()
+assert(endpointCalls==1 and input.Text=='' and input.PlaceholderText=='Configured · click to replace','clear URL from textbox after configuring')
+button('SEND TEST').MouseButton1Click:Fire();assert(testsSent==1)
+webhookModel.state.status='Delivered';now+=1;webhookUI.Refresh()
+assert(find(function(o) return o.Text=='Delivered' end))
+button('CLEAR URL').MouseButton1Click:Fire();assert(not webhookModel.state.hasEndpoint)
+assert(webhookContext.flags.WebhookURL==nil,'URL never enters profile flags')
+webhookUI.Destroy()
+print('PASS: optional webhook UI, session-only URL field, manual test, delivery status, clear endpoint, old context compatibility')
+
 
 
 '''

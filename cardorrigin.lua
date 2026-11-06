@@ -2041,6 +2041,165 @@ end
 -- Anime Origin private JSON config store (no Rayfield / remote UI library).
 local HttpService=game:GetService('HttpService')
 local UIS=game:GetService('UserInputService')
+-- Personal roll results only: no remote hooks, chat scraping or UI scanning.
+local function createPullWebhook()
+    local s={on=false,alive=true,status='OFF',matched=0,sent=0,failed=0,lastCard='--',hasEndpoint=false}
+    local endpoint=nil
+    local generation=0
+    local connection=nil
+    local database=nil
+    local queue={}
+    local nextAt=0
+    local borders={Normal='Normal',Gold='Calamity',Rainbow='Umbral',Uni='Astral',Astral='Paradox',Origin='Origin'}
+    local function baseDenom(value)
+        if type(value)=='string' then
+            value=value:gsub('[,%s_]',''):match('^1/(%d+%.?%d*)$')
+        end
+        value=tonumber(value)
+        return value and value==value and value>0 and value<math.huge and value or nil
+    end
+    local function formatted(value)
+        return string.format('%.0f',value):reverse():gsub('(%d%d%d)','%1,'):reverse():gsub('^,','')
+    end
+    local function loadDatabase()
+        if database then return true end
+        local folder=ReplicatedStorage:FindFirstChild('GameDatabase')
+        local module=folder and folder:FindFirstChild('CardDatabase')
+        if not module then return false end
+        local ok,value=pcall(require,module)
+        if ok and type(value)=='table' and type(value.GetCard)=='function' then database=value;return true end
+        return false
+    end
+    local function enqueue(payload,isTest)
+        if not s.alive then return false end
+        if not endpoint then s.status='Enter a Discord webhook URL first';return false end
+        if #queue>=10 then s.failed=s.failed+1;s.status='Webhook queue full';return false end
+        queue[#queue+1]={payload=payload,isTest=isTest,generation=generation,attempts=0}
+        s.status=isTest and 'Webhook test queued' or 'Rare pull queued'
+        return true
+    end
+    local function onRoll(data)
+        if not s.alive or not s.on or type(data)~='table' then return end
+        if not loadDatabase() then s.status='CardDatabase unavailable';return end
+        local id=tonumber(data.CardID)
+        if not id then return end
+        local ok,card=pcall(database.GetCard,id)
+        if not ok or type(card)~='table' then return end
+        local rarity=baseDenom(card.BaseRarity)
+        -- Strictly greater than 1B. Border multipliers never enter this test.
+        if not rarity or rarity<=1000000000 then return end
+        local name=tostring(card.Name or data.Name or ('Card '..id)):sub(1,200)
+        local border=tostring(data.Border or 'Normal')
+        s.matched=s.matched+1;s.lastCard=name..' / 1/'..formatted(rarity)
+        enqueue({allowed_mentions={parse={}},embeds={{title='Rare pull · '..name,color=16766073,
+            fields={
+                {name='Player',value=tostring(player.Name),inline=true},
+                {name='Card',value=name,inline=true},
+                {name='Base rarity',value='1/'..formatted(rarity),inline=true},
+                {name='Border',value=(borders[border] or border):sub(1,100),inline=true},
+                {name='Card ID',value=tostring(id),inline=true},
+            },footer={text='Personal RollRequest result · base rarity > 1 billion'},
+        }}})
+    end
+    local function bind()
+        if connection or not s.on then return end
+        local folder=ReplicatedStorage:FindFirstChild('EventRemotes')
+        local roll=folder and folder:FindFirstChild('RollRequest')
+        if roll and roll:IsA('RemoteEvent') then
+            connection=roll.OnClientEvent:Connect(onRoll)
+            s.status=endpoint and 'Watching personal pulls > 1B base' or 'Enter webhook URL (session only)'
+        else s.status='Waiting for RollRequest remote' end
+    end
+    local function tick()
+        if not s.alive or not state.alive then return end
+        bind()
+        local entry=queue[1]
+        if not entry or os.clock()<nextAt then return end
+        if entry.generation~=generation then table.remove(queue,1);return end
+        if not s.on and not entry.isTest then table.remove(queue,1);return end
+        local sender=type(request)=='function' and request or type(http_request)=='function' and http_request
+            or (type(syn)=='table' and type(syn.request)=='function' and syn.request)
+        local ok,response=pcall(function()
+            local body=HttpService:JSONEncode(entry.payload)
+            local options={Url=endpoint,Method='POST',Headers={['Content-Type']='application/json'},Body=body}
+            if sender then return sender(options) end
+            -- Native Roblox clients may deny HTTP; report that without changing game UI.
+            return HttpService:RequestAsync(options)
+        end)
+        if not s.alive or entry.generation~=generation then return end
+        local code=ok and type(response)=='table' and tonumber(response.StatusCode or response.Status) or nil
+        entry.attempts=entry.attempts+1
+        if code==429 and entry.attempts<3 then
+            local retry=5
+            local parsed,data=pcall(function() return HttpService:JSONDecode(response.Body or '{}') end)
+            if parsed and type(data)=='table' then retry=tonumber(data.retry_after) or retry end
+            if retry~=retry then retry=5 end
+            nextAt=os.clock()+math.clamp(retry,1,60)
+            s.status='Webhook rate limited; retry scheduled'
+            return
+        end
+        table.remove(queue,1);nextAt=os.clock()+2
+        if code and code>=200 and code<300 then
+            if not entry.isTest then s.sent=s.sent+1 end
+            s.status=entry.isTest and 'Webhook test delivered' or 'Rare pull notification delivered'
+        else
+            s.failed=s.failed+1
+            -- Request errors may contain the URL/token: never expose raw errors.
+            s.status=code and ('Webhook HTTP '..code) or 'Webhook request failed; delivery unknown'
+        end
+    end
+    task.spawn(function()
+        while s.alive and state.alive do
+            local ok=pcall(tick)
+            if not ok then s.status='Webhook worker error (details hidden)' end
+            task.wait(#queue>0 and .5 or 1)
+        end
+    end)
+    return {
+        state=s,tick=tick,
+        setEndpoint=function(value)
+            if not s.alive then return false end
+            value=tostring(value or ''):gsub('^%s+',''):gsub('%s+$','')
+            if value~='' then
+                local host,path=value:match('^https://([^/]+)(/[^?#]+)$')
+                if not host or (host:lower()~='discord.com' and host:lower()~='discordapp.com')
+                    or not (path:match('^/api/webhooks/%d+/[%w_.%-]+/?$')
+                        or path:match('^/api/v%d+/webhooks/%d+/[%w_.%-]+/?$')) then
+                    s.status='Invalid Discord webhook URL';return false
+                end
+            end
+            endpoint=value~='' and value or nil
+            generation=generation+1;queue={};nextAt=0;s.hasEndpoint=endpoint~=nil
+            s.status=endpoint and 'Webhook configured for this session' or 'Webhook cleared'
+            return true
+        end,
+        enable=function(on)
+            if not s.alive then return end
+            on=on==true
+            if s.on==on then if on then bind() end;return end
+            s.on=on
+            if not s.on then
+                if connection then connection:Disconnect();connection=nil end
+                queue={};generation=generation+1;s.status='OFF'
+            else bind() end
+        end,
+        test=function()
+            return enqueue({content='Anime Origin: webhook test. Rare-pull alerts use base rarity strictly greater than 1 billion.',
+                allowed_mentions={parse={}}},true)
+        end,
+        stop=function()
+            s.alive=false;s.on=false;generation=generation+1;queue={};endpoint=nil;s.hasEndpoint=false
+            if connection then connection:Disconnect();connection=nil end
+        end,
+    }
+end
+local pullWebhook=createPullWebhook()
+local stopBeforePullWebhook=state.stop
+state.stop=function()
+    pullWebhook.stop()
+    stopBeforePullWebhook()
+end
+
 local STORAGE='AnimeOriginV9'
 local CONFIG_DIR=STORAGE..'/profiles'
 local AUTO_FILE=STORAGE..'/auto_load.txt'
@@ -2054,7 +2213,7 @@ local flags={
     AO_AutoColosseum=false, AO_AutoRift=false, AO_AutoBoss=false, AO_AutoMiniBoss=false, AO_AutoRaid=false, AO_AutoSiege=false,
     AO_Colo_Hell=true, AO_Colo_Endless=true, AO_Colo_StopFloor='30-40',
     AO_Rift_Walk=true, AO_Rift_Leave=true,
-    AO_Reconnect=true, AO_UI_Theme='Midnight', AO_UI_Transparency=15,
+    AO_PullWebhook=false, AO_Reconnect=true, AO_UI_Theme='Midnight', AO_UI_Transparency=15,
     AO_UI_WindowW=805, AO_UI_WindowH=565, AO_UI_WindowX=-1, AO_UI_WindowY=-1,
 }
 for _,b in ipairs(boss.bosses) do
@@ -2288,6 +2447,7 @@ local function applyFlags()
         if handoff.active then beginColoReturn() end
         handoff.requested=false
     end
+    pullWebhook.enable(flags.AO_PullWebhook==true)
     rift.enable(wantRift)
     boss.enable(wantBoss)
     boss.enableMini(wantMini)
@@ -2358,6 +2518,7 @@ local uiProfile=setmetatable({}, {
 })
 local ui=UILibrary.Create({
     profile=uiProfile,
+    pullWebhook=pullWebhook,
     saveAppearance=deferAutoSave,
     playerGui=playerGui,
     state=state,

@@ -893,6 +893,37 @@ local function restoreGameInput()
 end
 restoreGameInput()
 addAction('Settings','Game keyboard input','RESET INPUT',restoreGameInput)
+local webhookStatus,webhookCounts,webhookLast
+if ctx.pullWebhook then
+    section('Settings','Rare Pull Webhook · Base > 1B')
+    addToggle('Settings','Rare pull alerts','AO_PullWebhook')
+    local webhookRow=row('Settings','Discord webhook URL')
+    local webhookInput=make('TextBox',webhookRow,{Name='WebhookInput',Size=UDim2.fromOffset(200,34),
+        Position=UDim2.new(1,-214,.5,-17),BackgroundTransparency=0,BorderSizePixel=0,
+        Font=Enum.Font.Gotham,TextSize=12,Text='',PlaceholderText='Paste URL · session only',ClearTextOnFocus=false})
+    corner(webhookInput,10);skin(webhookInput,'BackgroundColor3','row')
+    skin(webhookInput,'TextColor3','text');skin(webhookInput,'PlaceholderColor3','muted')
+    tooltip(webhookInput,'Base rarity only, strictly above 1 billion. URL stays in memory and is not saved to profiles.')
+    webhookInput.FocusLost:Connect(function()
+        if not lifecycle.alive then return end
+        local value=webhookInput.Text
+        if value=='' then return end
+        local accepted=ctx.pullWebhook.setEndpoint(value)
+        webhookInput.Text=''
+        webhookInput.PlaceholderText=ctx.pullWebhook.state.hasEndpoint and 'Configured · click to replace' or 'Paste URL · session only'
+        notify(accepted and 'Webhook configured for this session' or 'Invalid Discord webhook URL',accepted and 'success' or 'error')
+    end)
+    addAction('Settings','Test webhook','SEND TEST',function()
+        local queued=ctx.pullWebhook.test()
+        notify(queued and 'Webhook test queued; check delivery status below' or ctx.pullWebhook.state.status,queued and 'info' or 'warning')
+    end)
+    addAction('Settings','Clear webhook','CLEAR URL',function()
+        ctx.pullWebhook.setEndpoint('');webhookInput.Text='';webhookInput.PlaceholderText='Paste URL · session only'
+    end)
+    webhookStatus=addStatus('Settings','Webhook delivery','OFF')
+    webhookCounts=addStatus('Settings','Matched / Sent / Failed','0 / 0 / 0')
+    webhookLast=addStatus('Settings','Last rare card','--')
+end
 section('Settings','Connection')
 addToggle('Settings','Auto Reconnect','AO_Reconnect')
 local reconnectStatus=addStatus('Settings','Reconnect','Monitoring')
@@ -1250,6 +1281,12 @@ local function refreshOverview()
         b.displayCooldown.TextColor3=(cd=='READY') and Color3.fromRGB(104,225,168)
             or (cd=='N/A' and Color3.fromRGB(245,128,128) or color('muted'))
     end
+    end
+    if ctx.pullWebhook then
+        local status=ctx.pullWebhook.state
+        showStatus(webhookStatus,status.status)
+        showStatus(webhookCounts,tostring(status.matched)..' / '..tostring(status.sent)..' / '..tostring(status.failed))
+        showStatus(webhookLast,status.lastCard)
     end
     showStatus(reconnectStatus,tostring(state.reconnectStatus or reconnect.status or '--'))
     showStatus(configCurrent,tostring(profile.autoProfile))
