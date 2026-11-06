@@ -54,9 +54,14 @@ Navigation preferences changed by that reset are restored when the script stops.
 
 ## Colosseum strategy
 
-World HP/DMG blessings balance **selection counts** 1:1. With World's Favor,
+World HP/DMG blessings balance **selection counts** at **3 HP : 2 DMG**. With World's Favor,
 equal picks produce different percentage totals (+15% HP versus +20% DMG).
-Resuming an imbalanced run prioritizes the stat with fewer inferred selections.
+Resuming an imbalanced run prioritizes the stat below its weighted target.
+After the carry reaches eight People supports, Max-HP offers are assigned to
+Hollow Harvester when present. Other offers in the same batch go to valid non-carry
+teammates, respecting capacity, duplicate names and known lifeline restrictions.
+Only full-batch assignments are submitted; if none fits, other blessing categories
+remain available. No unverified skip sentinel is sent.
 Bench support priorities include the supplied support-card examples; duplicate
 aura families are avoided. Draft rows constrain slots, so carry slot 2 is preferred
 when the same carry is offered in that row. Once one carry is secured, all three

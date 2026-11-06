@@ -24,10 +24,10 @@ local run={phase='blessing',wave=15,world={hpPct=1.05,dmgPct=2.8,dr=0,critDmg=0}
  team={carry},devil={'Blinding','Confusion','Fatigue'}}
 local e=createRemoteColo();response={ok=true,run=run};e.tick()
 assert(state.worldBlessPicks.hp==7 and state.worldBlessPicks.dmg==14,'recover resumed pick counts')
-for i=1,9 do
+for i=1,16 do
  now+=1
  -- RPC result is prepared from the stat we expect the strategy to select.
- local opt=i<=8 and 'hp' or 'dmg'
+ local opt=i<=15 and 'hp' or 'dmg'
  local previous=run.world
  local world={hpPct=previous.hpPct,dmgPct=previous.dmgPct,dr=0,critDmg=0}
  if opt=='hp' then world.hpPct+=.15 else world.dmgPct+=.2 end
@@ -36,8 +36,36 @@ for i=1,9 do
  assert(calls[#calls].payload.opt==opt,'balance selection counts, not raw percentages')
  run=nextRun
 end
-assert(state.worldBlessPicks.hp==15 and state.worldBlessPicks.dmg==15)
-assert(math.abs(state.worldBuffs.hpPct-2.25)<.000001 and math.abs(state.worldBuffs.dmgPct-3)<.000001)
+assert(state.worldBlessPicks.hp==22 and state.worldBlessPicks.dmg==15)
+assert(math.abs(state.worldBuffs.hpPct-3.3)<.000001 and math.abs(state.worldBuffs.dmgPct-3)<.000001)
+local fresh=createRemoteColo();fresh.synced=true;fresh.resync=false
+local freshRun={phase='blessing',wave=5,world={hpPct=0,dmgPct=0},team={carry},devil={'Blinding','Confusion','Fatigue'}}
+fresh.run=freshRun;fresh.worldSnapshot=table.clone(freshRun.world)
+for _,opt in ipairs({'hp','dmg','hp','dmg','hp'}) do
+ local world=table.clone(freshRun.world)
+ if opt=='hp' then world.hpPct+=.1 else world.dmgPct+=.1 end
+ response={ok=true,run={phase='blessing',wave=5,world=world,team=freshRun.team,devil=freshRun.devil}}
+ calls={};now+=1;fresh.tick();assert(calls[1].payload.opt==opt,'fresh World cycle follows 3 HP : 2 DMG')
+ freshRun=response.run
+end
+assert(fresh.worldPicks.hp==3 and fresh.worldPicks.dmg==2)
+local hollow=card('Hollow Harvester');hollow.supportCount=0;hollow.supports={}
+local goddess=card('Useless Goddess');goddess.supportCount=0;goddess.supports={}
+local idol=card('Idol');idol.supportCount=0;idol.supports={}
+local e=createRemoteColo();e.synced=true;e.resync=false
+local offers={{name='HP One',desc='+15% DMG, +15% Max HP'},
+ {name='Attack',desc='+20% DMG'},{name='HP Two',desc='+30% DMG, +30% Max HP'},
+ {name='Guard',desc='+10% Damage Reduction'}}
+e.run={phase='blessing',wave=5,skill={supportExpand=1},team={carry,goddess,hollow,idol},offer={peoples=offers}}
+calls={};response={ok=true};now+=1;e.tick()
+assert(calls[1].payload.cat=='peoples' and calls[1].payload.assign[1]==3 and calls[1].payload.assign[3]==3,'Max HP buffs go to Hollow after eight carry supports')
+assert(calls[1].payload.assign[2]~=1 and calls[1].payload.assign[2]~=3,'other offers assigned to another valid teammate')
+carry.supportCount=0;carry.supports={}
+e=createRemoteColo();e.synced=true;e.resync=false
+e.run={phase='blessing',wave=5,skill={supportExpand=1},team={carry,goddess,hollow,idol},offer={peoples={{name='Senzu Bean'},{name='Potara Earrings'},{name='Log'},{name='Vivre Card'}}}}
+calls={};now+=1;e.tick()
+for _,target in ipairs(calls[1].payload.assign) do assert(target==1,'carry fills before Hollow') end
+carry.supportCount=8
 local e=createRemoteColo();e.synced=true;e.resync=false;e.run={phase='draft',wave=1,rerollsLeft=4,draft={rows={
  {card('Deathless Outlaw'),card('Fire Soldier (Evolved)')},
  {card('Deathless Outlaw')},
@@ -117,7 +145,7 @@ assert(#state.teamCards==4 and state.teamCards[2].role=='carry' and state.teamCa
  and state.teamCards[1].role=='normal' and state.teamCards[4].dead,'all team roles exposed to UI')
 cards[2].name='changed outside';assert(state.teamCards[2].name=='Deathless Outlaw','display snapshot independent of RPC tables')
 e.resync=true;response={ok=true};now+=1;e.tick();assert(#state.teamCards==0,'ended run clears displayed team')
-print('PASS: 1:1 World picks with resumed catch-up, variant support families, carry row 2 when available, fixed bench draft, verified server swaps, stable order, unconfirmed swap stop, dice upgrades, no duplicate aura')
+print('PASS: 3:2 World picks, Hollow HP after carry full with resumed catch-up, variant support families, carry row 2 when available, fixed bench draft, verified server swaps, stable order, unconfirmed swap stop, dice upgrades, no duplicate aura')
 '''
 binary=os.environ.get('LUAU_BIN') or shutil.which('luau')
 if not binary:raise SystemExit('Set LUAU_BIN or add luau to PATH')

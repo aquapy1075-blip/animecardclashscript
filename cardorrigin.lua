@@ -2966,6 +2966,56 @@ local function createRemoteColo()
                 candidates[#candidates+1]={key='peoples',payload={cat='peoples',assign=assign}}
             end
         end
+        -- Once the carry has all eight supports, route Max-HP offers to
+        -- Hollow Harvester. The observed protocol assigns the whole batch;
+        -- other offers go to valid non-carry teammates, never guessed skips.
+        if cfg.allowSupports and count>=8 and #offers>0 then
+            local hollow=nil
+            for index,member in ipairs(run.team or {}) do
+                if index~=slot and baseCardName(member)=='HOLLOW HARVESTER' then hollow=index;break end
+            end
+            if hollow then
+                local slots={}
+                local function lifeline(support)
+                    local desc=normalize(support.desc)
+                    return desc:find('LIFELINE',1,true) or desc:find('REVIVE',1,true)
+                        or desc:find('NEGATE',1,true) or desc:find('FULL HEAL',1,true)
+                end
+                for index,member in ipairs(run.team) do
+                    local names,hasLife={},false
+                    for _,support in ipairs(member.supports or {}) do
+                        names[normalize(support.name)]=true
+                        if lifeline(support) then hasLife=true end
+                    end
+                    slots[index]={left=(expanded and 8 or (tonumber(member.supportMax) or 4))
+                        -(tonumber(member.supportCount) or #(member.supports or {})),names=names,life=hasLife}
+                end
+                local best,assign,bestHp=nil,{},0
+                local function search(index,hp)
+                    if index>#offers then
+                        if hp>bestHp then bestHp=hp;best=table.clone(assign) end
+                        return
+                    end
+                    local support=offers[index]
+                    local name=normalize(support.name)
+                    local desc=normalize(support.desc)
+                    local isHp=desc:find('MAX HP',1,true) and desc:find('+',1,true)
+                    local life=lifeline(support)
+                    for target,data in ipairs(slots) do
+                        if target~=slot and (target~=hollow or isHp) and name~=''
+                            and data.left>0 and not data.names[name] and not (life and data.life) then
+                            local oldLife=data.life
+                            data.left=data.left-1;data.names[name]=true;data.life=oldLife or life
+                            assign[index]=target
+                            search(index+1,hp+((target==hollow and isHp) and 1 or 0))
+                            data.left=data.left+1;data.names[name]=nil;data.life=oldLife
+                        end
+                    end
+                end
+                search(1,0)
+                if best then candidates[#candidates+1]={key='peoples:hollow',payload={cat='peoples',assign=best}} end
+            end
+        end
         -- Restore the original priority after People's Blessing: three
         -- distinct preferred curses, then Sacred, then World stats.
         local devilOwned={}
@@ -2996,7 +3046,7 @@ local function createRemoteColo()
             engine.worldPicks=picks
             state.worldBlessPicks=picks
         end
-        local preferHp=picks.hp<=picks.dmg
+        local preferHp=picks.hp*2<=picks.dmg*3
         for _,opt in ipairs(preferHp and {'hp','dmg','dr','crit'} or {'dmg','hp','dr','crit'}) do
             candidates[#candidates+1]={key='world:'..opt,payload={cat='world',opt=opt}}
         end
