@@ -1,29 +1,48 @@
--- Observe only Colo/swap/reorder remotes in ReplicatedStorage. Never sends its own calls.
--- Pause automation; manually swap Colo slots, stop capture, then share the JSON.
--- Run once before manually opening Colo and exercising the desired actions.
--- Stop with getgenv().ColoSlotCapture.stop(); output: colo_slot_capture.json
+-- Focused Colo slot recorder. Rejoin before using if the previous version caused errors.
+-- Only two exact remote identities are watched. No incoming-event listeners, scans in
+-- the hook, autosave, UI changes, or extra remote requests.
+-- Stop/save: getgenv().ColoSlotCapture.stop()
 local env=(getgenv and getgenv()) or _G
 local previous=env.ColoSlotCapture
-if previous and previous.active then
-    warn('Colo slot capture already running; use ColoSlotCapture.stop() first')
+if type(previous)=='table' and previous.Version==2 and type(previous.start)=='function' then
+    if previous.active then warn('Colo slot capture already running') else previous.start() end
     return
+end
+-- Deactivate listeners from the older broad recorder without exporting its log.
+if type(previous)=='table' then
+    previous.active=false
+    for _,connection in ipairs(previous.connections or {}) do
+        pcall(function() connection:Disconnect() end)
+    end
 end
 assert(type(hookmetamethod)=='function' and type(getnamecallmethod)=='function',
     'Capture requires hookmetamethod and getnamecallmethod')
 local rs=game:GetService('ReplicatedStorage')
 local http=game:GetService('HttpService')
-local function relevant(remote)
-    if typeof(remote)~='Instance' or not remote:IsDescendantOf(rs) then return false end
-    local name=remote.Name:lower()
-    return name:find('colosseum',1,true)~=nil or name:find('colo',1,true)~=nil
-        or name:find('swap',1,true)~=nil or name:find('reorder',1,true)~=nil
+local watched={}
+local found={}
+for _,name in ipairs({
+    'ColosseumRemote','SwapDeckSlots',
+}) do
+    local remote=rs:FindFirstChild(name,true)
+    if remote and (remote:IsA('RemoteFunction') or remote:IsA('RemoteEvent')) then
+        watched[remote]={name=name,path=remote:GetFullName()}
+        found[#found+1]=name
+    end
 end
-local capture={active=true,records={},limit=200,path='colo_slot_capture.json'}
+assert(#found>0,'No Colo slot remotes found')
+local capture={Version=2,active=true,records={},pending=0,limit=300,path='colo_slot_capture.json'}
 env.ColoSlotCapture=capture
 local function snapshot(value,depth,seen)
+    seen.count=(seen.count or 0)+1
+    if seen.count>6000 then return {truncated=true,reason='value limit'} end
     local kind=typeof(value)
     if kind=='nil' then return {type='nil'} end
-    if kind=='string' or kind=='boolean' then return value end
+    if kind=='boolean' then return value end
+    if kind=='string' then
+        if #value>16000 then return {type='string',value=value:sub(1,16000),truncated=true} end
+        return value
+    end
     if kind=='number' then
         if value~=value or math.abs(value)==math.huge then return tostring(value) end
         return value
@@ -33,56 +52,66 @@ local function snapshot(value,depth,seen)
     if depth>=12 then return {type='depth-limit'} end
     seen[value]=true
     local entries={}
-    local count=0
     for key,item in pairs(value) do
-        count=count+1
-        if count>1000 then
-            entries[#entries+1]={truncated=true}
-            break
-        end
+        if #entries>=500 then entries[#entries+1]={truncated=true};break end
         entries[#entries+1]={key=snapshot(key,depth+1,seen),value=snapshot(item,depth+1,seen)}
     end
     seen[value]=nil
     return {type='table',entries=entries}
 end
+function capture.export()
+    return http:JSONEncode(capture.records)
+end
 function capture.save()
-    local ok,result=pcall(function() return http:JSONEncode(capture.records) end)
-    if not ok then warn('Colo slot capture encoding failed: '..tostring(result));return false end
+    local ok,data=pcall(capture.export)
+    if not ok then warn('Colo slot capture encoding failed: '..tostring(data));return false end
     if type(writefile)=='function' then
-        local saved,err=pcall(writefile,capture.path,result)
-        if saved then print('Colo slot capture saved: '..capture.path);return true end
-        warn('Colo slot capture write failed: '..tostring(err))
+        local saved,err=pcall(writefile,capture.path,data)
+        if saved then print('Colo slot log saved: '..capture.path);return true end
+        warn('Colo slot log write failed: '..tostring(err))
     end
-    -- Records also remain available in getgenv().ColoSlotCapture.records.
-    print(result)
+    warn('No file saved. Copy getgenv().ColoSlotCapture.export() from the console')
     return false
 end
 function capture.stop()
     capture.active=false
+    if capture.pending>0 then
+        warn('Colo slot request still pending. Wait for it to finish, then call stop() again to save its reply.')
+    end
     return capture.save()
+end
+function capture.start()
+    assert(capture.pending==0,'Wait for the pending Colo slot request before restarting capture')
+    capture.records={};capture.active=true
+    print('Colo slot capture ON ('..#found..' remotes). Stop/save: getgenv().ColoSlotCapture.stop()')
 end
 local old
 local function observe(self,...)
+    -- Most game calls exit immediately, exactly like the Colo recorder.
+    local target=watched[self]
+    if not target or not capture.active then return old(self,...) end
     local method=getnamecallmethod()
-    if not capture.active or (method~='InvokeServer' and method~='FireServer') or not relevant(self) then
-        return old(self,...)
-    end
-    -- Snapshot before yielding: the UI can mutate argument tables afterwards.
-    local record={id=#capture.records+1,time=os.clock(),remote=self:GetFullName(),method=method,status='pending'}
+    if method~='InvokeServer' and method~='FireServer' then return old(self,...) end
+    local record={id=#capture.records+1,time=os.clock(),remote=target.name,
+        path=target.path,method=method,status='pending'}
     local okArgs,args=pcall(snapshot,table.pack(...),0,{})
     record.arguments=okArgs and args or {captureError=tostring(args)}
     capture.records[#capture.records+1]=record
-    if #capture.records>=capture.limit then capture.active=false end
+    if #capture.records>=capture.limit then
+        capture.active=false
+        warn('Colo slot log limit reached. Call getgenv().ColoSlotCapture.stop() to save.')
+    end
+    capture.pending=capture.pending+1
     local result=table.pack(pcall(old,self,...))
-    record.status=result[1] and 'returned' or 'error'
+    capture.pending=capture.pending-1
+    record.status=result[1] and (method=='InvokeServer' and 'returned' or 'sent') or 'error'
     local returns={n=result.n-1}
     for index=2,result.n do returns[index-1]=result[index] end
     local okResult,data=pcall(snapshot,returns,0,{})
     record.result=okResult and data or {captureError=tostring(data)}
-    print('Colo slot capture #'..record.id..': '..record.status)
-    if not capture.active then capture.save() end
+    print('Colo slot capture #'..record.id..': '..target.name..' / '..record.status)
     if not result[1] then error(result[2],0) end
     return table.unpack(result,2,result.n)
 end
 old=hookmetamethod(game,'__namecall',type(newcclosure)=='function' and newcclosure(observe) or observe)
-print('Colo slot capture ON. Play Colo manually, then run getgenv().ColoSlotCapture.stop()')
+print('Colo slot capture ON ('..#found..' remotes). Stop/save: getgenv().ColoSlotCapture.stop()')
