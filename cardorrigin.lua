@@ -114,10 +114,15 @@ end
 -- Shared battle arbiter: Rift events have priority over Raid and Boss. The
 -- two remote battle engines take turns instead of opening battles together.
 local combat={owner=nil,since=0,last='boss'}
+local function riftHasActiveRun(rs)
+    if not rs or rs.alive==false then return false end
+    local stage=rs.stage
+    return stage=='enter' or stage=='battle' or stage=='reward' or stage=='leave'
+end
 local function tryCombat(owner)
     if not state.alive or combat.owner then return false end
     local rs=env.RiftGateAutoLogV2
-    if rs and rs.on and rs.runActive then return false end
+    if owner~='rift' and riftHasActiveRun(rs) then return false end
     combat.owner=owner
     combat.since=os.clock()
     return true
@@ -238,7 +243,7 @@ end
         return pcall(function() value:FireServer() end)
     end
     local function finish(reason)
-        s.runActive=false;s.stage='idle';s.status=reason
+        s.runActive=false;s.stage='idle';s.phase='WAITING';s.status=reason
         s.available=false
         freeCombat('rift')
     end
@@ -265,7 +270,7 @@ end
     connect('RiftGateReward',function()
         if not s.alive or s.stage~='reward' then return end
         s.rewardAt=os.clock();recordClear()
-        s.stage='leave';s.nextAt=os.clock()+1
+        s.stage='leave';s.phase='LEAVE';s.nextAt=os.clock()+1
         s.status='Rift reward confirmed'
     end)
     -- On startup a Spawned event may already have happened. Read the native
@@ -332,13 +337,13 @@ end
                 completed=true
                 if not s.alive or not state.alive then return end
                 if won==true then
-                    s.stage='reward';s.deadline=os.clock()+20
+                    s.stage='reward';s.phase='REWARD';s.deadline=os.clock()+20
                     s.status='Victory verified; waiting for reward'
                     if not fire('ReportRiftGateVictory') then
                         s.on=false;leave('ReportRiftGateVictory unavailable')
                     end
                 else
-                    s.stage='leave';s.nextAt=os.clock()+1
+                    s.stage='leave';s.phase='LEAVE';s.nextAt=os.clock()+1
                     s.status=won==false and 'Rift lost' or 'Rift interrupted; no victory report'
                 end
             end
@@ -352,6 +357,10 @@ end
             end
             return
         end
+        -- Idle monitoring never owns a battle turn. Clear old phase/flags
+        -- left by a completed run before considering cooldown or a new spawn.
+        s.phase='WAITING';s.runActive=false
+        freeCombat('rift')
         local remaining=secondsUntilNext()
         if remaining>0 then
             s.status='Next Rift in '..clockString(remaining);s.nextAt=os.clock()+1
@@ -374,7 +383,7 @@ end
         -- trigger repeated entries or defeat the existing per-run rate limit.
         recordEntry()
         if not fire('RiftGateEnterRequest') then s.on=false;finish('Rift entry failed');return end
-        s.stage='enter';s.nextAt=os.clock()+3;s.status='Entered via remote; waiting for server'
+        s.stage='enter';s.phase='ENTER';s.nextAt=os.clock()+3;s.status='Entered via remote; waiting for server'
     end
     task.spawn(function()
         while s.alive and state.alive do
@@ -1606,16 +1615,9 @@ local function createSiegeController(mainState)
         return nil
     end
     local function riftMustGoFirst()
-        local rs=rift and rift.state
-        if not rs or not rs.on then return false end
-        -- Rift's runActive may remain true after a loss and Leave.  Trust
-        -- the current phase + fresh eligibility, not the stale flag alone.
-        local phase=tostring(rs.phase or '')
-        if phase=='INSIDE' or phase=='BATTLE' then return true end
-        if phase=='TAKE_ME_THERE' or phase=='RIFT_CHIP' then
-            return rift.cooldownText()=='READY'
-        end
-        return false
+        -- Use the remote controller's current stage, never the last displayed
+        -- BATTLE phase or an old runActive flag after a completed run.
+        return riftHasActiveRun(rift and rift.state)
     end
     local function randomSiegeEnemyId()
         if not st.randomPool then

@@ -2,15 +2,15 @@
 from pathlib import Path
 import os, shutil, subprocess, tempfile
 main=(Path(__file__).resolve().parents[1]/'cardorrigin.lua').read_text()
+arbiter=main[main.index("local combat={"):main.index('-- RIFT GATE |')]
+siege_check=main[main.index('    local function riftMustGoFirst()'):main.index('    local function randomSiegeEnemyId()')]
 controller=main[main.index('local function createRiftGateController()'):main.index('local rift=createRiftGateController()')]
 mock=r'''
 local now=1000000
 local os={clock=function() return now end,time=function() return now end}
 local env={}
 local state={alive=true}
-local combat={}
-local tryCombat=function(owner) if combat.owner then return false end combat.owner=owner;return true end
-local freeCombat=function(owner) if combat.owner==owner then combat.owner=nil end end
+ARBITER_PLACEHOLDER
 local function signal()
  local fn
  return {Connect=function(_,callback) fn=callback;return {Disconnect=function() fn=nil end} end,
@@ -44,15 +44,23 @@ local playerGui={FindFirstChild=function() return nil end}
 local game={GetService=function() return {} end}
 local task={spawn=function() end,wait=function() end}
 '''
+mock=mock.replace('ARBITER_PLACEHOLDER',arbiter)
 checks=r'''
 local r=createRiftGateController();r.enable(true)
 r.tick();assert(#calls==0,'wait for a real event')
+r.state.phase='BATTLE';r.state.runActive=true
+assert(tryCombat('boss'),'idle Rift with stale display/flag must not block Boss');freeCombat('boss')
+local rift=r
+SIEGE_CHECK_PLACEHOLDER
+assert(not riftMustGoFirst(),'Siege ignores stale Rift phase while waiting for spawn')
+
 remotes.RiftGateSpawned.OnClientEvent:Fire();now+=1.1;r.tick()
 assert(calls[1].name=='RiftGateEnterRequest' and calls[1].args.n==0)
 assert(r.cooldownText()=='05:00','entry cooldown is five minutes')
 now+=3.1;r.tick()
 assert(calls[2].name=='BuildRiftGateBattle' and calls[2].args.n==1 and calls[2].args[1]==true)
 assert(plays==1 and unlocks==1 and #calls==2,'build is not a victory')
+assert(riftMustGoFirst() and not tryCombat('boss') and not tryCombat('siege'),'active Rift retains its turn')
 done(true)
 assert(calls[3].name=='ReportRiftGateVictory' and calls[3].args.n==0)
 r.tick();assert(#calls==3,'wait for server reward acknowledgement')
@@ -60,6 +68,9 @@ remotes.RiftGateReward.OnClientEvent:Fire();local cleared=now
 assert(r.cooldownText()=='05:00','clear cooldown is also five minutes')
 now+=1.1;r.tick()
 assert(calls[4].name=='RiftGateLeave' and r.state.clears==1 and combat.owner==nil)
+assert(r.state.phase=='WAITING' and not riftMustGoFirst(),'completed Rift releases Siege priority')
+assert(tryCombat('boss'),'Boss continues during Rift cooldown');freeCombat('boss')
+assert(tryCombat('siege'),'Siege continues during Rift cooldown');freeCombat('siege')
 remotes.RiftGateSpawned.OnClientEvent:Fire();r.tick();assert(#calls==4,'preserve admission cooldown')
 now=cleared+299;r.tick();assert(#calls==4,'no entry before five minutes')
 now=cleared+300.1;r.tick();assert(calls[5].name=='RiftGateEnterRequest','entry allowed after five minutes if an event is available')
@@ -77,6 +88,7 @@ local r=createRiftGateController();r.enable(true);remotes.RiftGateSpawned.OnClie
 assert(#calls==2 and calls[2].name=='RiftGateLeave' and combat.owner==nil,'disable before build releases admission')
 print('PASS: captured four-step Rift flow, builder true argument, native victory, reward acknowledgement, loss/timeout, disable, cooldown, combat lock')
 '''
+checks=checks.replace('SIEGE_CHECK_PLACEHOLDER',siege_check)
 binary=os.environ.get('LUAU_BIN') or shutil.which('luau')
 if not binary:raise SystemExit('Set LUAU_BIN or add luau to PATH')
 with tempfile.TemporaryDirectory(prefix='rift-remote-test-') as d:
