@@ -2046,7 +2046,9 @@ local function createPullWebhook()
     local s={on=false,alive=true,status='OFF',matched=0,sent=0,failed=0,lastCard='--',hasEndpoint=false}
     local endpoint=nil
     local generation=0
-    local connection=nil
+    local snapshot=nil
+    local inventoryAt=0
+    local inventoryBusy=false
     local database=nil
     local cardImages=nil
     local queue={}
@@ -2105,25 +2107,67 @@ local function createPullWebhook()
         if not rarity or rarity<=1000000000 then return end
         local name=tostring(card.Name or data.Name or ('Card '..id)):sub(1,200)
         local border=tostring(data.Border or 'Normal')
-        s.matched=s.matched+1;s.lastCard=name..' / 1/'..formatted(rarity)
-        enqueue({allowed_mentions={parse={}},embeds={{title='Rare pull · '..name,color=16766073,image=cardImage(id),
+        local amount=math.max(1,tonumber(data.Count) or 1)
+        s.matched=s.matched+amount;s.lastCard=name..' / 1/'..formatted(rarity)
+        enqueue({allowed_mentions={parse={}},embeds={{title='Rare card received · '..name,color=16766073,image=cardImage(id),
             fields={
                 {name='Player',value=tostring(player.Name),inline=true},
                 {name='Card',value=name,inline=true},
                 {name='Base rarity',value='1/'..formatted(rarity),inline=true},
                 {name='Border',value=(borders[border] or border):sub(1,100),inline=true},
                 {name='Card ID',value=tostring(id),inline=true},
-            },footer={text='Personal RollRequest result · base rarity > 1 billion'},
+                {name='Received',value=tostring(amount),inline=true},
+            },footer={text='Inventory increase · base rarity > 1 billion'},
         }}})
     end
     local function bind()
-        if connection or not s.on then return end
+        if not s.on or not endpoint or inventoryBusy or os.clock()<inventoryAt then return end
+        inventoryAt=os.clock()+10
+        if not loadDatabase() then s.status='CardDatabase unavailable';return end
         local folder=ReplicatedStorage:FindFirstChild('EventRemotes')
-        local roll=folder and folder:FindFirstChild('RollRequest')
-        if roll and roll:IsA('RemoteEvent') then
-            connection=roll.OnClientEvent:Connect(onRoll)
-            s.status=endpoint and 'Watching personal pulls > 1B base' or 'Enter webhook URL (session only)'
-        else s.status='Waiting for RollRequest remote' end
+        local remote=folder and folder:FindFirstChild('GetInventory')
+        if not remote or not remote:IsA('RemoteFunction') then s.status='Waiting for GetInventory';return end
+        inventoryBusy=true
+        local token=generation
+        local ok,raw=pcall(function() return remote:InvokeServer() end)
+        inventoryBusy=false
+        if not s.alive or not s.on or token~=generation then return end
+        if not ok or type(raw)~='table' then s.status='Inventory unavailable; will retry';return end
+        local current={}
+        local function add(id,border,count)
+            id=tonumber(id);count=tonumber(count)
+            if not id or not count or count~=count or count<0 or count==math.huge then return end
+            local valid,card=pcall(database.GetCard,id)
+            local rarity=valid and type(card)=='table' and baseDenom(card.BaseRarity)
+            if not rarity or rarity<=1000000000 then return end
+            border=tostring(border or 'Normal')
+            local entry=current[id] or {total=0,borders={}}
+            count=math.floor(count)
+            entry.total=entry.total+count;entry.borders[border]=(entry.borders[border] or 0)+count
+            current[id]=entry
+        end
+        for key,value in pairs(raw) do
+            if type(value)=='table' then
+                if value.CardID then add(value.CardID,value.Border,value.Count or 1)
+                elseif type(value.counts)=='table' and next(value.counts) then
+                    for border,count in pairs(value.counts) do add(key,border,count) end
+                else add(key,value.bestBorder,value.count or 1) end
+            end
+        end
+        if snapshot then
+            for id,entry in pairs(current) do
+                local previous=snapshot[id] or {total=0,borders={}}
+                local remaining=entry.total-previous.total
+                -- Compare total ownership first: moving existing copies between borders is not an acquisition.
+                if remaining>0 then
+                    for border,count in pairs(entry.borders) do
+                        local added=math.min(remaining,math.max(0,count-(previous.borders[border] or 0)))
+                        if added>0 then onRoll({CardID=id,Border=border,Count=added});remaining=remaining-added end
+                    end
+                end
+            end
+        else s.status='Watching new cards > 1B base · all sources' end
+        snapshot=current
     end
     local function tick()
         if not s.alive or not state.alive then return end
@@ -2200,19 +2244,18 @@ local function createPullWebhook()
                 end
             end
             endpoint=value~='' and value or nil
-            generation=generation+1;queue={};nextAt=0;s.hasEndpoint=endpoint~=nil
+            generation=generation+1;queue={};nextAt=0;snapshot=nil;inventoryAt=0;s.hasEndpoint=endpoint~=nil
             s.status=endpoint and 'Webhook configured for this session' or 'Webhook cleared'
             return true
         end,
         enable=function(on)
             if not s.alive then return end
             on=on==true
-            if s.on==on then if on then bind() end;return end
+            if s.on==on then return end
             s.on=on
             if not s.on then
-                if connection then connection:Disconnect();connection=nil end
                 queue={};generation=generation+1;s.status='OFF'
-            else bind() end
+            else snapshot=nil;inventoryAt=0;s.status='Preparing inventory baseline' end
         end,
         test=function()
             return enqueue({content='Anime Origin: webhook test. Rare-pull alerts use base rarity strictly greater than 1 billion.',
@@ -2220,7 +2263,7 @@ local function createPullWebhook()
         end,
         stop=function()
             s.alive=false;s.on=false;generation=generation+1;queue={};endpoint=nil;s.hasEndpoint=false
-            if connection then connection:Disconnect();connection=nil end
+            snapshot=nil
         end,
     }
 end

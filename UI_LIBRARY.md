@@ -163,8 +163,13 @@ method; Library.Create/Repaint/Refresh/Root and the GitHub loader are unchanged.
 
 ## Rare pull webhook
 
-Settings → **Rare Pull Webhook · Base > 1B** watches the local player's
-`EventRemotes.RollRequest.OnClientEvent` result, as used by the game's RollHandler.
+Settings → **Rare Pull Webhook · Base > 1B** polls the local player's
+`EventRemotes.GetInventory` every ten seconds while enabled and configured.
+The first successful response is a baseline: existing cards are not announced.
+Later increases are reported regardless of acquisition source (roll, Inf, Colo, etc.).
+Repeated snapshots and conversions between borders do not produce duplicate alerts.
+Multiple new copies of the same card/border are grouped with a received count.
+A gain consumed or removed before the next poll can be missed; source is not inferred.
 It looks up `CardID` in `GameDatabase.CardDatabase` and checks `BaseRarity`.
 Only denominators **strictly greater than 1,000,000,000** qualify. Exactly 1B does
 not qualify. Borders are shown in the notification but never multiply this filter.
@@ -173,15 +178,16 @@ normal rolls may produce few or no eligible events under this base-only setting.
 
 Paste a Discord webhook URL in the session-only input, click **SEND TEST** and
 check **Webhook delivery**, then enable **Rare pull alerts**. Notifications include
-the account name, card, base rarity, border and card ID. They are formatted from
-the personal roll result, not copied from global chat. Mention parsing is disabled.
+the account name, card, base rarity, border, card ID and received count. Card artwork
+is resolved through Roblox thumbnails to an HTTPS CDN URL when available; image
+failures do not prevent text delivery. Messages are not copied from global chat. Mention parsing is disabled.
 The watcher does not request rolls, hook remotes, scan UI, or listen to other
 players' chat. No real Discord request was made during development tests.
 
 The URL stays only in the controller's memory, is cleared from the textbox after
 entry, and is not included in JSON profiles. Re-enter it after restarting the
 script. The enabled flag can be saved in profiles. **CLEAR URL** drops queued
-messages for the old URL. Disabling the feature disconnects the roll listener;
+messages for the old URL. Disabling the feature stops inventory polling and clears pending alerts;
 stopping the script also clears the endpoint and pending queue.
 
 Delivery uses executor `request`, `http_request` or `syn.request`, with native
