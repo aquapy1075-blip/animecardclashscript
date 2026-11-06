@@ -2854,7 +2854,7 @@ local function createRemoteColo()
             coloPause('Remote draft: expected four offer rows');return
         end
         -- Preserve the original strategy: one best carry across all rows,
-        -- then PDF_SIDES (or 45% of carry rank) for every other row.
+        -- then a distinct side support in every other row when available.
         local bestCarry=nil
         for row,offers in ipairs(rows) do
             for index,card in ipairs(offers) do
@@ -2884,9 +2884,8 @@ local function createRemoteColo()
             else
                 for index,card in ipairs(offers) do
                     local support=sideScore(card)
-                    local value
-                    if row>=3 then value=support>0 and support or rank(card)*.45
-                    else value=rank(card)>0 and rank(card)*.75 or support*.4 end
+                    -- After securing one carry, all three remaining slots prefer supports.
+                    local value=support>0 and 1000+support or rank(card)*.45
                     if (support>0 or rank(card)>0) and chosen[baseCardName(card)] then value=-1 end
                     if value>score then pick,score=index,value end
                 end
@@ -2987,7 +2986,7 @@ local function createRemoteColo()
         local offer=run.diceCard
         if offer and sideScore(offer)>0 and not card.dead and (tonumber(card.hp) or 0)>0 then
             local target,weakest=nil,math.huge
-            for _,index in ipairs({3,4}) do
+            for _,index in ipairs({3,4,1,2}) do
                 local other=run.team[index]
                 if other and index~=slot and not rejected[index] then
                     local duplicate=false

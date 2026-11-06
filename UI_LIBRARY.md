@@ -59,8 +59,10 @@ equal picks produce different percentage totals (+15% HP versus +20% DMG).
 Resuming an imbalanced run prioritizes the stat with fewer inferred selections.
 Bench support priorities include the supplied support-card examples; duplicate
 aura families are avoided. Draft rows constrain slots, so carry slot 2 is preferred
-when the same carry is offered in that row, and supports are preferred in rows 3/4.
-Dice can replace a weak back-slot card with a better support via the observed
+when the same carry is offered in that row. Once one carry is secured, all three
+remaining rows prefer distinct support cards over secondary carries when available.
+Dice can replace the weakest non-carry slot with a better support (including a
+third support at slot 1) via the observed
 `diceChoose {slot=...}` action.
 
 The supplied slot capture confirms `ColosseumRemote:InvokeServer("swap", {a=2,b=3})`

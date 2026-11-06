@@ -49,6 +49,19 @@ assert(calls[1].action=='draft')
 local p=calls[1].payload.picks
 assert(p[2]==1 and p[1]==2,'prefer carry in row 2 when the same carry is offered there')
 assert(p[3]==1 and p[4]==2,'bench supporters and no duplicate Goddess aura')
+local e=createRemoteColo();e.synced=true;e.resync=false;e.run={phase='draft',wave=1,rerollsLeft=4,draft={rows={
+ {card('Fire Soldier (Evolved)'),card('Introvert Guitarist')},
+ {card('Deathless Outlaw')},
+ {card('Useless Goddess'),card('Demon Venerable')},
+ {card('Sorcerer Supreme'),card('Ghoul Hunger')},
+}}}
+calls={};response={ok=true};now+=1;e.tick()
+local picks=calls[1].payload.picks
+assert(picks[1]==2 and picks[2]==1 and picks[3]==1 and picks[4]==1,'one carry plus three supports, even low-ranked support beats secondary carry')
+local e=createRemoteColo();e.synced=true;e.resync=false;e.run={phase='diceCard',wave=5,
+ team={card('Other'),carry,card('Sorcerer Supreme'),card('Useless Goddess')},diceCard=card('Introvert Guitarist')}
+calls={};response={ok=true};now+=1;e.tick()
+assert(calls[1].action=='diceChoose' and calls[1].payload.slot==1,'dice can add a third support without replacing carry or stronger supports')
 -- Verified swap protocol: one request per tick, server-authoritative result.
 local e=createRemoteColo();e.synced=true;e.resync=false
 local team={card('Useless Goddess'),card('Other'),card('Deathless Outlaw'),card('Idol')}
