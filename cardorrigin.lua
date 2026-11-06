@@ -2048,6 +2048,7 @@ local function createPullWebhook()
     local generation=0
     local connection=nil
     local database=nil
+    local cardImages=nil
     local queue={}
     local nextAt=0
     local borders={Normal='Normal',Gold='Calamity',Rainbow='Umbral',Uni='Astral',Astral='Paradox',Origin='Origin'}
@@ -2070,6 +2071,20 @@ local function createPullWebhook()
         if ok and type(value)=='table' and type(value.GetCard)=='function' then database=value;return true end
         return false
     end
+    local function cardImage(id)
+        if not cardImages then
+            local module=ReplicatedStorage:FindFirstChild('CardImages')
+            if module then
+                local ok,value=pcall(require,module)
+                if ok and type(value)=='table' and type(value.GetImage)=='function' then cardImages=value end
+            end
+        end
+        if not cardImages then return nil end
+        local ok,value=pcall(cardImages.GetImage,id)
+        local asset=ok and type(value)=='string' and value:match('^rbxassetid://(%d+)$')
+        if not asset or asset=='0' then return nil end
+        return {assetId=asset}
+    end
     local function enqueue(payload,isTest)
         if not s.alive then return false end
         if not endpoint then s.status='Enter a Discord webhook URL first';return false end
@@ -2091,7 +2106,7 @@ local function createPullWebhook()
         local name=tostring(card.Name or data.Name or ('Card '..id)):sub(1,200)
         local border=tostring(data.Border or 'Normal')
         s.matched=s.matched+1;s.lastCard=name..' / 1/'..formatted(rarity)
-        enqueue({allowed_mentions={parse={}},embeds={{title='Rare pull · '..name,color=16766073,
+        enqueue({allowed_mentions={parse={}},embeds={{title='Rare pull · '..name,color=16766073,image=cardImage(id),
             fields={
                 {name='Player',value=tostring(player.Name),inline=true},
                 {name='Card',value=name,inline=true},
@@ -2120,6 +2135,22 @@ local function createPullWebhook()
         local sender=type(request)=='function' and request or type(http_request)=='function' and http_request
             or (type(syn)=='table' and type(syn.request)=='function' and syn.request)
         local ok,response=pcall(function()
+            local embed=entry.payload.embeds and entry.payload.embeds[1]
+            if embed and embed.image and embed.image.assetId then
+                local asset=embed.image.assetId
+                embed.image=nil
+                -- Resolve Roblox asset IDs to an HTTPS CDN URL Discord can fetch.
+                local resolved,result=pcall(function()
+                    local options={Url='https://thumbnails.roblox.com/v1/assets?assetIds='..asset..'&returnPolicy=PlaceHolder&size=420x420&format=Png&isCircular=false',Method='GET'}
+                    local reply=sender and sender(options) or HttpService:RequestAsync(options)
+                    if tonumber(reply.StatusCode or reply.Status)~=200 then return nil end
+                    local decoded=HttpService:JSONDecode(reply.Body or '{}')
+                    local item=decoded.data and decoded.data[1]
+                    if item and item.state=='Completed' and type(item.imageUrl)=='string'
+                        and item.imageUrl:match('^https://[%w%.%-]+%.rbxcdn%.com/') then return item.imageUrl end
+                end)
+                if resolved and result then embed.image={url=result} end
+            end
             local body=HttpService:JSONEncode(entry.payload)
             local options={Url=endpoint,Method='POST',Headers={['Content-Type']='application/json'},Body=body}
             if sender then return sender(options) end

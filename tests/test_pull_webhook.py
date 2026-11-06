@@ -24,13 +24,14 @@ local db={GetCard=function(id) return cards[id] end}
 local require=function(v) return v end
 local ReplicatedStorage={FindFirstChild=function(_,name)
  if name=='EventRemotes' then return {FindFirstChild=function(_,key) assert(key=='RollRequest');return roll end} end
+ if name=='CardImages' then return {GetImage=function(id) return id==3 and 'rbxassetid://12345' or 'rbxasset://textures/ui/GuiImagePlaceholder.png' end} end
  if name=='GameDatabase' then return {FindFirstChild=function() return db end} end
 end}
 local encoded
-local HttpService={JSONEncode=function(_,value) encoded=value;return 'body' end,JSONDecode=function() return {retry_after=2} end}
+local HttpService={JSONEncode=function(_,value) encoded=value;return 'body' end,JSONDecode=function(_,body) if body=='image' then return {data={{state='Completed',imageUrl='https://tr.rbxcdn.com/card.png'}}} end;return {retry_after=2} end}
 local requests={}
 local response={StatusCode=204}
-local request=function(options) requests[#requests+1]=options;if response=='error' then error('private URL error') end;return response end
+local request=function(options) if options.Method=='GET' then assert(options.Url:find('assetIds=12345',1,true));return {StatusCode=200,Body='image'} end;requests[#requests+1]=options;if response=='error' then error('private URL error') end;return response end
 '''
 checks=r'''
 local w=createPullWebhook()
@@ -45,10 +46,11 @@ listener({CardID=3,Name='Untrusted name',Border='Gold'})
 w.tick();assert(#requests==1 and w.state.sent==1 and w.state.matched==1)
 assert(encoded.embeds[1].fields[2].value=='Above','database supplies card identity')
 assert(encoded.embeds[1].fields[3].value=='1/1,000,000,001' and encoded.embeds[1].fields[4].value=='Calamity')
+assert(encoded.embeds[1].image.url=='https://tr.rbxcdn.com/card.png','card art uses its own asset ID')
 assert(encoded.allowed_mentions and #encoded.allowed_mentions.parse==0,'no Discord pings')
 listener({CardID=5,Border='Normal'});response={StatusCode=429,Body='retry'};now+=3;w.tick()
 local count=#requests;w.tick();assert(#requests==count and w.state.failed==0)
-now+=2.1;response={StatusCode=204};w.tick();assert(w.state.sent==2,'retry explicit rate limits')
+now+=2.1;response={StatusCode=204};w.tick();assert(w.state.sent==2,'retry explicit rate limits');assert(encoded.embeds[1].image==nil,'missing art does not block notification')
 listener({CardID=3});now+=3;response='error';w.tick()
 count=#requests;now+=10;w.tick();assert(#requests==count and w.state.failed==1,'uncertain delivery is not retried')
 assert(not w.state.status:find('private',1,true),'never reveal raw URL errors')
