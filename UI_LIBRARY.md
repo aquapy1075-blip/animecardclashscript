@@ -61,13 +61,16 @@ Bench support priorities include the supplied support-card examples; duplicate
 aura families are avoided. Draft rows constrain slots, so carry slot 2 is preferred
 when the same carry is offered in that row, and supports are preferred in rows 3/4.
 Dice can replace a weak back-slot card with a better support via the observed
-`diceChoose {slot=...}` action. Arbitrary team swapping is not implemented: the
-supplied Colosseum capture has no swap command, so its payload must be recorded.
+`diceChoose {slot=...}` action.
 
-To capture the missing swap payload: disable automation, run
-`colo_remote_capture.lua`, manually swap two team positions in Colosseum, then
-run `getgenv().ColoRemoteCapture.stop()`. Share `colo_remote_capture.json` from
-the executor workspace. The recorder does not send requests itself.
+The supplied slot capture confirms `ColosseumRemote:InvokeServer("swap", {a=2,b=3})`
+returns `ok=true` and the swapped server team in phase `ready`. Before each fight,
+the controller moves the ranked carry to slot 2 and sorts the other cards by side
+support priority: weakest at slot 1, stronger at slot 3, strongest at slot 4.
+It sends at most one swap per tick, then uses the returned server snapshot for the
+next decision. Missing/unchanged swap confirmation pauses automation for resync;
+no local-only reordering is used. Existing wave-1 restart and stop-floor exits run
+before arrangement. No existing API was changed.
 
 ## UI refresh: Cards, adaptive layout and feedback
 

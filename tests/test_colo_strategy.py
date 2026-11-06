@@ -49,6 +49,25 @@ assert(calls[1].action=='draft')
 local p=calls[1].payload.picks
 assert(p[2]==1 and p[1]==2,'prefer carry in row 2 when the same carry is offered there')
 assert(p[3]==1 and p[4]==2,'bench supporters and no duplicate Goddess aura')
+-- Verified swap protocol: one request per tick, server-authoritative result.
+local e=createRemoteColo();e.synced=true;e.resync=false
+local team={card('Useless Goddess'),card('Other'),card('Deathless Outlaw'),card('Idol')}
+e.run={phase='ready',wave=2,team=team}
+local function swapTick(a,b)
+ local previous=e.run
+ local nextTeam=table.clone(previous.team);nextTeam[a],nextTeam[b]=nextTeam[b],nextTeam[a]
+ response={ok=true,run={phase='ready',wave=2,team=nextTeam}}
+ calls={};now+=1;e.tick()
+ assert(#calls==1 and calls[1].action=='swap' and calls[1].payload.a==a and calls[1].payload.b==b)
+ assert(e.run.team[a]==previous.team[b] and e.run.team[b]==previous.team[a])
+end
+swapTick(3,2);swapTick(1,3);swapTick(3,4)
+assert(e.run.team[2].name=='Deathless Outlaw' and e.run.team[4].name=='Useless Goddess' and e.run.team[3].name=='Idol')
+calls={};response={ok=true};now+=1;e.tick();assert(#calls==1 and calls[1].action=='fight','stable arrangement fights instead of looping swaps')
+local e=createRemoteColo();e.synced=true;e.resync=false
+e.run={phase='ready',wave=2,team={card('Deathless Outlaw'),card('Other'),card('Idol'),card('Useless Goddess')}}
+response={ok=true,run=e.run};now+=1
+local ok,reason=pcall(e.tick);assert(not ok and tostring(reason):find('not confirmed',1,true),'unchanged server team cannot cause infinite swaps')
 local names={'Idol','Crimson Ruin Devil','Golden King','Accelerated Heaven','Game Princess',"Reality's Worst Duet",
  'Abyssal Pianist','Introvert Guitarist','Blackwing Devil (Mutated)','Swift (Cursed)','The Grinning Spectator'}
 for _,name in ipairs(names) do assert(sideScore(card(name))>0,'support missing: '..name) end
@@ -68,7 +87,7 @@ assert(#state.teamCards==4 and state.teamCards[2].role=='carry' and state.teamCa
  and state.teamCards[1].role=='normal' and state.teamCards[4].dead,'all team roles exposed to UI')
 cards[2].name='changed outside';assert(state.teamCards[2].name=='Deathless Outlaw','display snapshot independent of RPC tables')
 e.resync=true;response={ok=true};now+=1;e.tick();assert(#state.teamCards==0,'ended run clears displayed team')
-print('PASS: 1:1 World picks with resumed catch-up, variant support families, carry row 2 when available, fixed bench draft, dice upgrades, no duplicate aura')
+print('PASS: 1:1 World picks with resumed catch-up, variant support families, carry row 2 when available, fixed bench draft, verified server swaps, stable order, unconfirmed swap stop, dice upgrades, no duplicate aura')
 '''
 binary=os.environ.get('LUAU_BIN') or shutil.which('luau')
 if not binary:raise SystemExit('Set LUAU_BIN or add luau to PATH')

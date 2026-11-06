@@ -2815,6 +2815,39 @@ local function createRemoteColo()
         if action=='fight' and result.summary then engine.replayPending=true end
         return result
     end
+    local function arrangeTeam(run)
+        if type(run.team)~='table' or #run.team~=4 then return false end
+        local slot,main=carry(run)
+        if not main or rank(main)<=0 then return false end
+        local function swap(a,b)
+            local beforeA,beforeB=run.team[a],run.team[b]
+            local result=invoke('swap',{a=a,b=b})
+            if result and result.ok then
+                local team=result.run and result.run.team
+                local function same(left,right)
+                    return type(left)=='table' and type(right)=='table'
+                        and left.id==right.id and left.name==right.name
+                end
+                if not team or not same(team[a],beforeB) or not same(team[b],beforeA) then
+                    engine.resync=true
+                    coloPause('Remote swap not confirmed by server team; toggle AUTO to resync')
+                end
+            end
+            return true -- One mutation per tick; re-read server slots before planning another.
+        end
+        if slot~=2 then return swap(slot,2) end
+        local ordered={1,3,4}
+        table.sort(ordered,function(a,b)
+            local sa,sb=sideScore(run.team[a]),sideScore(run.team[b])
+            if sa==sb then return a<b end
+            return sa<sb
+        end)
+        -- Weakest side card in front, strongest support furthest back.
+        for index,target in ipairs({1,3,4}) do
+            if ordered[index]~=target then return swap(target,ordered[index]) end
+        end
+        return false
+    end
     local function draft(run)
         local rows=run.draft and run.draft.rows
         if type(rows)~='table' or #rows~=4 then
@@ -2841,8 +2874,8 @@ local function createRemoteColo()
         local picks={}
         local chosen={}
         if bestCarry then chosen[baseCardName(rows[bestCarry.row][bestCarry.index])]=true end
-        -- Rows fix the resulting slots. Prefer bench supports in rows 3/4;
-        -- a real swap remote is not present in the supplied protocol capture.
+        -- Draft rows initially fix slots; arrangeTeam uses the verified swap
+        -- protocol before fighting to move carry/supports into position.
         for _,row in ipairs({3,4,1,2}) do
             local offers=rows[row]
             local pick,score=nil,-math.huge
@@ -3037,7 +3070,7 @@ local function createRemoteColo()
                 -- The supplied capture proves forfeit returns earned rewards;
                 -- it does not contain a separate cashout command.
                 invoke('forfeit')
-            else invoke('fight') end
+            elseif not arrangeTeam(run) then invoke('fight') end
         else
             coloPause('Remote phase not present in capture: '..tostring(run.phase))
         end
