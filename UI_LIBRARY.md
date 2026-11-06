@@ -49,8 +49,10 @@ The script sends no virtual mouse or keyboard input. Raid uses direct button
 signals and requires `firesignal`; its prompt requires `fireproximityprompt`.
 Native battle rendering may still open or hide the game's battle UI. The library
 only styles objects it creates. Its controls are not keyboard-selectable;
-Settings → **RESET INPUT** clears stuck GUI selection for keyboard users.
-Navigation preferences changed by that reset are restored when the script stops.
+Global GUI navigation and native selection are left untouched. Settings →
+**RESET INPUT** only clears selection/focus belonging to this library. The window
+background and shadow do not sink input. Touch devices have a separate **AO**
+button to hide/show the window even while the main ScreenGui is disabled.
 
 ## Colosseum strategy
 
@@ -127,8 +129,8 @@ ui.Destroy()                    -- destroys the UI; does not stop gameplay contr
 ```
 
 `Destroy()` is idempotent. It disconnects owned global listeners, cancels tweens,
-invalidates delayed effects, releases dropdown listeners and restores navigation
-preferences changed by the UI. Recreating the library with the same state cleans
+invalidates delayed effects, releases dropdown listeners and destroys the owned
+touch toggle. Recreating the library with the same state cleans
 up the prior UI without chaining stop wrappers. All styling is scoped to objects
 created by this library.
 

@@ -160,11 +160,11 @@ local root=make('ScreenGui',playerGui,{
 })
 state.gui=root
 local main=make('CanvasGroup',root,{
-    Name='Window',GroupTransparency=0,Active=true,
+    Name='Window',GroupTransparency=0,Active=false,
     Size=UDim2.fromOffset(805,565),Position=UDim2.new(.5,-402,.5,-282),
     BorderSizePixel=0,BackgroundTransparency=0,
 })
-local shadow=make('Frame',root,{Name='WindowShadow',BorderSizePixel=0,
+local shadow=make('Frame',root,{Name='WindowShadow',BorderSizePixel=0,Active=false,
     BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=.78,ZIndex=1})
 corner(shadow,20)
 main.ZIndex=2
@@ -875,23 +875,14 @@ slider.InputBegan:Connect(function(input)
         adjustTransparency(input.Position.X)
     end
 end)
-local navigationBefore={}
-local navigationChanged={}
 local function restoreGameInput()
     if not GuiService then return end
-    pcall(function() GuiService.SelectedObject=nil end)
-    -- One-time reset for keyboard users. Do not bind WASD/Enter or alter any
-    -- native button's Visible, Enabled, transparency, size or position.
-    if not UIS.GamepadEnabled then
-        for _,property in ipairs({'GuiNavigationEnabled','AutoSelectGuiEnabled'}) do
-            pcall(function()
-                if navigationBefore[property]==nil then navigationBefore[property]=GuiService[property] end
-                GuiService[property]=false;navigationChanged[property]=true
-            end)
-        end
-    end
+    pcall(function()
+        local selected=GuiService.SelectedObject
+        if selected and selected:IsDescendantOf(root) then GuiService.SelectedObject=nil end
+    end)
+    releaseOwnFocus()
 end
-restoreGameInput()
 addAction('Settings','Game keyboard input','RESET INPUT',restoreGameInput)
 local webhookStatus,webhookCounts,webhookLast
 if ctx.pullWebhook then
@@ -1094,6 +1085,16 @@ local function setWindowVisible(show)
         end)
     end
 end
+local touchRoot=make('ScreenGui',playerGui,{
+    Name='AnimeOriginV10_7_Toggle',ResetOnSpawn=false,IgnoreGuiInset=true,
+    ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=9901,Enabled=UIS.TouchEnabled==true,
+})
+local touchToggle=uiButton(touchRoot,'AO',UDim2.fromOffset(46,40))
+touchToggle.Name='TouchWindowToggle'
+touchToggle.Position=UDim2.new(1,-54,0,54)
+touchToggle.MouseButton1Click:Connect(function()
+    if lifecycle.alive then setWindowVisible(not window.visible) end
+end)
 local hotkey=trackUI(UIS.InputBegan:Connect(function(input,used)
     if not used and input.KeyCode==Enum.KeyCode.RightShift and state.alive then
         setWindowVisible(not window.visible)
@@ -1134,17 +1135,10 @@ local stopWrapper
 local function destroyUI(removeRoot)
     if not lifecycle.alive then return end
     lifecycle.alive=false;toast.generation=toast.generation+1;toast.queue={}
-    if GuiService then
-        for property in pairs(navigationChanged) do
-            pcall(function()
-                if GuiService[property]==false then GuiService[property]=navigationBefore[property] end
-            end)
-            navigationChanged[property]=nil
-        end
-    end
     cancelInteraction();suspendOverlays()
     for connection in pairs(lifecycle.connections) do disconnectUI(connection) end
     for obj,tween in pairs(lifecycle.tweens) do tween:Cancel();lifecycle.tweens[obj]=nil end
+    if touchRoot.Parent then touchRoot:Destroy() end
     if state.gui==root then state.gui=nil end
     if state.__animeUiDestroy==destroyUI then state.__animeUiDestroy=nil end
     if state.stop==stopWrapper then state.stop=state.__animeUiStopBase end

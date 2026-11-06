@@ -120,7 +120,7 @@ checks=r'''
 local nativeButton=Instance.new('TextButton');nativeButton.Parent=parent
 nativeButton.Text='Native game';nativeButton.Visible=true;nativeButton.Selectable=true;nativeButton.BackgroundTransparency=.4
 ui=Library.Create(ctx)
-assert(GuiService.SelectedObject==nil and GuiService.GuiNavigationEnabled==false and GuiService.AutoSelectGuiEnabled==false,'reset stuck keyboard GUI navigation')
+assert(GuiService.SelectedObject=='old selection' and GuiService.GuiNavigationEnabled and GuiService.AutoSelectGuiEnabled,'UI initialization leaves native selection and global navigation untouched')
 assert(nativeButton.Visible and nativeButton.Selectable and nativeButton.BackgroundTransparency==.4,'native buttons remain unchanged')
 assert(ui.Root.Parent==parent and #state.connections>=6)
 local function find(predicate)
@@ -244,6 +244,13 @@ advance(1.1);advance(.2)
 assert(find(function(o) return o.Text=='Second notification' end))
 advance(1.1);advance(.2)
 -- Destructive UI actions require confirmation; X and Right Shift remain non-destructive.
+local windowFrame=find(function(o) return o.Name=='Window' end)
+assert(windowFrame.Active==false,'window background cannot sink touch input')
+local floating=find(function(o) return o.Name=='TouchWindowToggle' end)
+floating.MouseButton1Click:Fire();advance(.2);assert(not ui.Root.Enabled,'touch button hides window')
+floating.MouseButton1Click:Fire();advance(.2);assert(ui.Root.Enabled,'touch button reopens hidden window')
+button('RESET INPUT').MouseButton1Click:Fire()
+assert(GuiService.SelectedObject=='old selection' and GuiService.GuiNavigationEnabled and GuiService.AutoSelectGuiEnabled,'manual reset cannot change native selection or navigation')
 button('STOP SCRIPT').MouseButton1Click:Fire()
 local confirm=find(function(o) return o.Name=='StopConfirmation' end)
 assert(confirm.Visible and not stateStopped)
@@ -257,7 +264,7 @@ state.stop();assert(stateStopped)
 assert(ui.Root.Parent==nil,'stop destroys owned UI')
 advance(20);advance(1)
 assert(ui.Root.Parent==nil and nativeButton.Parent==parent,'delayed effects cannot resurrect UI or destroy game buttons')
-assert(GuiService.GuiNavigationEnabled and GuiService.AutoSelectGuiEnabled,'restore navigation settings on stop')
+assert(GuiService.SelectedObject=='old selection' and GuiService.GuiNavigationEnabled and GuiService.AutoSelectGuiEnabled,'stop leaves native navigation unchanged')
 for _,c in ipairs(tracked) do assert(not c.Connected,'external connections disconnected') end
 print('PASS: UI creation, unchanged repaint, transparency, touch slider, live profiles, visible-tab refresh, hidden idle, profile load, cleanup ('..before..' connections)')
 local originalStop=state.__animeUiStopBase

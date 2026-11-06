@@ -54,7 +54,7 @@ for _,key in ipairs({
 end
 for _,gui in ipairs(playerGui:GetChildren()) do
     if gui:IsA('ScreenGui') and (
-        gui.Name=='AnimeOriginV10_7_UI' or gui.Name=='AnimeOriginV10_6_UI' or gui.Name=='AnimeOriginV10_5_UI' or gui.Name=='AnimeOriginV10_4_UI' or gui.Name=='AnimeOriginV10_3_UI' or gui.Name=='AnimeOriginV10_2_UI' or gui.Name=='AnimeOriginV10_1_UI' or gui.Name=='AnimeOriginV10_UI' or gui.Name=='AnimeOriginV9_UI' or
+        gui.Name=='AnimeOriginV10_7_Toggle' or gui.Name=='AnimeOriginV10_7_UI' or gui.Name=='AnimeOriginV10_6_UI' or gui.Name=='AnimeOriginV10_5_UI' or gui.Name=='AnimeOriginV10_4_UI' or gui.Name=='AnimeOriginV10_3_UI' or gui.Name=='AnimeOriginV10_2_UI' or gui.Name=='AnimeOriginV10_1_UI' or gui.Name=='AnimeOriginV10_UI' or gui.Name=='AnimeOriginV9_UI' or
         gui.Name=='AnimeOriginBossRemoteTest' or
         gui.Name=='RiftGateAutoV2_UI' or
         gui.Name:match('^AutoColosseum.+Controller$')
