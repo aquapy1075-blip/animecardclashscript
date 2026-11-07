@@ -4,6 +4,15 @@ import os, shutil, subprocess, tempfile
 main=(Path(__file__).resolve().parents[1]/'cardorrigin.lua').read_text()
 strategy=main[main.index('local function normalize(v)'):main.index('local remoteColo=createRemoteColo()')]
 mock=r'''
+-- Baseline controller tests use synchronous remotes. Yielding/cancellation is tested separately.
+local function awaitRemote(remote,current,...)
+ if not current() then return false,'cancelled' end
+ local result=table.pack(pcall(remote.InvokeServer,remote,...))
+ if not current() then return false,'cancelled' end
+ return table.unpack(result,1,result.n)
+end
+local function acquireQueue(queue,current) if current() then return queue.acquire() end end
+
 local now=100
 local os={clock=function() return now end}
 local cfg={poll=.25,maxDraftRerolls=4,restartUntilCarry=true,autoRerun=true,allowSupports=true,wantEndless=true}
@@ -151,3 +160,4 @@ binary=os.environ.get('LUAU_BIN') or shutil.which('luau')
 if not binary:raise SystemExit('Set LUAU_BIN or add luau to PATH')
 with tempfile.TemporaryDirectory(prefix='colo-strategy-test-') as d:
  p=Path(d)/'colo.luau';p.write_text(mock+strategy+checks);subprocess.run([binary,str(p)],check=True)
+
