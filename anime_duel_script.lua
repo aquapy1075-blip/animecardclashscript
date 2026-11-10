@@ -33,7 +33,7 @@ assert(action and event, 'DraftAction/DraftEvent not found')
 local app = {alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft'}}
 env.AnimeDuelScript = app
 local render = function() end
 local function track(signal, callback)
@@ -109,6 +109,7 @@ function app.loadProfile(name)
             app.config[key]=range[3] and math.floor(v) or v
         end
     end
+    if incoming.mode=='draft' or incoming.mode=='climb' then app.config.mode=incoming.mode end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
     for _,key in ipairs({'autoReconnect','autoStart'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
@@ -488,15 +489,163 @@ local function runLoop()
         pause(app.config.delay)
     end
 end
+-- Native Auto Climb owns combat. This worker only starts runs and resolves card picks.
+local climbConfig=nil
+local function loadClimbConfig()
+    if climbConfig then return climbConfig end
+    local shared=RS:FindFirstChild('Shared')
+    local module=shared and shared:FindFirstChild('DraftConfig',true)
+    if not module then error('DraftConfig not found; cannot compare climb cards.',0) end
+    local ok,config=pcall(require,module)
+    if not ok or type(config)~='table' or type(config.ClimbStats)~='function' then
+        error('Cannot read DraftConfig.ClimbStats; no card picks were guessed.',0)
+    end
+    climbConfig=config
+    return config
+end
+local function climbRun()
+    local climb=app.snapshot and app.snapshot.climb
+    local run=type(climb)=='table' and climb.run
+    return type(run)=='table' and not run.over and not run.Over and run or nil
+end
+local function climbId(run) return run and (run.id or run.Id) end
+local function climbTeam(run) return run and (run.team or run.Team) end
+local function rankClimbCards(ids)
+    if type(ids)~='table' then error('Climb card list is missing.',0) end
+    local ranked,seen={},{}
+    local config=loadClimbConfig()
+    for _,id in ipairs(ids) do
+        if type(id)~='string' or id=='' then error('Unknown climb card format; paused.',0) end
+        if not seen[id] then
+            local ok,damage,hp=pcall(config.ClimbStats,id)
+            if not ok or type(damage)~='number' or type(hp)~='number'
+                or damage~=damage or hp~=hp or damage<=0 or hp<=0
+                or damage==math.huge or hp==math.huge then
+                error('Cannot score climb card: '..id,0)
+            end
+            seen[id]=true
+            table.insert(ranked,{id=id,damage=damage,hp=hp,score=damage+hp/2})
+        end
+    end
+    table.sort(ranked,function(a,b)
+        if a.score~=b.score then return a.score>b.score end
+        if a.damage~=b.damage then return a.damage>b.damage end
+        return a.id<b.id
+    end)
+    return ranked
+end
+local function pendingStart(run) return run and (run.start or run.Start) end
+local function pendingOffer(run)
+    local offer=run and (run.offer or run.Offer)
+    if type(offer)~='table' then return nil end
+    local cards=offer.cards or offer.Cards
+    if type(cards)=='table' then return cards end
+    if type(offer[1])=='string' then return offer end
+    error('Unknown climb offer format; paused without choosing.',0)
+end
+local function sameTeam(team,picks)
+    if type(team)~='table' or #team~=4 then return false end
+    for i,id in ipairs(picks) do if team[i]~=id then return false end end
+    return true
+end
+local function confirmClimb(predicate)
+    local deadline=os.clock()+8
+    repeat
+        check()
+        if predicate() then return true end
+        refresh()
+        if predicate() then return true end
+        pause(.4)
+    until os.clock()>=deadline
+    return false
+end
+local function climbMutation(name,a,b,confirmed)
+    local result=call(name,a,b)
+    -- Do not replay: even a lost response may have applied the pick on the server.
+    if not confirmClimb(confirmed) then
+        error(name..' not confirmed; paused without resending'
+            ..(result.ok and '.' or (': '..tostring(result.reason))),0)
+    end
+end
+local function runClimbLoop()
+    loadClimbConfig()
+    app.climbStatus='Syncing climb state';refresh()
+    if type(app.snapshot and app.snapshot.climb)~='table' then
+        error('Climb State missing; paused before starting a run.',0)
+    end
+    while app.enabled do
+        check()
+        if awaitPriority() then refresh() end
+        local run=climbRun()
+        local climb=app.snapshot.climb
+        if not run then
+            if climb.bossLive then
+                app.climbStatus='Waiting for current climb fight to end'
+                pause(1);refresh()
+            else
+                local old=climbId(type(climb.run)=='table' and climb.run or nil)
+                app.climbStatus='Starting a new climb';setStatus(app.climbStatus)
+                climbMutation('ClimbStart',nil,nil,function()
+                    local current=climbRun()
+                    return current~=nil and (old==nil or climbId(current)~=old)
+                end)
+            end
+        elseif type(pendingStart(run))=='table' then
+            local ranked=rankClimbCards(pendingStart(run))
+            if #ranked<4 then error('Fewer than four distinct starting cards; paused.',0) end
+            local picks={ranked[1].id,ranked[2].id,ranked[3].id,ranked[4].id}
+            local id=climbId(run)
+            app.climbStatus='Choosing the four strongest starting cards';setStatus(app.climbStatus)
+            climbMutation('ClimbPickStart',picks,nil,function()
+                local current=climbRun()
+                return climbId(current)==id and pendingStart(current)==nil and sameTeam(climbTeam(current),picks)
+            end)
+        elseif pendingOffer(run) then
+            local offers=pendingOffer(run)
+            local team=climbTeam(run)
+            if type(team)~='table' or #team~=4 then error('Climb team must contain four cards.',0) end
+            local rankedTeam=rankClimbCards(team)
+            if #rankedTeam~=4 then error('Climb team has duplicate cards; paused.',0) end
+            local rankedOffer=rankClimbCards(offers)
+            local weakest=rankedTeam[#rankedTeam]
+            local best
+            for _,card in ipairs(rankedOffer) do
+                if not table.find(team,card.id) then best=card;break end
+            end
+            local offerIndex,slot=0,nil
+            local expected=table.clone(team)
+            if best and best.score>weakest.score then
+                offerIndex=table.find(offers,best.id);slot=table.find(team,weakest.id)
+                expected[slot]=best.id
+                app.climbStatus='Replacing '..weakest.id..' with '..best.id
+            else app.climbStatus='Keeping team — offer is not stronger' end
+            setStatus(app.climbStatus)
+            local id=climbId(run)
+            climbMutation('ClimbPick',offerIndex,slot,function()
+                local current=climbRun()
+                return climbId(current)==id and pendingOffer(current)==nil and sameTeam(climbTeam(current),expected)
+            end)
+        else
+            app.climbStatus=climb.auto==false and 'Turn ON Auto Climb in the game to advance floors'
+                or (run.paused and 'Climb is paused in the game — resume it to continue'
+                or 'Waiting for native Auto Climb / next card offer')
+            setStatus(app.climbStatus)
+            pause(1);refresh()
+        end
+        pause(app.config.delay)
+    end
+end
+
 function app.stop()
     app.enabled=false
     setStatus(app.worker and 'Stopping — current server fight continues' or 'Stopped')
 end
-function app.start()
+function app.start(mode)
     if not app.alive or app.worker then return end
+    if mode=='draft' or mode=='climb' then app.config.mode=mode end
     app.enabled=true; app.worker=true
     task.spawn(function()
-        local ok,err=pcall(runLoop)
+        local ok,err=pcall(app.config.mode=='climb' and runClimbLoop or runLoop)
         app.enabled=false; app.worker=false
         if not ok and tostring(err)~='__STOP__' then
             setStatus('ERROR: '..tostring(err))
@@ -562,7 +711,7 @@ skin(nav,'BackgroundColor3','side')
 local body=make('Frame',main,{Position=UDim2.fromOffset(140,58),Size=UDim2.new(1,-140,1,-58),BackgroundTransparency=1})
 local pages,navButtons={},{}
 local selected='Draft'
-for i,name in ipairs({'Draft','Settings','Config'}) do
+for i,name in ipairs({'Draft','Climb','Settings','Config'}) do
     local b=button(nav,name,UDim2.new(1,-16,0,38));b.Position=UDim2.fromOffset(8,12+(i-1)*46)
     navButtons[name]=b
     local page=make('ScrollingFrame',body,{Name=name,Size=UDim2.fromScale(1,1),Visible=name==selected,
@@ -592,7 +741,7 @@ end
 local controls=row('Draft','Automation',69)
 local start=button(controls,'START',UDim2.new(.5,-18,0,30));start.Position=UDim2.fromOffset(12,31)
 local stop=button(controls,'STOP',UDim2.new(.5,-18,0,30));stop.Position=UDim2.new(.5,6,0,31)
-track(start.Activated,app.start);track(stop.Activated,app.stop)
+track(start.Activated,function() app.start('draft') end);track(stop.Activated,app.stop)
 local statusLabel=status('Status')
 local runLabel=status('Run / Boss / Recovery')
 local teamLabel=status('Current team')
@@ -600,6 +749,21 @@ local scoreLabel=status('Session results')
 local hint=row('Draft','Strategy',76)
 local hintText=text(hint,'Easy → Medium → Hard → Boss 1 / 2 / 3\nAfter each fight: Open packs → Auto Team')
 hintText.Position=UDim2.fromOffset(12,29);hintText.Size=UDim2.new(1,-24,0,40);hintText.TextWrapped=true
+local climbControls=row('Climb','Auto Draft Climb',69)
+local climbStart=button(climbControls,'START CLIMB',UDim2.new(.5,-18,0,30));climbStart.Position=UDim2.fromOffset(12,31)
+local climbStop=button(climbControls,'STOP',UDim2.new(.5,-18,0,30));climbStop.Position=UDim2.new(.5,6,0,31)
+track(climbStart.Activated,function() app.start('climb') end)
+track(climbStop.Activated,app.stop)
+local function climbStatusRow(label)
+    local r=row('Climb',label,76)
+    local l=text(r,'--');l.Position=UDim2.fromOffset(12,29);l.Size=UDim2.new(1,-24,0,40);l.TextWrapped=true
+    return l
+end
+local climbStatusLabel=climbStatusRow('Climb status')
+local climbProgressLabel=climbStatusRow('Run / Floor')
+local climbTeamLabel=climbStatusRow('Climb team')
+local climbInfo=climbStatusRow('How it works')
+climbInfo.Text='Enable native Auto Climb. Picks use DMG + HP / 2 including borders. STOP only stops this picker; disable native Auto Climb before switching to Draft.'
 local configInputs={}
 local paintedTheme=nil
 local function numberInput(label,key,low,high)
@@ -638,7 +802,7 @@ local function settingToggle(label,key)
     return b
 end
 local reconnectToggle=settingToggle('Auto reconnect on connection loss','autoReconnect')
-local autoStartToggle=settingToggle('Start Draft when this profile is auto-loaded','autoStart')
+local autoStartToggle=settingToggle('Start selected mode when profile is auto-loaded','autoStart')
 local reconnectRow=row('Settings','Connection',69)
 local reconnectLabel=text(reconnectRow,'Monitoring');reconnectLabel.Position=UDim2.fromOffset(12,31);reconnectLabel.Size=UDim2.new(1,-24,0,29)
 local rejoinRow=row('Settings','Rejoin this place',69)
@@ -673,8 +837,17 @@ render=function()
         ..(job and (' / '..job.target..' ×'..job.remaining) or '')) or 'No active run'
     teamLabel.Text=type(run)=='table' and type(run.team)=='table' and table.concat(run.team,' / ') or '--'
     scoreLabel.Text=app.wins..' wins / '..app.losses..' losses / '..app.clears..' clears'
-    start.Text=app.worker and (app.enabled and 'RUNNING' or 'STOPPING') or 'START'
     start.Active=not app.worker
+    start.Text=app.worker and (app.enabled and 'RUNNING' or 'STOPPING') or 'START DRAFT'
+    climbStart.Text=app.worker and (app.enabled and 'RUNNING' or 'STOPPING') or 'START CLIMB'
+    climbStart.Active=not app.worker
+    local climb=app.snapshot and app.snapshot.climb
+    local cr=type(climb)=='table' and climb.run
+    climbStatusLabel.Text=app.config.mode=='climb' and (app.climbStatus or app.status) or 'Climb standby — current mode: Draft'
+    if app.config.mode=='climb' and not app.enabled then climbStatusLabel.Text=app.status end
+    climbProgressLabel.Text=type(cr)=='table' and ('#'..tostring(climbId(cr))..' / Floor '..tostring(cr.floor or cr.Floor)..' / '..tostring(cr.over or cr.Over or 'active')) or 'No climb running'
+    local ct=climbTeam(cr)
+    climbTeamLabel.Text=type(ct)=='table' and table.concat(ct,' / ') or '--'
     for name,b in pairs(navButtons) do b.BackgroundColor3=color(name==selected and 'accent' or 'row');b.TextColor3=color(name==selected and 'bg' or 'text') end
     main.BackgroundTransparency=app.config.transparency/100
     reconnectToggle.Text=app.config.autoReconnect and 'ON' or 'OFF'
@@ -707,10 +880,10 @@ local function layout()
     body.Position=UDim2.fromOffset(compact and 0 or 140,compact and 104 or 58)
     body.Size=compact and UDim2.new(1,0,1,-104) or UDim2.new(1,-140,1,-58)
     nav.Visible=not minimized;body.Visible=not minimized
-    for i,name in ipairs({'Draft','Settings','Config'}) do
+    for i,name in ipairs({'Draft','Climb','Settings','Config'}) do
         local b=navButtons[name]
-        b.Position=compact and UDim2.new((i-1)/3,5,0,4) or UDim2.fromOffset(8,12+(i-1)*46)
-        b.Size=compact and UDim2.new(1/3,-10,0,36) or UDim2.new(1,-16,0,38)
+        b.Position=compact and UDim2.new((i-1)/4,5,0,4) or UDim2.fromOffset(8,12+(i-1)*46)
+        b.Size=compact and UDim2.new(1/4,-10,0,36) or UDim2.new(1,-16,0,38)
     end
 end
 local cameraConnection
