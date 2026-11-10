@@ -141,7 +141,7 @@ local function findButton(caption)
  for _,obj in ipairs(objects) do if obj.ClassName=='TextButton' and obj.Text==caption then return obj end end
  error('missing button '..caption)
 end
-assert(findButton('START DRAFT') and findButton('STOP'),'start and stop controls')
+assert(findButton('START DRAFT') and findButton('STOP DRAFT'),'start and stop controls')
 assert(not app.logs,'no retained log buffer')
 assert(findButton('Config'),'Config tab')
 findButton('Settings').Activated:Fire()
@@ -573,3 +573,39 @@ assert(not app.worker and not app.climb.worker)
 assert(app.status=='Stopped' and app.climb.status=='Stopped',app.status..' / '..app.climb.status)
 app.destroy()
 ''')
+
+run_case('loading updated script waits for active old Climb worker and replaces its UI',climb_fixture,r'''
+local old=env.AnimeDuelScript
+old.start('climb')
+schedule(.2,function()loadScript()end)
+drain()
+local current=env.AnimeDuelScript
+assert(current~=old,'must replace old app, not merely stop and return')
+assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
+assert(current.build=='independent-controls-v2','visible versioned build')
+assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
+current.destroy()
+''')
+
+for mode in ['draft','climb']:
+    caption='STOP DRAFT' if mode=='draft' else 'STOP CLIMB'
+    run_case('actual '+caption+' UI button stops only its own controller',climb_fixture,r'''
+local app=env.AnimeDuelScript
+app.start('draft');app.start('climb')
+schedule(.2,function()
+ local found=false
+ for _,obj in ipairs(objects)do
+  if obj.ClassName=='TextButton' and obj.Text=='CAPTION' then obj.Activated:Fire();found=true;break end
+ end
+ assert(found,'missing distinct Stop button')
+ if 'MODE'=='draft' then
+  assert(not app.enabled and app.climb.enabled,'Draft button must not stop Climb')
+ else
+  assert(app.enabled and not app.climb.enabled,'Climb button must not stop Draft')
+ end
+end)
+drain()
+if 'MODE'=='draft' then assert(#climbPicks==2,'Climb still replaces and skips')
+else assert(fightIndex==15,'Draft still progresses') end
+app.destroy()
+'''.replace('CAPTION',caption).replace('MODE',mode))
