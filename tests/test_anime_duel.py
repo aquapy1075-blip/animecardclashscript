@@ -18,7 +18,9 @@ local function signal()
   table.insert(callbacks,{fn=fn,c=c});return c
  end,Fire=function(_,...) for _,v in ipairs(callbacks) do if v.c.Connected then v.fn(...) end end end}
 end
+local maintenance={}
 local task={}
+function task.delay(seconds,fn)table.insert(maintenance,fn)end
 function task.spawn(fn) table.insert(pending,{at=now,co=coroutine.create(fn)}) end
 function task.wait(seconds) return coroutine.yield(seconds or .1) end
 local function schedule(seconds,fn) table.insert(pending,{at=now+seconds,co=coroutine.create(fn)}) end
@@ -51,6 +53,7 @@ function Instance.new(class)
  local signals={};local obj;local methods={}
  function methods:IsA(k)return k==class or k=='GuiObject' and class~='ScreenGui' and class~='UICorner' and class~='UIStroke' and class~='UIListLayout' and class~='UIPadding' end
  function methods:GetPropertyChangedSignal(k) signals[k]=signals[k] or signal();return signals[k] end
+ function methods:IsFocused()return false end
  function methods:Destroy()props.Parent=nil;props.destroyed=true end
  function methods:WaitForChild(k)return props[k] end
  obj=setmetatable({}, {__index=function(_,k)
@@ -61,7 +64,7 @@ function Instance.new(class)
  table.insert(objects,obj);return obj
 end
 local playerGui=Instance.new('PlayerGui')
-local player={WaitForChild=function(_,name)assert(name=='PlayerGui');return playerGui end}
+local player={UserId=42,WaitForChild=function(_,name)assert(name=='PlayerGui');return playerGui end}
 local Workspace=Instance.new('Workspace')
 Workspace.CurrentCamera=Instance.new('Camera');Workspace.CurrentCamera.ViewportSize=Vector2.new(1280,720)
 local UIS={InputBegan=signal(),InputChanged=signal(),InputEnded=signal()}
@@ -114,8 +117,20 @@ function action:InvokeServer(name,a,b)
 end
 local remotes={WaitForChild=function(_,name)return name=='DraftAction' and action or event end}
 local RS={WaitForChild=function(_,name)assert(name=='Remotes');return remotes end}
-local services={Players={LocalPlayer=player},ReplicatedStorage=RS,UserInputService=UIS,Workspace=Workspace,TweenService={}}
-local game={GetService=function(_,name)assert(services[name],name);return services[name]end}
+local disconnectMessage=''
+local teleportCalls=0
+local HttpService={}
+local jsonObjects={};local jsonIndex=0
+function HttpService:JSONEncode(value)
+ jsonIndex=jsonIndex+1;local key='json:'..jsonIndex;jsonObjects[key]=value;return key
+end
+function HttpService:JSONDecode(value)
+ assert(jsonObjects[value],'invalid JSON');return jsonObjects[value]
+end
+local GuiService={GetErrorMessage=function()return disconnectMessage end}
+local TeleportService={Teleport=function(_,place,who)assert(who==player);teleportCalls=teleportCalls+1 end}
+local services={HttpService=HttpService,GuiService=GuiService,TeleportService=TeleportService,Players={LocalPlayer=player},ReplicatedStorage=RS,UserInputService=UIS,Workspace=Workspace,TweenService={}}
+local game={PlaceId=123,GetService=function(_,name)assert(services[name],name);return services[name]end}
 local function warn(s)print(s)end
 '''
 checks=r'''
@@ -127,6 +142,8 @@ local function findButton(caption)
  error('missing button '..caption)
 end
 assert(findButton('START') and findButton('STOP'),'start and stop controls')
+assert(not app.logs,'no retained log buffer')
+assert(findButton('Config'),'Config tab')
 findButton('Settings').Activated:Fire()
 findButton('Midnight').Activated:Fire()
 assert(app.config.theme=='Emerald','theme cycle')
@@ -249,3 +266,89 @@ priority=mock.replace('local action={}','local action={}\nlocal holdUntil=0').re
    schedule(5,function()env.AnimeDuelScript.setBossActive('raid',false)end)
   end""")
 run_case('priority bridge waits for both boss deaths and preserves Draft progress',priority,checks)
+
+file_mock=r'''
+local files={}
+local function readfile(path) assert(files[path], 'missing file');return files[path] end
+local function writefile(path,value) files[path]=value end
+local function makefolder(path) end
+local function delfile(path) assert(files[path],'missing file');files[path]=nil end
+'''
+run_case('profiles save/load/delete and per-account Auto Load survive recreation',mock+file_mock,r'''
+local app=env.AnimeDuelScript
+app.config.farm=7;app.config.theme='Violet'
+assert(app.setAutoProfile('Farm_Setup'))
+app.config.farm=2;assert(app.loadProfile('Farm_Setup'))
+assert(app.config.farm==7 and app.config.theme=='Violet')
+assert(not app.deleteProfile('Farm_Setup'),'protect Auto Load profile')
+assert(not app.saveProfile('../escape'),'profile path validation')
+assert(files['AnimeDuelScript/42/profiles/Farm_Setup.json'],'account namespace')
+app.destroy();loadScript()
+app=env.AnimeDuelScript
+assert(app.config.farm==7 and app.config.theme=='Violet','Auto Load restores settings')
+assert(not app.worker,'Auto Start is opt in')
+assert(app.clearAutoProfile());assert(app.deleteProfile('Farm_Setup'))
+assert(files['AnimeDuelScript/42/profiles/Farm_Setup.json']==nil)
+app.destroy()
+''')
+
+run_case('profile ranges and types are validated; no remote writes on manual Load',mock+file_mock,r'''
+local app=env.AnimeDuelScript
+files['AnimeDuelScript/42/profiles/Bad.json']=HttpService:JSONEncode({version=1,config={farm=-5,bossFarm=100,theme='invalid',delay=0,timeout=0,transparency=math.huge,autoStart='yes',autoReconnect='yes',unknown='x'}})
+assert(app.loadProfile('Bad'))
+assert(app.config.farm==3 and app.config.bossFarm==4 and app.config.delay==.8 and app.config.timeout==180)
+assert(app.config.theme=='Midnight' and app.config.transparency==15 and app.config.autoStart==false and app.config.autoReconnect==true)
+assert(app.config.unknown==nil and #calls==0)
+app.start();assert(not app.loadProfile('Bad'),'do not load while worker is live');app.stop();drain()
+app.destroy()
+''')
+
+run_case('Auto Start runs only when explicitly saved in an auto-loaded profile',mock+file_mock,r'''
+local app=env.AnimeDuelScript
+app.config.autoStart=true;assert(app.setAutoProfile('Resume'))
+app.destroy();loadScript();app=env.AnimeDuelScript
+assert(app.worker and app.enabled,'explicit Auto Start')
+app.stop();drain();assert(#calls==0,'Stop cancels startup worker')
+app.destroy()
+''')
+
+run_case('missing and failed file APIs leave manual Draft usable',mock,r'''
+local app=env.AnimeDuelScript
+assert(not app.saveProfile('Default'))
+assert(app.profiles.status=='File API unavailable')
+assert(not app.worker and app.Root.Parent==playerGui)
+app.destroy()
+''')
+faulty=mock+file_mock.replace('files[path]=value',"error('disk full')")
+run_case('failed profile writes do not report a saved profile',faulty,r'''
+local app=env.AnimeDuelScript
+assert(not app.setAutoProfile('Default'))
+assert(app.profiles.auto==nil and #app.profiles.names==0)
+app.destroy()
+''')
+
+run_case('auto reconnect cooldown, attempt limit, opt out and disconnect classification',mock,r'''
+local app=env.AnimeDuelScript
+app.config.autoReconnect=false;disconnectMessage='Disconnected (Error Code: 277)'
+app.reconnectTick();assert(teleportCalls==0)
+app.config.autoReconnect=true
+app.reconnectTick();assert(teleportCalls==1)
+app.reconnectTick();assert(teleportCalls==1,'cooldown')
+now=now+10;app.reconnectTick();now=now+10;app.reconnectTick()
+now=now+10;app.reconnectTick();assert(teleportCalls==3,'three-attempt limit')
+disconnectMessage='';app.reconnectTick()
+assert(app.reconnect.attempts==0)
+disconnectMessage='You were kicked: disconnected';app.reconnectTick();assert(teleportCalls==3,'no kick reconnect')
+disconnectMessage='You are banned';app.reconnectTick();assert(teleportCalls==3)
+disconnectMessage='Connection lost';now=now+10;app.reconnectTick();assert(teleportCalls==4)
+local count=#maintenance
+app.destroy()
+for i=1,count do maintenance[i]() end
+assert(#maintenance==count,'no polling reschedule after Destroy')
+''')
+
+# Production source must have neither console logging nor a retained log UI/buffer.
+import re
+assert not re.search(r'\b(?:print|warn)\s*\(', src)
+assert "'Logs'" not in src and 'app.logs' not in src
+print('PASS: production script has no print/warn, log buffer or Logs tab')
