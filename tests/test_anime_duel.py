@@ -395,11 +395,11 @@ end
 '''
 climb_checks=r'''
 local app=env.AnimeDuelScript
-app.start('climb');app.start('draft')
-assert(app.config.mode=='climb','active worker mode cannot be changed by another Start')
+app.start('climb');app.start('climb')
+assert(app.config.mode=='climb','duplicate Climb Start must not create a second Climb worker')
 drain()
 assert(climbStarts==2 and #climbPicks==2,'restart and offer picks')
-assert(app.status=='Stopped',app.status)
+assert(app.climb.status=='Stopped',app.climb.status)
 for _,call in ipairs(calls)do
  assert(call[1]~='Fight' and call[1]~='Start' and call[1]~='Open' and call[1]~='AutoTeam','climb must not send normal Draft commands')
 end
@@ -419,7 +419,7 @@ app.start('climb');drain()
 local count=0
 for _,call in ipairs(calls)do if call[1]=='ClimbPickStart' then count=count+1 end end
 assert(count==1,'do not replay unknown pick')
-assert(app.status:find('not confirmed',1,true),app.status)
+assert(app.climb.status:find('not confirmed',1,true),app.climb.status)
 app.destroy()
 ''')
 
@@ -427,7 +427,7 @@ missing_stats=climb_fixture.replace("assert(stats[id],'missing card stats');retu
 run_case('Climb never guesses card rankings when stats are unavailable',missing_stats,r'''
 local app=env.AnimeDuelScript
 app.start('climb');drain()
-assert(app.status:find('Cannot score climb card',1,true),app.status)
+assert(app.climb.status:find('Cannot score climb card',1,true),app.climb.status)
 for _,call in ipairs(calls)do assert(call[1]~='ClimbPickStart','no guessed picks')end
 app.destroy()
 ''')
@@ -465,7 +465,7 @@ insufficient=climb_fixture.replace("start={'weak','tank','carry','mid','other','
 run_case('insufficient allowed starting cards pauses instead of filling with banned cards',insufficient,r'''
 local app=env.AnimeDuelScript
 app.start('climb');drain()
-assert(app.status:find('Fewer than four allowed',1,true),app.status)
+assert(app.climb.status:find('Fewer than four allowed',1,true),app.climb.status)
 for _,call in ipairs(calls)do assert(call[1]~='ClimbPickStart','must never fill a team with a banned card')end
 app.destroy()
 ''')
@@ -519,3 +519,57 @@ for suffix in ['','_gold','_rainbow','_secret']:
     teen='teen_saski'+suffix
     fixture=preferred.replace('elf_mage',teen).replace(teen+'={25,50}',teen+'={20,50}')
     run_case('Teen Saski gets +50% rather than +25%: '+teen,fixture,climb_checks)
+
+run_case('Stop Draft leaves Climb running and resolving replacement/skip offers',climb_fixture,r'''
+local app=env.AnimeDuelScript
+app.start('draft');app.start('climb')
+assert(app.worker and app.climb.worker and app.enabled and app.climb.enabled)
+schedule(.2,function()
+ app.stop('draft')
+ assert(app.climb.enabled and app.climb.worker,'Draft Stop must not stop Climb')
+end)
+drain()
+assert(climbStarts==2 and #climbPicks==2,'Climb must replace, skip and restart while Draft is stopped')
+assert(fightIndex==0,'stopped Draft did not fight')
+assert(app.climb.status=='Stopped',app.climb.status)
+app.destroy()
+''')
+
+run_case('Stop Climb leaves Draft recovery and boss progression running',climb_fixture,r'''
+local app=env.AnimeDuelScript
+app.start('climb');app.start('draft')
+schedule(.2,function()
+ app.stop('climb')
+ assert(app.enabled and app.worker,'Climb Stop must not stop Draft')
+end)
+drain()
+assert(fightIndex==15 and startCount==2,'Draft must complete its normal recovery/boss loop')
+assert(climbStarts==0,'stopped Climb must not start')
+assert(app.status=='Stopped',app.status)
+app.destroy()
+''')
+
+concurrent=climb_fixture.replace("if climbStarts==2 then env.AnimeDuelScript.stop();return true end", "if climbStarts==2 then env.AnimeDuelScript.stop('climb');return true end")
+concurrent=concurrent.replace("assert(calls[#calls-2][1]=='AutoTeam' and calls[#calls-1][1]=='State','missing AutoTeam preparation')",'').replace("if fightIndex==1 or expected[fightIndex-1][2] then assert(lastOpen==#calls-3,'missing Open after pack reward') end",'')
+concurrent+=r'''
+local realInvoke=action.InvokeServer
+local inFlight=0
+function action:InvokeServer(...)
+ inFlight=inFlight+1
+ assert(inFlight==1,'remote requests must be serialized')
+ task.wait(.05)
+ local result=table.pack(realInvoke(self,...))
+ inFlight=inFlight-1
+ return table.unpack(result,1,result.n)
+end
+'''
+run_case('both controllers progress independently with a single in-flight remote request',concurrent,r'''
+local app=env.AnimeDuelScript
+app.start('draft');app.start('climb')
+drain()
+assert(fightIndex==15 and climbStarts==2 and #climbPicks==2,'both modes must progress')
+assert(app.wins==13 and app.losses==2 and app.clears==1,'Draft counters stay independent')
+assert(not app.worker and not app.climb.worker)
+assert(app.status=='Stopped' and app.climb.status=='Stopped',app.status..' / '..app.climb.status)
+app.destroy()
+''')
