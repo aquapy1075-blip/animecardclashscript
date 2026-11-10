@@ -513,3 +513,9 @@ run_case('Samurai Lost Man banned at all borders in starts and offers',ban_samur
 
 normal_lost=climb_fixture.replace("'carry'", "'lost_man'").replace('carry={100,20}','lost_man={100,20}')
 run_case('normal Lost Man remains eligible',normal_lost,climb_checks)
+
+# At raw score 45, +25% would miss the initial team; +50% must beat score 60.
+for suffix in ['','_gold','_rainbow','_secret']:
+    teen='teen_saski'+suffix
+    fixture=preferred.replace('elf_mage',teen).replace(teen+'={25,50}',teen+'={20,50}')
+    run_case('Teen Saski gets +50% rather than +25%: '+teen,fixture,climb_checks)
