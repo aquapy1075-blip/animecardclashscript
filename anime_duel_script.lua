@@ -130,10 +130,28 @@ local function refresh()
     pause(app.config.delay)
 end
 local function prepare()
-    if not activeRun() then return end
-    log('Opening packs')
-    invoke('Open','all',1)
-    pause(app.config.delay)
+    local run=activeRun()
+    if not run then return end
+    -- A defeat can leave every pack balance at zero. Do not request an empty Open.
+    if type(run.packs)~='table' then
+        refresh()
+        run=activeRun()
+        if not run then return end
+        if type(run.packs)~='table' then
+            error('Pack balance missing from State; stopped before Open.',0)
+        end
+    end
+    local count=0
+    for _,amount in pairs(run.packs) do
+        count=count+math.max(tonumber(amount) or 0,0)
+    end
+    if count>0 then
+        log('Opening packs ('..tostring(count)..' available)')
+        invoke('Open','all',1)
+        pause(app.config.delay)
+    else
+        log('No packs available — skipping Open')
+    end
     log('Selecting Auto Team')
     invoke('AutoTeam',nil,nil)
     pause(app.config.delay)
