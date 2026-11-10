@@ -510,13 +510,25 @@ local function climbRun()
 end
 local function climbId(run) return run and (run.id or run.Id) end
 local function climbTeam(run) return run and (run.team or run.Team) end
-local function rankClimbCards(ids)
+local bannedClimbCards={}
+for _,base in ipairs({'saiyan_prince','atomic'}) do
+    for _,suffix in ipairs({'','_gold','_rainbow','_secret'}) do
+        bannedClimbCards[base..suffix]=true
+    end
+end
+local function rankClimbCards(ids,existingTeam)
     if type(ids)~='table' then error('Climb card list is missing.',0) end
     local ranked,seen={},{}
     local config=loadClimbConfig()
     for _,id in ipairs(ids) do
         if type(id)~='string' or id=='' then error('Unknown climb card format; paused.',0) end
-        if not seen[id] then
+        if not seen[id] and (existingTeam or not bannedClimbCards[id]) then
+            if bannedClimbCards[id] then
+                -- An old/manual banned card is replaced first when a valid offer arrives.
+                seen[id]=true
+                table.insert(ranked,{id=id,damage=0,hp=0,score=-math.huge})
+                continue
+            end
             local ok,damage,hp=pcall(config.ClimbStats,id)
             if not ok or type(damage)~='number' or type(hp)~='number'
                 or damage~=damage or hp~=hp or damage<=0 or hp<=0
@@ -592,7 +604,7 @@ local function runClimbLoop()
             end
         elseif type(pendingStart(run))=='table' then
             local ranked=rankClimbCards(pendingStart(run))
-            if #ranked<4 then error('Fewer than four distinct starting cards; paused.',0) end
+            if #ranked<4 then error('Fewer than four allowed starting cards; banned cards will not be picked.',0) end
             local picks={ranked[1].id,ranked[2].id,ranked[3].id,ranked[4].id}
             local id=climbId(run)
             app.climbStatus='Choosing the four strongest starting cards';setStatus(app.climbStatus)
@@ -604,7 +616,7 @@ local function runClimbLoop()
             local offers=pendingOffer(run)
             local team=climbTeam(run)
             if type(team)~='table' or #team~=4 then error('Climb team must contain four cards.',0) end
-            local rankedTeam=rankClimbCards(team)
+            local rankedTeam=rankClimbCards(team,true)
             if #rankedTeam~=4 then error('Climb team has duplicate cards; paused.',0) end
             local rankedOffer=rankClimbCards(offers)
             local weakest=rankedTeam[#rankedTeam]
@@ -763,7 +775,7 @@ local climbStatusLabel=climbStatusRow('Climb status')
 local climbProgressLabel=climbStatusRow('Run / Floor')
 local climbTeamLabel=climbStatusRow('Climb team')
 local climbInfo=climbStatusRow('How it works')
-climbInfo.Text='Enable native Auto Climb. Picks use DMG + HP / 2 including borders. STOP only stops this picker; disable native Auto Climb before switching to Draft.'
+climbInfo.Text='Saiyan Prince and Atomic are banned at every border. Enable native Auto Climb. STOP only stops this picker; disable native Auto Climb before switching to Draft.'
 local configInputs={}
 local paintedTheme=nil
 local function numberInput(label,key,low,high)
