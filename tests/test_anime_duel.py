@@ -447,3 +447,25 @@ assert(climbStarts==0)
 for _,call in ipairs(calls)do assert(call[1]=='State','no guessed combat actions')end
 app.destroy()
 ''')
+
+banned=climb_fixture.replace(
+ "start={'weak','tank','carry','mid','other','less'}",
+ "start={'atomic','atomic_gold','atomic_rainbow','atomic_secret','saiyan_prince','saiyan_prince_gold','saiyan_prince_rainbow','saiyan_prince_secret','weak','tank','carry','mid','other','less'}"
+).replace("cards={'weaker','gold','weak'}", "cards={'atomic_secret','gold','saiyan_prince_gold'}").replace(
+ "cards={'weaker','weak'}", "cards={'atomic','saiyan_prince_secret'}")
+run_case('all eight banned IDs are excluded from starts/offers; all-banned offers skip',banned,climb_checks)
+
+existing_banned=climb_fixture.replace(
+ "climbState.run.floor=11;",
+ "climbState.run.team[4]='atomic_gold';climbState.run.floor=11;"
+)
+run_case('old banned team card is replaced first without being newly selected',existing_banned,climb_checks)
+
+insufficient=climb_fixture.replace("start={'weak','tank','carry','mid','other','less'}", "start={'weak','tank','carry','atomic_secret','saiyan_prince_gold'}")
+run_case('insufficient allowed starting cards pauses instead of filling with banned cards',insufficient,r'''
+local app=env.AnimeDuelScript
+app.start('climb');drain()
+assert(app.status:find('Fewer than four allowed',1,true),app.status)
+for _,call in ipairs(calls)do assert(call[1]~='ClimbPickStart','must never fill a team with a banned card')end
+app.destroy()
+''')
