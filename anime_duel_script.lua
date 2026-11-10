@@ -13,10 +13,10 @@ local playerGui = Players.LocalPlayer:WaitForChild('PlayerGui')
 local env = getgenv and getgenv() or _G
 local previous = env.AnimeDuelScript
 if type(previous) == 'table' and type(previous.destroy) == 'function' then
-    if previous.worker or (previous.climb and previous.climb.worker) then
+    if previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) then
         previous.stop()
         local deadline=os.clock()+10
-        while previous.worker or (previous.climb and previous.climb.worker) do
+        while previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) do
             if os.clock()>=deadline then
                 previous.status='Old request is still pending; wait for it to finish before upgrading.'
                 return
@@ -39,8 +39,17 @@ assert(action and event, 'DraftAction/DraftEvent not found')
 local app = {build='independent-controls-v2',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft'}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', storyDifficulty='Nightmare', storyInterval=5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
+app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0}
+local storyBosses={
+    {key='purple_forest',id='purple_forest_boss',name='Water Master'},
+    {key='android_games',id='android_games_boss',name='Perfect Android'},
+    {key='hollow_world',id='hollow_world_boss',name='Moonquoira'},
+    {key='purple_town',id='purple_town_boss',name='Killer Bomb'},
+    {key='toy_kingdom',id='toy_kingdom_boss',name='String Man'},
+}
+local storyDifficulties={'Easy','Medium','Hard','Nightmare'}
 local workerContexts=setmetatable({}, {__mode='k'})
 local function controller() return workerContexts[coroutine.running()] or app end
 env.AnimeDuelScript = app
@@ -66,7 +75,7 @@ local profileDir=storage..'/profiles'
 local disk=type(readfile)=='function' and type(writefile)=='function'
 app.profiles={current='Default',auto=nil,names={},status=disk and 'Storage ready' or 'File API unavailable'}
 app.reconnect={attempts=0,lastTry=-math.huge,status='Monitoring',limit=3,interval=9}
-local ranges={farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
+local ranges={farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},storyInterval={3,60},transparency={0,65}}
 local themesAllowed={Midnight=true,Emerald=true,Violet=true,Light=true}
 local function profileId(name)
     if type(name)~='string' then return nil end
@@ -111,7 +120,7 @@ function app.saveProfile(name)
     return true
 end
 function app.loadProfile(name)
-    if app.worker or app.climb.worker then storageStatus('Stop Draft before loading a profile');return false end
+    if app.worker or app.climb.worker or app.story.worker then storageStatus('Stop Draft before loading a profile');return false end
     name=profileId(name)
     local data=name and readJson(profilePath(name))
     if not data or data.version~=1 or type(data.config)~='table' then
@@ -124,7 +133,12 @@ function app.loadProfile(name)
             app.config[key]=range[3] and math.floor(v) or v
         end
     end
-    if incoming.mode=='draft' or incoming.mode=='climb' then app.config.mode=incoming.mode end
+    if incoming.mode=='draft' or incoming.mode=='climb' or incoming.mode=='story' then app.config.mode=incoming.mode end
+    if table.find(storyDifficulties,incoming.storyDifficulty) then app.config.storyDifficulty=incoming.storyDifficulty end
+    for _,boss in ipairs(storyBosses) do
+        local key='story_'..boss.key
+        if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
+    end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
     for _,key in ipairs({'autoReconnect','autoStart'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
@@ -198,9 +212,9 @@ function app.requestReconnect(force)
     st.attempts=st.attempts+1;st.lastTry=os.clock()
     st.status='Rejoining '..st.attempts..'/'..st.limit
     -- Stop scheduling gameplay; a disconnected session cannot confirm new mutations.
-    app.enabled=false;app.climb.enabled=false
+    app.enabled=false;app.climb.enabled=false;app.story.enabled=false
     app.stopReason='Connection lost — auto reconnect requested'
-    app.climb.stopReason=app.stopReason
+    app.climb.stopReason=app.stopReason;app.story.stopReason=app.stopReason
     local ok=pcall(function() TeleportService:Teleport(game.PlaceId,player) end)
     if not ok then st.status='Rejoin unavailable; waiting to retry' end
     redraw();return ok
@@ -283,7 +297,7 @@ local function awaitPriority()
     if waiting then setStatus('Bosses ended — resuming Draft') end
     return waiting
 end
-local function call(name,a,b)
+local function call(name,a,b,remote)
     check()
     if name~='State' then awaitPriority() end
     -- Only one request in flight, while each controller keeps its own lifecycle.
@@ -291,7 +305,10 @@ local function call(name,a,b)
     check()
     app.requestBusy=true
     local version=app.version
-    local values=table.pack(pcall(function() return action:InvokeServer(name,a,b) end))
+    local values=table.pack(pcall(function()
+        if remote then return remote:InvokeServer(name,a) end
+        return action:InvokeServer(name,a,b)
+    end))
     app.requestBusy=false
     check()
     if not values[1] then
@@ -303,7 +320,7 @@ local function call(name,a,b)
         rejected=true;reason=values[2].reason or values[2].message
     end
     if rejected then return {ok=false,reason=tostring(reason),loading=loadingRejection(reason)} end
-    if app.version==version then
+    if not remote and app.version==version then
         for i=2,values.n do
             local v=values[i]
             if accept(v) or (type(v)=='table' and accept(v.state)) then break end
@@ -681,6 +698,40 @@ local function runClimbLoop()
     end
 end
 
+-- Repeated start attempts only; combat and admission remain server-owned.
+local function runStoryLoop()
+    local remote=remotes:FindFirstChild('StoryFight')
+    if not remote then error('StoryFight remote not found.',0) end
+    local cursor=0
+    while controller().enabled do
+        check()
+        local selected={}
+        for _,boss in ipairs(storyBosses) do
+            if app.config['story_'..boss.key] then table.insert(selected,boss) end
+        end
+        if #selected==0 then
+            setStatus('Select at least one Story boss')
+            pause(1)
+        else
+            cursor=cursor%#selected+1
+            local boss=selected[cursor]
+            local difficulty=app.config.storyDifficulty
+            setStatus('Requesting '..boss.name..' / '..difficulty)
+            local result=call(boss.id,difficulty,nil,remote)
+            app.story.requests=app.story.requests+1
+            if result.uncertain then
+                error('StoryFight response lost; paused without replaying: '..tostring(result.reason),0)
+            end
+            if result.ok then
+                setStatus('Start request sent: '..boss.name..' / '..difficulty)
+            else
+                setStatus(boss.name..': '..tostring(result.reason))
+            end
+            pause(app.config.storyInterval)
+        end
+    end
+end
+
 local function stopController(ctx)
     ctx.enabled=false
     ctx.status=ctx.worker and 'Stopping — current server fight continues' or 'Stopped'
@@ -688,12 +739,13 @@ end
 function app.stop(mode)
     if mode=='draft' then stopController(app)
     elseif mode=='climb' then stopController(app.climb)
-    else stopController(app);stopController(app.climb) end
+    elseif mode=='story' then stopController(app.story)
+    else stopController(app);stopController(app.climb);stopController(app.story) end
     redraw()
 end
 function app.start(mode)
-    if mode~='draft' and mode~='climb' then mode=app.config.mode end
-    local ctx=mode=='climb' and app.climb or app
+    if mode~='draft' and mode~='climb' and mode~='story' then mode=app.config.mode end
+    local ctx=mode=='climb' and app.climb or (mode=='story' and app.story or app)
     if not app.alive or ctx.worker then return end
     app.config.mode=mode -- Auto Load preference only; never selects the live worker.
     ctx.stopReason=nil;ctx.lastError=nil
@@ -701,7 +753,7 @@ function app.start(mode)
     task.spawn(function()
         local thread=coroutine.running()
         workerContexts[thread]=ctx
-        local ok,err=pcall(mode=='climb' and runClimbLoop or runLoop)
+        local ok,err=pcall(mode=='climb' and runClimbLoop or (mode=='story' and runStoryLoop or runLoop))
         ctx.enabled=false;ctx.worker=false
         if not ok and tostring(err)~='__STOP__' then
             ctx.lastError=tostring(err)
@@ -769,7 +821,7 @@ skin(nav,'BackgroundColor3','side')
 local body=make('Frame',main,{Position=UDim2.fromOffset(140,58),Size=UDim2.new(1,-140,1,-58),BackgroundTransparency=1})
 local pages,navButtons={},{}
 local selected='Draft'
-for i,name in ipairs({'Draft','Climb','Settings','Config'}) do
+for i,name in ipairs({'Draft','Climb','Boss','Settings','Config'}) do
     local b=button(nav,name,UDim2.new(1,-16,0,38));b.Position=UDim2.fromOffset(8,12+(i-1)*46)
     navButtons[name]=b
     local page=make('ScrollingFrame',body,{Name=name,Size=UDim2.fromScale(1,1),Visible=name==selected,
@@ -857,6 +909,38 @@ track(themeButton.Activated,function()
     redraw()
 end)
 numberInput('Window transparency % (0–65)','transparency',0,65)
+local bossControls=row('Boss','Auto Story Boss',69)
+local bossStart=button(bossControls,'START BOSS',UDim2.new(.5,-18,0,30));bossStart.Position=UDim2.fromOffset(12,31)
+local bossStop=button(bossControls,'STOP BOSS',UDim2.new(.5,-18,0,30));bossStop.Position=UDim2.new(.5,6,0,31)
+track(bossStart.Activated,function() app.start('story') end)
+track(bossStop.Activated,function() app.stop('story') end)
+local bossStatusRow=row('Boss','Story Boss status',110)
+local bossStatusLabel=text(bossStatusRow,'Ready');bossStatusLabel.Position=UDim2.fromOffset(12,29);bossStatusLabel.Size=UDim2.new(1,-24,0,76)
+bossStatusLabel.TextWrapped=true;bossStatusLabel.TextTruncate=Enum.TextTruncate.None
+local difficultyRow=row('Boss','Difficulty',69)
+local difficultyButton=button(difficultyRow,app.config.storyDifficulty,UDim2.new(1,-24,0,29));difficultyButton.Position=UDim2.fromOffset(12,31)
+track(difficultyButton.Activated,function()
+    local i=table.find(storyDifficulties,app.config.storyDifficulty) or 4
+    app.config.storyDifficulty=storyDifficulties[i%#storyDifficulties+1];redraw()
+end)
+local bossToggles={}
+for _,boss in ipairs(storyBosses) do
+    local r=row('Boss',boss.name,69)
+    local b=button(r,'',UDim2.new(1,-24,0,29));b.Position=UDim2.fromOffset(12,31)
+    local key='story_'..boss.key;bossToggles[key]=b
+    track(b.Activated,function() app.config[key]=not app.config[key];redraw() end)
+end
+local bossIntervalRow=row('Boss','Start attempt interval: 3–60 seconds',69)
+local bossInterval=make('TextBox',bossIntervalRow,{Position=UDim2.fromOffset(12,31),Size=UDim2.new(1,-24,0,29),Text=tostring(app.config.storyInterval),ClearTextOnFocus=false,Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0})
+corner(bossInterval);skin(bossInterval,'BackgroundColor3','row');skin(bossInterval,'TextColor3','text')
+track(bossInterval.FocusLost,function()
+    local n=tonumber(bossInterval.Text)
+    if n and n>=3 and n<=60 then app.config.storyInterval=n end
+    bossInterval.Text=tostring(app.config.storyInterval)
+end)
+local bossHelpRow=row('Boss','Start Fight only',90)
+local bossHelp=text(bossHelpRow,'Selected bosses rotate on each start attempt. Combat is handled by the game. STOP BOSS stops requests; the current fight continues.')
+bossHelp.Position=UDim2.fromOffset(12,29);bossHelp.Size=UDim2.new(1,-24,0,56);bossHelp.TextWrapped=true
 local function settingToggle(label,key)
     local r=row('Settings',label,69)
     local b=button(r,'',UDim2.new(1,-24,0,29));b.Position=UDim2.fromOffset(12,31)
@@ -906,6 +990,12 @@ render=function()
     local climb=app.snapshot and app.snapshot.climb
     local cr=type(climb)=='table' and climb.run
     climbStatusLabel.Text=app.climb.status
+    bossStatusLabel.Text=app.story.status
+    bossStart.Text=app.story.worker and (app.story.enabled and 'RUNNING' or 'STOPPING') or 'START BOSS'
+    bossStart.Active=not app.story.worker
+    difficultyButton.Text=app.config.storyDifficulty
+    if not bossInterval:IsFocused() then bossInterval.Text=tostring(app.config.storyInterval) end
+    for key,b in pairs(bossToggles) do b.Text=app.config[key] and 'ON' or 'OFF' end
     climbProgressLabel.Text=type(cr)=='table' and ('#'..tostring(climbId(cr))..' / Floor '..tostring(cr.floor or cr.Floor)..' / '..tostring(cr.over or cr.Over or 'active')) or 'No climb running'
     local ct=climbTeam(cr)
     climbTeamLabel.Text=type(ct)=='table' and table.concat(ct,' / ') or '--'
@@ -941,10 +1031,10 @@ local function layout()
     body.Position=UDim2.fromOffset(compact and 0 or 140,compact and 104 or 58)
     body.Size=compact and UDim2.new(1,0,1,-104) or UDim2.new(1,-140,1,-58)
     nav.Visible=not minimized;body.Visible=not minimized
-    for i,name in ipairs({'Draft','Climb','Settings','Config'}) do
+    for i,name in ipairs({'Draft','Climb','Boss','Settings','Config'}) do
         local b=navButtons[name]
-        b.Position=compact and UDim2.new((i-1)/4,5,0,4) or UDim2.fromOffset(8,12+(i-1)*46)
-        b.Size=compact and UDim2.new(1/4,-10,0,36) or UDim2.new(1,-16,0,38)
+        b.Position=compact and UDim2.new((i-1)/5,5,0,4) or UDim2.fromOffset(8,12+(i-1)*46)
+        b.Size=compact and UDim2.new(1/5,-10,0,36) or UDim2.new(1,-16,0,38)
     end
 end
 local cameraConnection
