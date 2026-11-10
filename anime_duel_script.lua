@@ -39,9 +39,9 @@ assert(action and event, 'DraftAction/DraftEvent not found')
 local app = {build='independent-controls-v2',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', storyDifficulty='Nightmare', storyInterval=5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', storyDifficulty='Nightmare', storyInterval=10, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
-app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0}
+app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
 local storyBosses={
     {key='purple_forest',id='purple_forest_boss',name='Water Master'},
     {key='android_games',id='android_games_boss',name='Perfect Android'},
@@ -75,7 +75,7 @@ local profileDir=storage..'/profiles'
 local disk=type(readfile)=='function' and type(writefile)=='function'
 app.profiles={current='Default',auto=nil,names={},status=disk and 'Storage ready' or 'File API unavailable'}
 app.reconnect={attempts=0,lastTry=-math.huge,status='Monitoring',limit=3,interval=9}
-local ranges={farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},storyInterval={3,60},transparency={0,65}}
+local ranges={farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
 local themesAllowed={Midnight=true,Emerald=true,Violet=true,Light=true}
 local function profileId(name)
     if type(name)~='string' then return nil end
@@ -127,6 +127,7 @@ function app.loadProfile(name)
         storageStatus('Profile unavailable or invalid');return false
     end
     local incoming=data.config
+    app.config.storyInterval=10 -- Migrate profiles saved with the old 5-second interval.
     for key,range in pairs(ranges) do
         local v=incoming[key]
         if type(v)=='number' and v==v and v>=range[1] and v<=range[2] then
@@ -698,7 +699,27 @@ local function runClimbLoop()
     end
 end
 
--- Repeated start attempts only; combat and admission remain server-owned.
+-- Cooldowns come only from the server's explicit Ready in response.
+local function storyCooldownKey(id,difficulty) return id..':'..difficulty end
+local function parseStoryCooldown(reason)
+    if type(reason)~='string' then return nil end
+    local duration=reason:lower():match('^%s*ready in%s+(.+)%s*$')
+    if not duration then return nil end
+    local seconds,count=0,0
+    local seen={}
+    for number,unit in duration:gmatch('(%d+)%s*([hms])') do
+        if seen[unit] then return nil end
+        seen[unit]=true;count=count+1
+        seconds=seconds+tonumber(number)*({h=3600,m=60,s=1})[unit]
+    end
+    local remainder=duration:gsub('%d+%s*[hms]',''):gsub('%s',''):gsub('%.$','')
+    if count==0 or remainder~='' or seconds~=seconds or seconds==math.huge then return nil end
+    return seconds
+end
+local function cooldownText(seconds)
+    seconds=math.max(0,math.ceil(seconds))
+    return string.format('%02d:%02d',math.floor(seconds/60),seconds%60)
+end
 local function runStoryLoop()
     local remote=remotes:FindFirstChild('StoryFight')
     if not remote then error('StoryFight remote not found.',0) end
@@ -711,24 +732,45 @@ local function runStoryLoop()
         end
         if #selected==0 then
             setStatus('Select at least one Story boss')
-            pause(1)
         else
-            cursor=cursor%#selected+1
-            local boss=selected[cursor]
+            local now=os.clock()
             local difficulty=app.config.storyDifficulty
-            setStatus('Requesting '..boss.name..' / '..difficulty)
-            local result=call(boss.id,difficulty,nil,remote)
-            app.story.requests=app.story.requests+1
-            if result.uncertain then
-                error('StoryFight response lost; paused without replaying: '..tostring(result.reason),0)
+            local chosen,position,earliest=nil,nil,math.huge
+            for offset=1,#selected do
+                local index=(cursor+offset-1)%#selected+1
+                local boss=selected[index]
+                local deadline=app.story.cooldowns[storyCooldownKey(boss.id,difficulty)] or 0
+                earliest=math.min(earliest,deadline)
+                if not chosen and deadline<=now then chosen=boss;position=index end
             end
-            if result.ok then
-                setStatus('Start request sent: '..boss.name..' / '..difficulty)
+            if not chosen then
+                setStatus('All selected bosses on cooldown — next in '..cooldownText(earliest-now))
+            elseif now<app.story.nextAttemptAt then
+                setStatus('Next Start attempt in '..cooldownText(app.story.nextAttemptAt-now))
             else
-                setStatus(boss.name..': '..tostring(result.reason))
+                cursor=position
+                setStatus('Requesting '..chosen.name..' / '..difficulty)
+                local result=call(chosen.id,difficulty,nil,remote)
+                -- Pace from response receipt; includes time waiting for other requests.
+                app.story.nextAttemptAt=os.clock()+10
+                app.story.requests=app.story.requests+1
+                if result.uncertain then
+                    error('StoryFight response lost; paused without replaying: '..tostring(result.reason),0)
+                end
+                local key=storyCooldownKey(chosen.id,difficulty)
+                if result.ok then
+                    app.story.cooldowns[key]=nil
+                    setStatus('Start request sent: '..chosen.name..' / '..difficulty)
+                else
+                    local seconds=parseStoryCooldown(result.reason)
+                    if seconds then
+                        app.story.cooldowns[key]=os.clock()+seconds
+                        setStatus(chosen.name..' cooldown: '..cooldownText(seconds))
+                    else setStatus(chosen.name..': '..tostring(result.reason)) end
+                end
             end
-            pause(app.config.storyInterval)
         end
+        pause(1)
     end
 end
 
@@ -930,16 +972,8 @@ for _,boss in ipairs(storyBosses) do
     local key='story_'..boss.key;bossToggles[key]=b
     track(b.Activated,function() app.config[key]=not app.config[key];redraw() end)
 end
-local bossIntervalRow=row('Boss','Start attempt interval: 3–60 seconds',69)
-local bossInterval=make('TextBox',bossIntervalRow,{Position=UDim2.fromOffset(12,31),Size=UDim2.new(1,-24,0,29),Text=tostring(app.config.storyInterval),ClearTextOnFocus=false,Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0})
-corner(bossInterval);skin(bossInterval,'BackgroundColor3','row');skin(bossInterval,'TextColor3','text')
-track(bossInterval.FocusLost,function()
-    local n=tonumber(bossInterval.Text)
-    if n and n>=3 and n<=60 then app.config.storyInterval=n end
-    bossInterval.Text=tostring(app.config.storyInterval)
-end)
 local bossHelpRow=row('Boss','Start Fight only',90)
-local bossHelp=text(bossHelpRow,'Selected bosses rotate on each start attempt. Combat is handled by the game. STOP BOSS stops requests; the current fight continues.')
+local bossHelp=text(bossHelpRow,'Start attempts are spaced 10s apart. Server cooldowns are tracked per boss and difficulty. STOP BOSS stops requests; the current fight continues.')
 bossHelp.Position=UDim2.fromOffset(12,29);bossHelp.Size=UDim2.new(1,-24,0,56);bossHelp.TextWrapped=true
 local function settingToggle(label,key)
     local r=row('Settings',label,69)
@@ -994,8 +1028,11 @@ render=function()
     bossStart.Text=app.story.worker and (app.story.enabled and 'RUNNING' or 'STOPPING') or 'START BOSS'
     bossStart.Active=not app.story.worker
     difficultyButton.Text=app.config.storyDifficulty
-    if not bossInterval:IsFocused() then bossInterval.Text=tostring(app.config.storyInterval) end
-    for key,b in pairs(bossToggles) do b.Text=app.config[key] and 'ON' or 'OFF' end
+    for _,boss in ipairs(storyBosses) do
+        local key='story_'..boss.key
+        local remaining=(app.story.cooldowns[storyCooldownKey(boss.id,app.config.storyDifficulty)] or 0)-os.clock()
+        bossToggles[key].Text=(app.config[key] and 'ON' or 'OFF')..(remaining>0 and (' · '..cooldownText(remaining)) or '')
+    end
     climbProgressLabel.Text=type(cr)=='table' and ('#'..tostring(climbId(cr))..' / Floor '..tostring(cr.floor or cr.Floor)..' / '..tostring(cr.over or cr.Over or 'active')) or 'No climb running'
     local ct=climbTeam(cr)
     climbTeamLabel.Text=type(ct)=='table' and table.concat(ct,' / ') or '--'
