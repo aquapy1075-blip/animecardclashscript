@@ -86,17 +86,21 @@ function action:InvokeServer(name,a,b)
   startCount=startCount+1
   if startCount==2 then env.AnimeDuelScript.stop();return true end
   run={id=startCount,boss=1,wins={},packs={draft=1},team={'a','b','c','d'}};emit();return true
- elseif name=='Open' then assert(a=='all' and b==1);return true
+ elseif name=='Open' then assert((run.packs.draft or 0)>0,'Open called with zero packs');assert(a=='all' and b==1);run.packs={draft=0};emit();return true
  elseif name=='AutoTeam' then assert(a==nil and b==nil);return true
  elseif name=='Fight' then
   fightIndex=fightIndex+1
   local step=expected[fightIndex];assert(step,'extra Fight');assert(a==step[1], 'wrong target '..tostring(a)..' at '..fightIndex)
-  assert(calls[#calls-3][1]=='Open' and calls[#calls-2][1]=='AutoTeam' and calls[#calls-1][1]=='State','missing preparation')
+  assert(calls[#calls-2][1]=='AutoTeam' and calls[#calls-1][1]=='State','missing AutoTeam preparation')
+  local lastOpen=0
+  for i,call in ipairs(calls)do if call[1]=='Open' then lastOpen=i end end
+  if fightIndex==1 or expected[fightIndex-1][2] then assert(lastOpen==#calls-3,'missing Open after pack reward') end
   run.fighting=a;emit()
   schedule(1,function()
    local key=a=='boss' and ('boss'..run.boss) or a
    local result={key=key,result=step[2] and 'Victory' or 'Defeat'}
    if step[2] then
+    run.packs={draft=1}
     run.wins[key]=(run.wins[key] or 0)+1
     if a=='boss' then run.boss=run.boss+1 end
     if run.boss==4 then run.over='cleared';result.summary={How='cleared'} end
@@ -260,7 +264,7 @@ assert(app.status:find('ERROR:',1,true) and not app.worker,app.status)
 app.destroy()
 ''')
 
-resume=mock.replace('local run=nil',"local run={id=5,boss=1,wins={},packs={},team={'a','b','c','d'}}").replace(
+resume=mock.replace('local run=nil',"local run={id=5,boss=1,wins={},packs={draft=1},team={'a','b','c','d'}}").replace(
  "elseif name=='Fight' then\n  fightIndex", """elseif name=='Fight' then
   local opens=0
   for _,call in ipairs(calls)do if call[1]=='Open' then opens=opens+1 end end
@@ -273,5 +277,16 @@ run_case('existing run prepares once on startup',resume,r'''
 local app=env.AnimeDuelScript
 app.start();drain()
 assert(app.status:find('End of resume test',1,true),app.status)
+app.destroy()
+''')
+
+empty_resume=resume.replace('packs={draft=1}', 'packs={draft=0,big=0,elite=0}').replace("assert(opens==1,'resumed run must prepare only once')", "assert(opens==0,'empty pack balance must skip Open')")
+run_case('empty resumed run skips Open but still selects AutoTeam',empty_resume,r'''
+local app=env.AnimeDuelScript
+app.start();drain()
+assert(app.status:find('End of resume test',1,true),app.status)
+local teams=0
+for _,call in ipairs(calls)do if call[1]=='AutoTeam' then teams=teams+1 end end
+assert(teams==1,'AutoTeam must still run without packs')
 app.destroy()
 ''')
