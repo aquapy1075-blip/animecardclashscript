@@ -36,6 +36,10 @@ local app = {alive=true, enabled=false, worker=false, bosses={}, connections={},
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft'}}
 env.AnimeDuelScript = app
 local render = function() end
+local function redraw()
+    local ok,err=pcall(render)
+    if not ok then app.uiError=tostring(err) else app.uiError=nil end
+end
 local function track(signal, callback)
     local connection = signal:Connect(callback)
     table.insert(app.connections, connection)
@@ -43,7 +47,7 @@ local function track(signal, callback)
 end
 local function setStatus(message)
     app.status=tostring(message)
-    render()
+    redraw()
 end
 -- Named profiles use only executor-local JSON files.
 local storage='AnimeDuelScript/'..tostring(player.UserId or 'Local')
@@ -59,7 +63,7 @@ local function profileId(name)
     return #name>=1 and #name<=32 and name:match('^[%w_%-]+$') and name or nil
 end
 local function storageStatus(message)
-    app.profiles.status=message;render()
+    app.profiles.status=message;redraw()
 end
 local function ensureDirs()
     if type(makefolder)~='function' then return end
@@ -178,15 +182,16 @@ end
 function app.requestReconnect(force)
     if not app.alive or (not force and not app.config.autoReconnect) then return false end
     local st=app.reconnect
-    if st.attempts>=st.limit then st.status='Attempt limit reached';render();return false end
+    if st.attempts>=st.limit then st.status='Attempt limit reached';redraw();return false end
     if os.clock()-st.lastTry<st.interval then return false end
     st.attempts=st.attempts+1;st.lastTry=os.clock()
     st.status='Rejoining '..st.attempts..'/'..st.limit
     -- Stop scheduling gameplay; a disconnected session cannot confirm new mutations.
     app.enabled=false
+    app.stopReason='Connection lost — auto reconnect requested'
     local ok=pcall(function() TeleportService:Teleport(game.PlaceId,player) end)
     if not ok then st.status='Rejoin unavailable; waiting to retry' end
-    render();return ok
+    redraw();return ok
 end
 function app.reconnectTick()
     if not app.alive then return end
@@ -197,7 +202,7 @@ function app.reconnectTick()
             app.reconnect.attempts=0;app.reconnect.status='Monitoring'
         else app.reconnect.status='No connection retry for this error' end
     end
-    render()
+    redraw()
 end
 local function monitorConnection()
     if not app.alive then return end
@@ -209,7 +214,7 @@ local function accept(value)
     if type(value)=='table' and (type(value.run)=='table'
         or (value.stats~=nil and value.currency~=nil)) then
         app.snapshot=value; app.version=app.version+1
-        render()
+        redraw()
         return true
     end
     return false
@@ -250,7 +255,7 @@ end
 function app.setBossActive(kind, active)
     if kind~='world' and kind~='raid' then return end
     app.bosses[kind]=active==true
-    render()
+    redraw()
 end
 local function awaitPriority()
     local waiting=false
@@ -313,8 +318,10 @@ local function validTeam(run)
     local owned=nil
     if type(run.cards)=='table' then
         owned={}
-        for _,card in pairs(run.cards) do
-            if type(card)=='table' and type(card.id)=='string' then owned[card.id]=true end
+        for key,card in pairs(run.cards) do
+            if type(card)=='string' then owned[card]=true
+            elseif type(card)=='table' and type(card.id)=='string' then owned[card.id]=true
+            elseif type(key)=='string' and type(card)=='number' and card>0 then owned[key]=true end
         end
     end
     for _,id in ipairs(run.team) do
@@ -390,6 +397,7 @@ local function fight(target)
         end
     end
     local version=app.resultVersion
+    local beforeFightState=app.version
     setStatus('Fighting '..(target=='boss' and ('boss '..tostring(activeRun() and activeRun().boss)) or target))
     local sent=call('Fight',target,nil)
     if not sent.ok then
@@ -416,11 +424,10 @@ local function fight(target)
     if result.summary and result.summary.How=='cleared' then app.clears=app.clears+1 end
     setStatus(tostring(result.name or key)..' — '..result.result)
     if not waitFor(function()
-        return app.version>(app.resultStateVersion or 0) and app.snapshot and not app.snapshot.fighting
+        return app.version>beforeFightState and app.snapshot and not app.snapshot.fighting
     end,8) then
-        local stateVersion=app.version
         refresh()
-        if app.version<=stateVersion or (app.snapshot and app.snapshot.fighting) then
+        if app.version<=beforeFightState or (app.snapshot and app.snapshot.fighting) then
             error('Post-fight State not confirmed. Press START to resync.',0)
         end
     end
@@ -511,9 +518,15 @@ end
 local function climbId(run) return run and (run.id or run.Id) end
 local function climbTeam(run) return run and (run.team or run.Team) end
 local bannedClimbCards={}
-for _,base in ipairs({'saiyan_prince','atomic'}) do
+for _,base in ipairs({'saiyan_prince','atomic','samurai_lost_man'}) do
     for _,suffix in ipairs({'','_gold','_rainbow','_secret'}) do
         bannedClimbCards[base..suffix]=true
+    end
+end
+local preferredClimbCards={}
+for _,base in ipairs({'limitless_sorcerer','curse_king','elf_mage','gone','slime','brother','red_hair'}) do
+    for _,suffix in ipairs({'','_gold','_rainbow','_secret'}) do
+        preferredClimbCards[base..suffix]=true
     end
 end
 local function rankClimbCards(ids,existingTeam)
@@ -536,7 +549,7 @@ local function rankClimbCards(ids,existingTeam)
                 error('Cannot score climb card: '..id,0)
             end
             seen[id]=true
-            table.insert(ranked,{id=id,damage=damage,hp=hp,score=damage+hp/2})
+            table.insert(ranked,{id=id,damage=damage,hp=hp,score=(damage+hp/2)*(preferredClimbCards[id] and 1.25 or 1)})
         end
     end
     table.sort(ranked,function(a,b)
@@ -655,13 +668,15 @@ end
 function app.start(mode)
     if not app.alive or app.worker then return end
     if mode=='draft' or mode=='climb' then app.config.mode=mode end
+    app.stopReason=nil;app.lastError=nil
     app.enabled=true; app.worker=true
     task.spawn(function()
         local ok,err=pcall(app.config.mode=='climb' and runClimbLoop or runLoop)
         app.enabled=false; app.worker=false
         if not ok and tostring(err)~='__STOP__' then
-            setStatus('ERROR: '..tostring(err))
-        else setStatus('Stopped') end
+            app.lastError=tostring(err)
+            setStatus('ERROR: '..app.lastError)
+        else setStatus(app.stopReason or 'Stopped') end
     end)
 end
 
@@ -735,7 +750,7 @@ for i,name in ipairs({'Draft','Climb','Settings','Config'}) do
     track(b.Activated,function()
         selected=name
         for key,p in pairs(pages) do p.Visible=key==name end
-        render()
+        redraw()
     end)
 end
 local order=0
@@ -755,6 +770,10 @@ local start=button(controls,'START',UDim2.new(.5,-18,0,30));start.Position=UDim2
 local stop=button(controls,'STOP',UDim2.new(.5,-18,0,30));stop.Position=UDim2.new(.5,6,0,31)
 track(start.Activated,function() app.start('draft') end);track(stop.Activated,app.stop)
 local statusLabel=status('Status')
+statusLabel.Parent.Size=UDim2.new(1,-2,0,112)
+statusLabel.Size=UDim2.new(1,-24,0,76)
+statusLabel.TextWrapped=true;statusLabel.TextTruncate=Enum.TextTruncate.None
+statusLabel.TextYAlignment=Enum.TextYAlignment.Top
 local runLabel=status('Run / Boss / Recovery')
 local teamLabel=status('Current team')
 local scoreLabel=status('Session results')
@@ -775,7 +794,7 @@ local climbStatusLabel=climbStatusRow('Climb status')
 local climbProgressLabel=climbStatusRow('Run / Floor')
 local climbTeamLabel=climbStatusRow('Climb team')
 local climbInfo=climbStatusRow('How it works')
-climbInfo.Text='Saiyan Prince and Atomic are banned at every border. Enable native Auto Climb. STOP only stops this picker; disable native Auto Climb before switching to Draft.'
+climbInfo.Text='Saiyan Prince, Atomic and Samurai Lost Man are banned. Preferred cards receive +25% selection score. Enable native Auto Climb. STOP only stops this picker; disable native Auto Climb before switching to Draft.'
 local configInputs={}
 local paintedTheme=nil
 local function numberInput(label,key,low,high)
@@ -790,7 +809,7 @@ local function numberInput(label,key,low,high)
             app.config[key]=(key=='farm' or key=='bossFarm') and math.floor(n) or n
         end
         box.Text=tostring(app.config[key])
-        render()
+        redraw()
     end)
 end
 numberInput('Farm wins after a farm loss (1–20)','farm',1,20)
@@ -804,13 +823,13 @@ track(themeButton.Activated,function()
     local i=table.find(themeNames,app.config.theme) or 1
     app.config.theme=themeNames[i%#themeNames+1];themeButton.Text=app.config.theme
     for _,entry in ipairs(skins) do entry[1][entry[2]]=color(entry[3]) end
-    render()
+    redraw()
 end)
 numberInput('Window transparency % (0–65)','transparency',0,65)
 local function settingToggle(label,key)
     local r=row('Settings',label,69)
     local b=button(r,'',UDim2.new(1,-24,0,29));b.Position=UDim2.fromOffset(12,31)
-    track(b.Activated,function() app.config[key]=not app.config[key];render() end)
+    track(b.Activated,function() app.config[key]=not app.config[key];redraw() end)
     return b
 end
 local reconnectToggle=settingToggle('Auto reconnect on connection loss','autoReconnect')
@@ -936,7 +955,7 @@ end
 bindCamera()
 local view=Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
 main.Position=UDim2.fromOffset(math.max(8,(view.X-main.Size.X.Offset)/2),math.max(8,(view.Y-main.Size.Y.Offset)/2))
-layout();render()
+layout();redraw()
 setStatus('Ready — press START. Right Shift / AD hides or shows UI.')
 monitorConnection()
 if autoLoaded and app.config.autoStart then app.start() end
