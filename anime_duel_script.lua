@@ -526,8 +526,11 @@ end
 local preferredClimbCards={}
 for _,base in ipairs({'limitless_sorcerer','curse_king','elf_mage','gone','slime','brother','red_hair'}) do
     for _,suffix in ipairs({'','_gold','_rainbow','_secret'}) do
-        preferredClimbCards[base..suffix]=true
+        preferredClimbCards[base..suffix]=1.25
     end
+end
+for _,suffix in ipairs({'','_gold','_rainbow','_secret'}) do
+    preferredClimbCards['teen_saski'..suffix]=1.5
 end
 local function rankClimbCards(ids,existingTeam)
     if type(ids)~='table' then error('Climb card list is missing.',0) end
@@ -549,7 +552,7 @@ local function rankClimbCards(ids,existingTeam)
                 error('Cannot score climb card: '..id,0)
             end
             seen[id]=true
-            table.insert(ranked,{id=id,damage=damage,hp=hp,score=(damage+hp/2)*(preferredClimbCards[id] and 1.25 or 1)})
+            table.insert(ranked,{id=id,damage=damage,hp=hp,score=(damage+hp/2)*(preferredClimbCards[id] or 1)})
         end
     end
     table.sort(ranked,function(a,b)
@@ -794,7 +797,7 @@ local climbStatusLabel=climbStatusRow('Climb status')
 local climbProgressLabel=climbStatusRow('Run / Floor')
 local climbTeamLabel=climbStatusRow('Climb team')
 local climbInfo=climbStatusRow('How it works')
-climbInfo.Text='Saiyan Prince, Atomic and Samurai Lost Man are banned. Preferred cards receive +25% selection score. Enable native Auto Climb. STOP only stops this picker; disable native Auto Climb before switching to Draft.'
+climbInfo.Text='Saiyan Prince, Atomic and Samurai Lost Man are banned. Teen Saski receives +50% selection score; other preferred cards +25%. Enable native Auto Climb. STOP only stops this picker; disable native Auto Climb before switching to Draft.'
 local configInputs={}
 local paintedTheme=nil
 local function numberInput(label,key,low,high)
