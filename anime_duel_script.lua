@@ -13,7 +13,7 @@ local playerGui = Players.LocalPlayer:WaitForChild('PlayerGui')
 local env = getgenv and getgenv() or _G
 local previous = env.AnimeDuelScript
 if type(previous) == 'table' and type(previous.destroy) == 'function' then
-    if previous.worker then
+    if previous.worker or (previous.climb and previous.climb.worker) then
         previous.stop()
         previous.status='Previous worker is stopping; run again when stopped.'
         return
@@ -34,6 +34,9 @@ local app = {alive=true, enabled=false, worker=false, bosses={}, connections={},
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft'}}
+app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
+local workerContexts=setmetatable({}, {__mode='k'})
+local function controller() return workerContexts[coroutine.running()] or app end
 env.AnimeDuelScript = app
 local render = function() end
 local function redraw()
@@ -46,7 +49,9 @@ local function track(signal, callback)
     return connection
 end
 local function setStatus(message)
-    app.status=tostring(message)
+    local ctx=controller()
+    ctx.status=tostring(message)
+    if ctx==app.climb then app.climbStatus=ctx.status end
     redraw()
 end
 -- Named profiles use only executor-local JSON files.
@@ -100,7 +105,7 @@ function app.saveProfile(name)
     return true
 end
 function app.loadProfile(name)
-    if app.worker then storageStatus('Stop Draft before loading a profile');return false end
+    if app.worker or app.climb.worker then storageStatus('Stop Draft before loading a profile');return false end
     name=profileId(name)
     local data=name and readJson(profilePath(name))
     if not data or data.version~=1 or type(data.config)~='table' then
@@ -187,8 +192,9 @@ function app.requestReconnect(force)
     st.attempts=st.attempts+1;st.lastTry=os.clock()
     st.status='Rejoining '..st.attempts..'/'..st.limit
     -- Stop scheduling gameplay; a disconnected session cannot confirm new mutations.
-    app.enabled=false
+    app.enabled=false;app.climb.enabled=false
     app.stopReason='Connection lost — auto reconnect requested'
+    app.climb.stopReason=app.stopReason
     local ok=pcall(function() TeleportService:Teleport(game.PlaceId,player) end)
     if not ok then st.status='Rejoin unavailable; waiting to retry' end
     redraw();return ok
@@ -231,7 +237,7 @@ local function activeRun()
     return type(run)=='table' and not run.over and run or nil
 end
 local function check()
-    if not app.alive or not app.enabled then error('__STOP__', 0) end
+    if not app.alive or not controller().enabled then error('__STOP__', 0) end
 end
 local function pause(seconds)
     local untilAt=os.clock()+seconds
@@ -274,8 +280,13 @@ end
 local function call(name,a,b)
     check()
     if name~='State' then awaitPriority() end
+    -- Only one request in flight, while each controller keeps its own lifecycle.
+    while app.requestBusy do check();task.wait(.05) end
+    check()
+    app.requestBusy=true
     local version=app.version
     local values=table.pack(pcall(function() return action:InvokeServer(name,a,b) end))
+    app.requestBusy=false
     check()
     if not values[1] then
         return {ok=false,uncertain=true,reason=tostring(values[2])}
@@ -447,7 +458,7 @@ local function runLoop()
         end
     end
     local prepared=false
-    while app.enabled do
+    while controller().enabled do
         check()
         if awaitPriority() then refresh() end
         local run=activeRun()
@@ -601,7 +612,7 @@ local function runClimbLoop()
     if type(app.snapshot and app.snapshot.climb)~='table' then
         error('Climb State missing; paused before starting a run.',0)
     end
-    while app.enabled do
+    while controller().enabled do
         check()
         if awaitPriority() then refresh() end
         local run=climbRun()
@@ -664,22 +675,33 @@ local function runClimbLoop()
     end
 end
 
-function app.stop()
-    app.enabled=false
-    setStatus(app.worker and 'Stopping — current server fight continues' or 'Stopped')
+local function stopController(ctx)
+    ctx.enabled=false
+    ctx.status=ctx.worker and 'Stopping — current server fight continues' or 'Stopped'
+end
+function app.stop(mode)
+    if mode=='draft' then stopController(app)
+    elseif mode=='climb' then stopController(app.climb)
+    else stopController(app);stopController(app.climb) end
+    redraw()
 end
 function app.start(mode)
-    if not app.alive or app.worker then return end
-    if mode=='draft' or mode=='climb' then app.config.mode=mode end
-    app.stopReason=nil;app.lastError=nil
-    app.enabled=true; app.worker=true
+    if mode~='draft' and mode~='climb' then mode=app.config.mode end
+    local ctx=mode=='climb' and app.climb or app
+    if not app.alive or ctx.worker then return end
+    app.config.mode=mode -- Auto Load preference only; never selects the live worker.
+    ctx.stopReason=nil;ctx.lastError=nil
+    ctx.enabled=true;ctx.worker=true
     task.spawn(function()
-        local ok,err=pcall(app.config.mode=='climb' and runClimbLoop or runLoop)
-        app.enabled=false; app.worker=false
+        local thread=coroutine.running()
+        workerContexts[thread]=ctx
+        local ok,err=pcall(mode=='climb' and runClimbLoop or runLoop)
+        ctx.enabled=false;ctx.worker=false
         if not ok and tostring(err)~='__STOP__' then
-            app.lastError=tostring(err)
-            setStatus('ERROR: '..app.lastError)
-        else setStatus(app.stopReason or 'Stopped') end
+            ctx.lastError=tostring(err)
+            setStatus('ERROR: '..ctx.lastError)
+        else setStatus(ctx.stopReason or 'Stopped') end
+        workerContexts[thread]=nil
     end)
 end
 
@@ -771,7 +793,7 @@ end
 local controls=row('Draft','Automation',69)
 local start=button(controls,'START',UDim2.new(.5,-18,0,30));start.Position=UDim2.fromOffset(12,31)
 local stop=button(controls,'STOP',UDim2.new(.5,-18,0,30));stop.Position=UDim2.new(.5,6,0,31)
-track(start.Activated,function() app.start('draft') end);track(stop.Activated,app.stop)
+track(start.Activated,function() app.start('draft') end);track(stop.Activated,function() app.stop('draft') end)
 local statusLabel=status('Status')
 statusLabel.Parent.Size=UDim2.new(1,-2,0,112)
 statusLabel.Size=UDim2.new(1,-24,0,76)
@@ -787,7 +809,7 @@ local climbControls=row('Climb','Auto Draft Climb',69)
 local climbStart=button(climbControls,'START CLIMB',UDim2.new(.5,-18,0,30));climbStart.Position=UDim2.fromOffset(12,31)
 local climbStop=button(climbControls,'STOP',UDim2.new(.5,-18,0,30));climbStop.Position=UDim2.new(.5,6,0,31)
 track(climbStart.Activated,function() app.start('climb') end)
-track(climbStop.Activated,app.stop)
+track(climbStop.Activated,function() app.stop('climb') end)
 local function climbStatusRow(label)
     local r=row('Climb',label,76)
     local l=text(r,'--');l.Position=UDim2.fromOffset(12,29);l.Size=UDim2.new(1,-24,0,40);l.TextWrapped=true
@@ -797,7 +819,7 @@ local climbStatusLabel=climbStatusRow('Climb status')
 local climbProgressLabel=climbStatusRow('Run / Floor')
 local climbTeamLabel=climbStatusRow('Climb team')
 local climbInfo=climbStatusRow('How it works')
-climbInfo.Text='Saiyan Prince, Atomic and Samurai Lost Man are banned. Teen Saski receives +50% selection score; other preferred cards +25%. Enable native Auto Climb. STOP only stops this picker; disable native Auto Climb before switching to Draft.'
+climbInfo.Text='Saiyan Prince, Atomic and Samurai Lost Man are banned. Teen Saski receives +50% selection score; other preferred cards +25%. Enable native Auto Climb. Draft and Climb have separate Start/Stop controls. Climb STOP only stops this picker; native Auto Climb stays enabled.'
 local configInputs={}
 local paintedTheme=nil
 local function numberInput(label,key,low,high)
@@ -873,12 +895,11 @@ render=function()
     scoreLabel.Text=app.wins..' wins / '..app.losses..' losses / '..app.clears..' clears'
     start.Active=not app.worker
     start.Text=app.worker and (app.enabled and 'RUNNING' or 'STOPPING') or 'START DRAFT'
-    climbStart.Text=app.worker and (app.enabled and 'RUNNING' or 'STOPPING') or 'START CLIMB'
-    climbStart.Active=not app.worker
+    climbStart.Text=app.climb.worker and (app.climb.enabled and 'RUNNING' or 'STOPPING') or 'START CLIMB'
+    climbStart.Active=not app.climb.worker
     local climb=app.snapshot and app.snapshot.climb
     local cr=type(climb)=='table' and climb.run
-    climbStatusLabel.Text=app.config.mode=='climb' and (app.climbStatus or app.status) or 'Climb standby — current mode: Draft'
-    if app.config.mode=='climb' and not app.enabled then climbStatusLabel.Text=app.status end
+    climbStatusLabel.Text=app.climb.status
     climbProgressLabel.Text=type(cr)=='table' and ('#'..tostring(climbId(cr))..' / Floor '..tostring(cr.floor or cr.Floor)..' / '..tostring(cr.over or cr.Over or 'active')) or 'No climb running'
     local ct=climbTeam(cr)
     climbTeamLabel.Text=type(ct)=='table' and table.concat(ct,' / ') or '--'
