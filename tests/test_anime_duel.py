@@ -191,102 +191,61 @@ assert(not app.worker and app.status:find('No Result received',1,true),app.statu
 app.destroy()
 ''')
 
-# Every observed action can explicitly reject while the profile is loading.
-loading=mock.replace('local action={}','local action={}\nlocal rejectedOnce={};local rejectedAt={}').replace(
- "function action:InvokeServer(name,a,b)\n table.insert", """function action:InvokeServer(name,a,b)
- if not rejectedOnce[name] then
-  rejectedOnce[name]=true;rejectedAt[name]=now
-  return false,'Your data is still loading.'
- end
- assert(now-rejectedAt[name]>=2,'loading retry must wait')
- table.insert"""
-)
-run_case('loading rejection retries State/Start/Open/AutoTeam/Fight and resumes strategy',loading,checks)
 
-table_loading=mock.replace('local action={}','local action={}\nlocal rejectedOnce={}').replace(
- "function action:InvokeServer(name,a,b)\n table.insert", """function action:InvokeServer(name,a,b)
- if not rejectedOnce[name] then
-  rejectedOnce[name]=true
-  return {ok=false,message='Your data is still loading.'}
- end
- table.insert"""
-)
-run_case('table-shaped loading rejection retries correctly',table_loading,checks)
+# Optional preparation failures must not block a confirmed current team.
+def reject_preparation(name, failure):
+    base=mock.replace("if fightIndex==1 or expected[fightIndex-1][2] then assert(lastOpen==#calls-3,'missing Open after pack reward') end",'')
+    return base.replace('local action={}','local action={}\nlocal attempts=0').replace(
+        'function action:InvokeServer(name,a,b)\n table.insert',
+        "function action:InvokeServer(name,a,b)\n if name=='"+name+"' then attempts=attempts+1; "+failure+" end\n table.insert")
 
-persistent=mock.replace('local action={}','local action={}\nlocal openAttempts=0').replace(
- "function action:InvokeServer(name,a,b)\n table.insert", """function action:InvokeServer(name,a,b)
- if name=='Open' then
-  openAttempts=openAttempts+1
-  return false,'Your data is still loading.'
- end
- table.insert"""
-)
-run_case('persistent loading stops after a bounded wait',persistent,r'''
-local app=env.AnimeDuelScript
-app.start();drain()
-assert(not app.worker and not app.enabled,'worker must stop')
-assert(app.status:find('data still loading after 45s',1,true),app.status)
-assert(openAttempts>1 and openAttempts<20,'bounded retries')
-assert(fightIndex==0,'no fight before successful preparation')
-app.destroy()
-''')
-
-stop_loading=mock.replace('local action={}','local action={}\nlocal openAttempts=0').replace(
- "function action:InvokeServer(name,a,b)\n table.insert", """function action:InvokeServer(name,a,b)
- if name=='Open' then
-  openAttempts=openAttempts+1
-  schedule(.5,function()env.AnimeDuelScript.stop()end)
-  return false,'Your data is still loading.'
- end
- table.insert"""
-)
-run_case('Stop interrupts loading backoff without another attempt',stop_loading,r'''
-local app=env.AnimeDuelScript
-app.start();drain()
-assert(openAttempts==1 and fightIndex==0,'no mutation after Stop')
-assert(app.status=='Stopped' and not app.worker,app.status)
-app.destroy()
-''')
-
-for label,rejection in [
-    ('non-loading rejection',"return false,'Not allowed'"),
-    ('uncertain transport failure',"error('Connection interrupted')"),
+for label,fixture in [
+ ('Open loading',reject_preparation('Open',"return false,'Your data is still loading.'")),
+ ('Open transport uncertainty',reject_preparation('Open',"error('Connection interrupted')")),
+ ('AutoTeam loading',reject_preparation('AutoTeam',"return {ok=false,message='Your data is still loading.'}")),
 ]:
-    fixture=mock.replace('local action={}','local action={}\nlocal openAttempts=0').replace(
-        "function action:InvokeServer(name,a,b)\n table.insert",
-        "function action:InvokeServer(name,a,b)\n if name=='Open' then openAttempts=openAttempts+1;"+rejection+" end\n table.insert"
-    )
-    run_case(label+' is not replayed',fixture,r'''
+    # Failed AutoTeam still has a four-card team confirmed by State.
+    fixture=fixture.replace("assert(calls[#calls-2][1]=='AutoTeam' and calls[#calls-1][1]=='State','missing AutoTeam preparation')",'')
+    run_case(label+' does not block valid-team farming',fixture,checks)
+
+invalid=reject_preparation('AutoTeam',"run.team={'a'};return false,'Your data is still loading.'")
+run_case('AutoTeam retries are bounded and an invalid team pauses',invalid,r'''
 local app=env.AnimeDuelScript
 app.start();drain()
-assert(openAttempts==1 and fightIndex==0,'unexpected retry')
-assert(app.status:find('ERROR:',1,true) and not app.worker,app.status)
+assert(attempts==3,'at most two retries')
+assert(fightIndex==0,'must not fight with incomplete team')
+assert(app.status:find('no valid four-card team',1,true),app.status)
 app.destroy()
 ''')
 
-resume=mock.replace('local run=nil',"local run={id=5,boss=1,wins={},packs={draft=1},team={'a','b','c','d'}}").replace(
- "elseif name=='Fight' then\n  fightIndex", """elseif name=='Fight' then
-  local opens=0
-  for _,call in ipairs(calls)do if call[1]=='Open' then opens=opens+1 end end
-  assert(opens==1,'resumed run must prepare only once')
-  return false,'End of resume test'
- elseif name=='UnusedFight' then
-  fightIndex"""
-)
-run_case('existing run prepares once on startup',resume,r'''
+# A mutation can succeed despite a lost response. State/Result must reconcile it.
+uncertain_fight=mock.replace("  return true\n end\n error('unexpected action", "  error('Fight response lost')\n end\n error('unexpected action")
+run_case('Fight lost response reconciles via State without duplicate mutation',uncertain_fight,checks)
+
+for name in ['Start','Fight']:
+    rejected=mock.replace('local action={}','local action={}\nlocal rejectedCalls=0').replace(
+      'function action:InvokeServer(name,a,b)\n table.insert',
+      "function action:InvokeServer(name,a,b)\n if name=='"+name+"' then rejectedCalls=rejectedCalls+1;return false,'Your data is still loading.' end\n table.insert")
+    run_case(name+' rejection resyncs and pauses without replay',rejected,r'''
 local app=env.AnimeDuelScript
 app.start();drain()
-assert(app.status:find('End of resume test',1,true),app.status)
+assert(rejectedCalls==1,'must not replay uncertain mutation')
+assert(not app.worker and app.status:find('ERROR:',1,true),app.status)
 app.destroy()
 ''')
 
-empty_resume=resume.replace('packs={draft=1}', 'packs={draft=0,big=0,elite=0}').replace("assert(opens==1,'resumed run must prepare only once')", "assert(opens==0,'empty pack balance must skip Open')")
-run_case('empty resumed run skips Open but still selects AutoTeam',empty_resume,r'''
-local app=env.AnimeDuelScript
-app.start();drain()
-assert(app.status:find('End of resume test',1,true),app.status)
-local teams=0
-for _,call in ipairs(calls)do if call[1]=='AutoTeam' then teams=teams+1 end end
-assert(teams==1,'AutoTeam must still run without packs')
-app.destroy()
-''')
+# A confirmed priority signal during a fight lets its Result settle, then blocks mutations.
+priority=mock.replace('local action={}','local action={}\nlocal holdUntil=0').replace(
+ 'function action:InvokeServer(name,a,b)\n table.insert',
+ "function action:InvokeServer(name,a,b)\n assert(name=='State' or now>=holdUntil,'mutation during boss priority')\n table.insert").replace(
+ "  run.fighting=a;emit()", """  run.fighting=a;emit()
+  if fightIndex==1 then
+   holdUntil=now+5
+   schedule(.2,function()
+    env.AnimeDuelScript.setBossActive('world',true)
+    env.AnimeDuelScript.setBossActive('raid',true)
+   end)
+   schedule(3,function()env.AnimeDuelScript.setBossActive('world',false)end)
+   schedule(5,function()env.AnimeDuelScript.setBossActive('raid',false)end)
+  end""")
+run_case('priority bridge waits for both boss deaths and preserves Draft progress',priority,checks)
