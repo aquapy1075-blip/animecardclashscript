@@ -141,7 +141,7 @@ local function findButton(caption)
  for _,obj in ipairs(objects) do if obj.ClassName=='TextButton' and obj.Text==caption then return obj end end
  error('missing button '..caption)
 end
-assert(findButton('START') and findButton('STOP'),'start and stop controls')
+assert(findButton('START DRAFT') and findButton('STOP'),'start and stop controls')
 assert(not app.logs,'no retained log buffer')
 assert(findButton('Config'),'Config tab')
 findButton('Settings').Activated:Fire()
@@ -150,7 +150,7 @@ assert(app.config.theme=='Emerald','theme cycle')
 Workspace.CurrentCamera.ViewportSize=Vector2.new(390,844)
 Workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Fire()
 assert(app.Root.Parent==playerGui,'UI owned by PlayerGui')
-findButton('START').Activated:Fire()
+findButton('START DRAFT').Activated:Fire()
 app.start() -- double start must be ignored
 assert(#pending==1,'only one worker')
 drain()
@@ -352,3 +352,98 @@ import re
 assert not re.search(r'\b(?:print|warn)\s*\(', src)
 assert "'Logs'" not in src and 'app.logs' not in src
 print('PASS: production script has no print/warn, log buffer or Logs tab')
+
+climb_fixture=mock.replace('local run=nil',"local climbState={auto=true}\nlocal climbStarts=0\nlocal climbPicks={}\nlocal run=nil").replace(
+ 'return {run=run,stats={},currency=100,fighting=run and run.fighting}',
+ 'return {run=run,climb=climbState,stats={},currency=100,fighting=run and run.fighting}').replace(
+ " if name=='State' then emit();return true,snapshot()", """ if name=='State' then emit();return true,snapshot()
+ elseif name=='ClimbStart' then
+  climbStarts=climbStarts+1
+  if climbStarts==2 then env.AnimeDuelScript.stop();return true end
+  climbState.run={id=1,floor=1,team={},start={'weak','tank','carry','mid','other','less'}}
+  emit();return true
+ elseif name=='ClimbPickStart' then
+  assert(#a==4 and a[1]=='carry' and a[2]=='mid' and a[3]=='tank' and a[4]=='other','strongest starting four in score order')
+  climbState.run.start=nil;climbState.run.team=table.clone(a);emit()
+  schedule(1,function()
+   climbState.run.floor=11;climbState.run.offer={floor=10,cards={'weaker','gold','weak'}};emit()
+  end)
+  return true
+ elseif name=='ClimbPick' then
+  table.insert(climbPicks,{a,b})
+  if #climbPicks==1 then
+   assert(a==2 and b==4,'best offered card must replace weakest team slot')
+   climbState.run.team[b]='gold';climbState.run.offer=nil;emit()
+   schedule(1,function()
+    climbState.run.floor=21;climbState.run.offer={floor=20,cards={'weaker','weak'}};emit()
+   end)
+  else
+   assert(a==0 and b==nil,'inferior offers must skip')
+   climbState.run.offer=nil;emit()
+   schedule(1,function()climbState.run.over='lost';emit()end)
+  end
+  return true""")
+climb_fixture+=r'''
+local stats={weak={10,10},tank={10,100},carry={100,20},mid={40,40},other={25,40},less={5,5},weaker={1,1},gold={200,100}}
+local module={}
+local shared={FindFirstChild=function(_,name,recursive)assert(name=='DraftConfig' and recursive);return module end}
+RS.FindFirstChild=function(_,name)assert(name=='Shared');return shared end
+local function require(value)
+ assert(value==module)
+ return {ClimbStats=function(id)assert(stats[id],'missing card stats');return table.unpack(stats[id])end}
+end
+'''
+climb_checks=r'''
+local app=env.AnimeDuelScript
+app.start('climb');app.start('draft')
+assert(app.config.mode=='climb','active worker mode cannot be changed by another Start')
+drain()
+assert(climbStarts==2 and #climbPicks==2,'restart and offer picks')
+assert(app.status=='Stopped',app.status)
+for _,call in ipairs(calls)do
+ assert(call[1]~='Fight' and call[1]~='Start' and call[1]~='Open' and call[1]~='AutoTeam','climb must not send normal Draft commands')
+end
+app.destroy()
+'''
+run_case('Climb starts, ranks four cards, replaces weakest, skips weak offers and restarts',climb_fixture,climb_checks)
+
+uncertain_climb=climb_fixture.replace("  climbState.run.start=nil;climbState.run.team=table.clone(a);emit()", "  climbState.run.start=nil;climbState.run.team=table.clone(a);emit()").replace(
+ "  return true\n elseif name=='ClimbPick'", "  error('pick response lost')\n elseif name=='ClimbPick'")
+run_case('Climb lost pick response reconciles confirmed team without resending',uncertain_climb,climb_checks)
+
+unconfirmed=climb_fixture.replace("  climbState.run.start=nil;climbState.run.team=table.clone(a);emit()", "  -- The pick never applied; state remains at initial selection.").replace(
+ "  schedule(1,function()\n   climbState.run.floor=11;climbState.run.offer={floor=10,cards={'weaker','gold','weak'}};emit()\n  end)", '')
+run_case('unconfirmed ClimbPickStart pauses and is not replayed',unconfirmed,r'''
+local app=env.AnimeDuelScript
+app.start('climb');drain()
+local count=0
+for _,call in ipairs(calls)do if call[1]=='ClimbPickStart' then count=count+1 end end
+assert(count==1,'do not replay unknown pick')
+assert(app.status:find('not confirmed',1,true),app.status)
+app.destroy()
+''')
+
+missing_stats=climb_fixture.replace("assert(stats[id],'missing card stats');return table.unpack(stats[id])", "error('stats unavailable')")
+run_case('Climb never guesses card rankings when stats are unavailable',missing_stats,r'''
+local app=env.AnimeDuelScript
+app.start('climb');drain()
+assert(app.status:find('Cannot score climb card',1,true),app.status)
+for _,call in ipairs(calls)do assert(call[1]~='ClimbPickStart','no guessed picks')end
+app.destroy()
+''')
+
+# Native Auto Climb disabled: keep monitoring, never guess a fight action.
+waiting=climb_fixture.replace('local climbState={auto=true}',"local climbState={auto=false,run={id=9,floor=5,team={'carry','mid','tank','other'}}}")
+waiting+=r'''
+schedule(4,function()
+ assert(env.AnimeDuelScript.climbStatus:find('Turn ON Auto Climb',1,true))
+ env.AnimeDuelScript.stop()
+end)
+'''
+run_case('Climb explains disabled native auto without sending fight commands',waiting,r'''
+local app=env.AnimeDuelScript
+app.start('climb');drain()
+assert(climbStarts==0)
+for _,call in ipairs(calls)do assert(call[1]=='State','no guessed combat actions')end
+app.destroy()
+''')
