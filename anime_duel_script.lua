@@ -27,7 +27,7 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {alive=true, enabled=false, worker=false, connections={}, snapshot=nil,
+local app = {alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, logs={}, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15}}
@@ -86,76 +86,133 @@ local function loadingRejection(reason)
     return type(reason)=='string'
         and reason:lower():find('your data is still loading',1,true)~=nil
 end
-local function invoke(name, a, b)
-    local loadingUntil=os.clock()+45
-    local retries=0
-    while true do
+-- Only confirmed boss lifecycle signals should call this API.
+function app.setBossActive(kind, active)
+    if kind~='world' and kind~='raid' then return end
+    app.bosses[kind]=active==true
+    render()
+end
+local function awaitPriority()
+    local waiting=false
+    while app.bosses.world or app.bosses.raid do
         check()
-        local version=app.version
-        local values=table.pack(pcall(function() return action:InvokeServer(name,a,b) end))
-        -- Retry only explicit loading rejections, never uncertain transport errors.
-        check()
-        if not values[1] then error(name..': '..tostring(values[2]),0) end
-        local rejected=values[2]==false
-        local reason=values[3]
-        if type(values[2])=='table' and values[2].ok==false then
-            rejected=true
-            reason=values[2].reason or values[2].message
+        if not waiting then
+            waiting=true
+            log('Draft paused — waiting for World/Raid boss death')
         end
-        if rejected then
-            if not loadingRejection(reason) then
-                error(name..' rejected: '..tostring(reason),0)
-            end
-            local remaining=loadingUntil-os.clock()
-            if remaining<=0 then
-                error(name..': data still loading after 45s; press START to resync.',0)
-            end
-            retries=retries+1
-            local delay=math.min(2*retries,6,remaining)
-            log('Data loading — waiting '..string.format('%.1f',delay)..'s before '..name..' retry')
-            pause(delay)
-        else
-            if app.version==version then
-                for i=2,values.n do
-                    local v=values[i]
-                    if accept(v) or (type(v)=='table' and accept(v.state)) then break end
-                end
-            end
-            return
+        task.wait(.1)
+    end
+    check()
+    if waiting then log('Bosses ended — resuming Draft') end
+    return waiting
+end
+local function call(name,a,b)
+    check()
+    if name~='State' then awaitPriority() end
+    local version=app.version
+    local values=table.pack(pcall(function() return action:InvokeServer(name,a,b) end))
+    check()
+    if not values[1] then
+        return {ok=false,uncertain=true,reason=tostring(values[2])}
+    end
+    local rejected=values[2]==false
+    local reason=values[3]
+    if type(values[2])=='table' and values[2].ok==false then
+        rejected=true;reason=values[2].reason or values[2].message
+    end
+    if rejected then return {ok=false,reason=tostring(reason),loading=loadingRejection(reason)} end
+    if app.version==version then
+        for i=2,values.n do
+            local v=values[i]
+            if accept(v) or (type(v)=='table' and accept(v.state)) then break end
         end
     end
+    return {ok=true}
 end
 local function refresh()
-    invoke('State',nil,nil)
-    pause(app.config.delay)
+    local last
+    for attempt=1,3 do
+        last=call('State',nil,nil)
+        if last.ok then pause(app.config.delay);return end
+        if attempt<3 then
+            log('State unavailable — resyncing in '..(attempt*2)..'s')
+            pause(attempt*2)
+        end
+    end
+    error('Cannot resync State: '..tostring(last.reason),0)
+end
+local function packCount(run)
+    if not run or type(run.packs)~='table' then return nil end
+    local count=0
+    for _,n in pairs(run.packs) do count=count+math.max(tonumber(n) or 0,0) end
+    return count
+end
+local function validTeam(run)
+    if not run or type(run.team)~='table' or #run.team~=4 then return false end
+    local seen={}
+    local owned=nil
+    if type(run.cards)=='table' then
+        owned={}
+        for _,card in pairs(run.cards) do
+            if type(card)=='table' and type(card.id)=='string' then owned[card.id]=true end
+        end
+    end
+    for _,id in ipairs(run.team) do
+        if type(id)~='string' or id=='' or seen[id] or (owned and not owned[id]) then return false end
+        seen[id]=true
+    end
+    return true
 end
 local function prepare()
     local run=activeRun()
     if not run then return end
-    -- A defeat can leave every pack balance at zero. Do not request an empty Open.
-    if type(run.packs)~='table' then
-        refresh()
-        run=activeRun()
-        if not run then return end
-        if type(run.packs)~='table' then
-            error('Pack balance missing from State; stopped before Open.',0)
+    local runId=run.id
+    if packCount(run)==nil then refresh();run=activeRun() end
+    if not run or run.id~=runId then return end
+    local count=packCount(run)
+    if count and count>0 then
+        for attempt=1,3 do
+            log('Opening packs ('..tostring(count)..' available), attempt '..attempt..'/3')
+            local result=call('Open','all',1)
+            if result.ok then pause(app.config.delay);break end
+            log('Open skipped/rejected: '..tostring(result.reason))
+            -- Read-only resync; do not replay uncertain mutations.
+            refresh();run=activeRun()
+            if not run or run.id~=runId then return end
+            count=packCount(run)
+            if not count or count<=0 or result.uncertain or not result.loading or attempt==3 then
+                log('Continuing to AutoTeam; Open will be checked after the next fight')
+                break
+            end
+            pause(attempt*2)
         end
-    end
-    local count=0
-    for _,amount in pairs(run.packs) do
-        count=count+math.max(tonumber(amount) or 0,0)
-    end
-    if count>0 then
-        log('Opening packs ('..tostring(count)..' available)')
-        invoke('Open','all',1)
-        pause(app.config.delay)
-    else
+    elseif count==0 then
         log('No packs available — skipping Open')
+    else
+        log('Pack balance unknown — skipping Open until next State')
     end
-    log('Selecting Auto Team')
-    invoke('AutoTeam',nil,nil)
-    pause(app.config.delay)
-    refresh()
+    for attempt=1,3 do
+        log('Selecting Auto Team, attempt '..attempt..'/3')
+        local result=call('AutoTeam',nil,nil)
+        if result.ok then
+            pause(app.config.delay);refresh()
+            run=activeRun()
+            if not run or run.id~=runId then return end
+            if not validTeam(run) then error('AutoTeam did not confirm a valid four-card team.',0) end
+            return
+        end
+        log('AutoTeam rejected: '..tostring(result.reason))
+        refresh();run=activeRun()
+        if not run or run.id~=runId then return end
+        if result.uncertain or not result.loading or attempt==3 then
+            if validTeam(run) then
+                log('Using the current four-card team confirmed by State')
+                return
+            end
+            error('AutoTeam unavailable and State has no valid four-card team; paused.',0)
+        end
+        pause(attempt*2)
+    end
 end
 local function nextStage(run)
     local wins=type(run.wins)=='table' and run.wins or {}
@@ -174,7 +231,16 @@ local function fight(target)
     end
     local version=app.resultVersion
     log('Fighting '..(target=='boss' and ('boss '..tostring(activeRun() and activeRun().boss)) or target))
-    invoke('Fight',target,nil)
+    local sent=call('Fight',target,nil)
+    if not sent.ok then
+        log('Fight response not accepted — checking State before any further action')
+        refresh()
+        local fighting=app.snapshot and app.snapshot.fighting
+        local confirmed=fighting==target or (target=='boss' and type(fighting)=='string' and fighting:match('^boss%d+$'))
+        if not confirmed and app.resultVersion<=version then
+            error('Fight not confirmed; paused without replaying: '..tostring(sent.reason),0)
+        end
+    end
     if not waitFor(function() return app.resultVersion>version end,app.config.timeout) then
         error('No Result received; stopped to avoid duplicate Fight.',0)
     end
@@ -216,12 +282,14 @@ local function runLoop()
     local prepared=false
     while app.enabled do
         check()
+        if awaitPriority() then refresh() end
         local run=activeRun()
         if not run then
             app.recovery={}; app.stage=nil; app.runId=nil
             prepared=false
             log('Starting a new run')
-            invoke('Start',{},nil)
+            local started=call('Start',{},nil)
+            if not started.ok then log('Start response not accepted — resyncing without replay') end
             pause(app.config.delay)
             refresh()
             run=activeRun()
@@ -416,7 +484,7 @@ track(copy.Activated,function()
 end)
 render=function()
     if not app.alive then return end
-    statusLabel.Text=app.status
+    statusLabel.Text=(app.bosses.world or app.bosses.raid) and 'Boss priority — waiting for boss death' or app.status
     local run=app.snapshot and app.snapshot.run
     local job=app.recovery[#app.recovery]
     runLabel.Text=type(run)=='table' and ('#'..tostring(run.id)..' / Boss '..tostring(run.boss)
