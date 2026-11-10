@@ -469,3 +469,47 @@ assert(app.status:find('Fewer than four allowed',1,true),app.status)
 for _,call in ipairs(calls)do assert(call[1]~='ClimbPickStart','must never fill a team with a banned card')end
 app.destroy()
 ''')
+
+for inventory in ["{'a','b','c','d'}", "{a=1,b=1,c=1,d=1}"]:
+    string_inventory=mock.replace("packs={draft=1},team={'a','b','c','d'}", "packs={draft=1},cards="+inventory+",team={'a','b','c','d'}")
+    run_case('Draft Run accepts authoritative team with inventory '+inventory,string_inventory,checks)
+
+state_first=mock.replace(
+ "event.OnClientEvent:Fire('Result',result)\n   run.fighting=nil;emit()",
+ "run.fighting=nil;emit()\n   event.OnClientEvent:Fire('Result',result)"
+).replace(
+ "if name=='State' then emit();return true,snapshot()",
+ "if name=='State' then if fightIndex==0 then emit() end;return true"
+)
+run_case('Draft Run handles end State before Result without requiring another State',state_first,checks)
+
+broken_ui=mock+r'''
+schedule(3,function()
+ for _,obj in ipairs(objects)do
+  if obj.ClassName=='TextBox' then obj.IsFocused=function()error('UI widget failure')end end
+ end
+end)
+'''
+run_case('UI rendering errors cannot abort the Draft Run worker',broken_ui,checks.replace('assert(#pending==1','assert(#pending==2'))
+
+# Preferred cards get a 25% score bonus, applied identically to picks and team slots.
+preferred=climb_fixture.replace("start={'weak','tank','carry','mid','other','less'}", "start={'weak','tank','carry','mid','other','less','elf_mage'}").replace(
+ "a[1]=='carry' and a[2]=='mid' and a[3]=='tank' and a[4]=='other'",
+ "a[1]=='carry' and a[2]=='elf_mage' and a[3]=='mid' and a[4]=='tank'"
+).replace("gold={200,100}", "gold={200,100},elf_mage={25,50}")
+run_case('preferred Elf Mage outranks a slightly stronger non-preferred starting card',preferred,climb_checks)
+
+for base in ['limitless_sorcerer','curse_king','elf_mage','gone','slime','brother','red_hair']:
+    for suffix in ['','_gold','_rainbow','_secret']:
+        card=base+suffix
+        fixture=preferred.replace('elf_mage',card)
+        run_case('preferred selection: '+card,fixture,climb_checks)
+
+ban_samurai=climb_fixture.replace(
+ "start={'weak','tank','carry','mid','other','less'}",
+ "start={'samurai_lost_man','samurai_lost_man_gold','samurai_lost_man_rainbow','samurai_lost_man_secret','weak','tank','carry','mid','other','less'}"
+).replace("cards={'weaker','gold','weak'}", "cards={'samurai_lost_man_secret','gold','samurai_lost_man_gold'}").replace("cards={'weaker','weak'}", "cards={'samurai_lost_man','samurai_lost_man_rainbow'}")
+run_case('Samurai Lost Man banned at all borders in starts and offers',ban_samurai,climb_checks)
+
+normal_lost=climb_fixture.replace("'carry'", "'lost_man'").replace('carry={100,20}','lost_man={100,20}')
+run_case('normal Lost Man remains eligible',normal_lost,climb_checks)
