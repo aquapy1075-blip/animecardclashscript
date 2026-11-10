@@ -1,25 +1,28 @@
 -- anime duel script
 -- UI adapted from anime_origin_ui.lua (aquapy1075-blip/animecardclashscript).
--- Uses only the DraftAction calls captured by the user. Auto is OFF on load.
+-- Uses captured DraftAction calls. Auto starts only when enabled in an auto-loaded profile.
 local Players = game:GetService('Players')
 local RS = game:GetService('ReplicatedStorage')
 local UIS = game:GetService('UserInputService')
 local Workspace = game:GetService('Workspace')
-local TweenService = game:GetService('TweenService')
+local HttpService = game:GetService('HttpService')
+local GuiService = game:GetService('GuiService')
+local TeleportService = game:GetService('TeleportService')
+local player = Players.LocalPlayer
 local playerGui = Players.LocalPlayer:WaitForChild('PlayerGui')
 local env = getgenv and getgenv() or _G
 local previous = env.AnimeDuelScript
 if type(previous) == 'table' and type(previous.destroy) == 'function' then
     if previous.worker then
         previous.stop()
-        warn('[AnimeDuel] Previous worker is stopping; run again after it finishes.')
+        previous.status='Previous worker is stopping; run again when stopped.'
         return
     end
     previous.destroy()
 end
 if type(env.CustomAutoDraft) == 'table' and env.CustomAutoDraft.running then
     env.CustomAutoDraft.stop()
-    warn('[AnimeDuel] Old console auto is stopping. Run this script again when stopped.')
+    env.CustomAutoDraft.status='Old auto is stopping; run the UI script again when stopped.'
     return
 end
 local remotes = RS:WaitForChild('Remotes', 15)
@@ -28,9 +31,9 @@ local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
 local app = {alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
-    version=0, resultVersion=0, logs={}, wins=0, losses=0, clears=0,
+    version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false}}
 env.AnimeDuelScript = app
 local render = function() end
 local function track(signal, callback)
@@ -38,13 +41,169 @@ local function track(signal, callback)
     table.insert(app.connections, connection)
     return connection
 end
-local function log(text)
-    app.status = tostring(text)
-    table.insert(app.logs, os.date('%H:%M:%S') .. '  ' .. tostring(text))
-    if #app.logs > 100 then table.remove(app.logs, 1) end
-    print('[AnimeDuel] ' .. tostring(text))
+local function setStatus(message)
+    app.status=tostring(message)
     render()
 end
+-- Named profiles use only executor-local JSON files.
+local storage='AnimeDuelScript/'..tostring(player.UserId or 'Local')
+local profileDir=storage..'/profiles'
+local disk=type(readfile)=='function' and type(writefile)=='function'
+app.profiles={current='Default',auto=nil,names={},status=disk and 'Storage ready' or 'File API unavailable'}
+app.reconnect={attempts=0,lastTry=-math.huge,status='Monitoring',limit=3,interval=9}
+local ranges={farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
+local themesAllowed={Midnight=true,Emerald=true,Violet=true,Light=true}
+local function profileId(name)
+    if type(name)~='string' then return nil end
+    name=name:match('^%s*(.-)%s*$')
+    return #name>=1 and #name<=32 and name:match('^[%w_%-]+$') and name or nil
+end
+local function storageStatus(message)
+    app.profiles.status=message;render()
+end
+local function ensureDirs()
+    if type(makefolder)~='function' then return end
+    for _,path in ipairs({'AnimeDuelScript',storage,profileDir}) do pcall(makefolder,path) end
+end
+local function readJson(path)
+    if not disk then return nil end
+    local ok,data=pcall(function() return HttpService:JSONDecode(readfile(path)) end)
+    return ok and type(data)=='table' and data or nil
+end
+local function writeJson(path,data)
+    if not disk then return false end
+    ensureDirs()
+    return pcall(function() writefile(path,HttpService:JSONEncode(data)) end)
+end
+local function profilePath(name) return profileDir..'/'..name..'.json' end
+local function addName(name)
+    if not table.find(app.profiles.names,name) then table.insert(app.profiles.names,name);table.sort(app.profiles.names) end
+end
+local function configSnapshot()
+    local out={}
+    for key,value in pairs(app.config) do out[key]=value end
+    return out
+end
+function app.saveProfile(name)
+    name=profileId(name)
+    if not name then storageStatus('Invalid profile name');return false end
+    if not writeJson(profilePath(name),{version=1,config=configSnapshot()}) then
+        storageStatus(disk and 'Save failed' or 'File API unavailable');return false
+    end
+    app.profiles.current=name;addName(name)
+    local indexed=writeJson(storage..'/index.json',app.profiles.names)
+    storageStatus(indexed and ('Saved: '..name) or ('Saved '..name..'; profile index failed'))
+    return true
+end
+function app.loadProfile(name)
+    if app.worker then storageStatus('Stop Draft before loading a profile');return false end
+    name=profileId(name)
+    local data=name and readJson(profilePath(name))
+    if not data or data.version~=1 or type(data.config)~='table' then
+        storageStatus('Profile unavailable or invalid');return false
+    end
+    local incoming=data.config
+    for key,range in pairs(ranges) do
+        local v=incoming[key]
+        if type(v)=='number' and v==v and v>=range[1] and v<=range[2] then
+            app.config[key]=range[3] and math.floor(v) or v
+        end
+    end
+    if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
+    for _,key in ipairs({'autoReconnect','autoStart'}) do
+        if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
+    end
+    app.profiles.current=name;addName(name);storageStatus('Loaded: '..name)
+    return true
+end
+function app.deleteProfile(name)
+    name=profileId(name)
+    if not name then storageStatus('Invalid profile name');return false end
+    if name==app.profiles.auto then storageStatus('Clear Auto Load before deleting this profile');return false end
+    if type(delfile)~='function' then storageStatus('Delete API unavailable');return false end
+    local ok=pcall(delfile,profilePath(name))
+    if not ok then storageStatus('Delete failed');return false end
+    local index=table.find(app.profiles.names,name)
+    if index then table.remove(app.profiles.names,index) end
+    local indexed=writeJson(storage..'/index.json',app.profiles.names)
+    if app.profiles.current==name then app.profiles.current='Default' end
+    storageStatus(indexed and ('Deleted: '..name) or ('Deleted '..name..'; profile index failed'))
+    return true
+end
+function app.setAutoProfile(name)
+    name=profileId(name)
+    if not name then storageStatus('Invalid profile name');return false end
+    if not app.saveProfile(name) then return false end
+    if not writeJson(storage..'/autoload.json',{profile=name}) then storageStatus('Cannot save Auto Load');return false end
+    app.profiles.auto=name;storageStatus('Auto Load: '..name);return true
+end
+function app.clearAutoProfile()
+    if not writeJson(storage..'/autoload.json',{}) then storageStatus('Cannot clear Auto Load');return false end
+    app.profiles.auto=nil;storageStatus('Auto Load OFF');return true
+end
+local index=readJson(storage..'/index.json')
+if index then for _,name in ipairs(index) do name=profileId(name);if name then addName(name) end end end
+local auto=readJson(storage..'/autoload.json')
+local autoName=auto and profileId(auto.profile)
+local autoLoaded=false
+if autoName then app.profiles.auto=autoName;autoLoaded=app.loadProfile(autoName) end
+
+-- Origin-style connection monitoring. Never treats kicks/moderation as network loss.
+local function connectionText()
+    local message=''
+    pcall(function() message=GuiService:GetErrorMessage() or '' end)
+    pcall(function()
+        local core=game:GetService('CoreGui')
+        local prompts=core:FindFirstChild('RobloxPromptGui')
+        local overlay=prompts and prompts:FindFirstChild('promptOverlay')
+        local prompt=overlay and overlay:FindFirstChild('ErrorPrompt',true)
+        if prompt and prompt.Visible then
+            for _,obj in ipairs(prompt:GetDescendants()) do
+                if (obj:IsA('TextLabel') or obj:IsA('TextButton')) and obj.Visible then message=message..' '..tostring(obj.Text) end
+            end
+        end
+    end)
+    return tostring(message):lower()
+end
+local function lostConnection(message)
+    for _,word in ipairs({'banned','kicked','moderation','error code: 267','error code: 268'}) do
+        if message:find(word,1,true) then return false end
+    end
+    for _,word in ipairs({'disconnected','lost connection','connection lost','connection error','timed out','error code: 277','error code: 279','error code: 266'}) do
+        if message:find(word,1,true) then return true end
+    end
+    return false
+end
+function app.requestReconnect(force)
+    if not app.alive or (not force and not app.config.autoReconnect) then return false end
+    local st=app.reconnect
+    if st.attempts>=st.limit then st.status='Attempt limit reached';render();return false end
+    if os.clock()-st.lastTry<st.interval then return false end
+    st.attempts=st.attempts+1;st.lastTry=os.clock()
+    st.status='Rejoining '..st.attempts..'/'..st.limit
+    -- Stop scheduling gameplay; a disconnected session cannot confirm new mutations.
+    app.enabled=false
+    local ok=pcall(function() TeleportService:Teleport(game.PlaceId,player) end)
+    if not ok then st.status='Rejoin unavailable; waiting to retry' end
+    render();return ok
+end
+function app.reconnectTick()
+    if not app.alive then return end
+    if app.config.autoReconnect then
+        local message=connectionText()
+        if lostConnection(message) then app.requestReconnect(false)
+        elseif message=='' then
+            app.reconnect.attempts=0;app.reconnect.status='Monitoring'
+        else app.reconnect.status='No connection retry for this error' end
+    end
+    render()
+end
+local function monitorConnection()
+    if not app.alive then return end
+    app.reconnectTick()
+    task.delay(2,monitorConnection)
+end
+
 local function accept(value)
     if type(value)=='table' and (type(value.run)=='table'
         or (value.stats~=nil and value.currency~=nil)) then
@@ -98,12 +257,12 @@ local function awaitPriority()
         check()
         if not waiting then
             waiting=true
-            log('Draft paused — waiting for World/Raid boss death')
+            setStatus('Draft paused — waiting for World/Raid boss death')
         end
         task.wait(.1)
     end
     check()
-    if waiting then log('Bosses ended — resuming Draft') end
+    if waiting then setStatus('Bosses ended — resuming Draft') end
     return waiting
 end
 local function call(name,a,b)
@@ -135,7 +294,7 @@ local function refresh()
         last=call('State',nil,nil)
         if last.ok then pause(app.config.delay);return end
         if attempt<3 then
-            log('State unavailable — resyncing in '..(attempt*2)..'s')
+            setStatus('State unavailable — resyncing in '..(attempt*2)..'s')
             pause(attempt*2)
         end
     end
@@ -172,27 +331,27 @@ local function prepare()
     local count=packCount(run)
     if count and count>0 then
         for attempt=1,3 do
-            log('Opening packs ('..tostring(count)..' available), attempt '..attempt..'/3')
+            setStatus('Opening packs ('..tostring(count)..' available), attempt '..attempt..'/3')
             local result=call('Open','all',1)
             if result.ok then pause(app.config.delay);break end
-            log('Open skipped/rejected: '..tostring(result.reason))
+            setStatus('Open skipped/rejected: '..tostring(result.reason))
             -- Read-only resync; do not replay uncertain mutations.
             refresh();run=activeRun()
             if not run or run.id~=runId then return end
             count=packCount(run)
             if not count or count<=0 or result.uncertain or not result.loading or attempt==3 then
-                log('Continuing to AutoTeam; Open will be checked after the next fight')
+                setStatus('Continuing to AutoTeam; Open will be checked after the next fight')
                 break
             end
             pause(attempt*2)
         end
     elseif count==0 then
-        log('No packs available — skipping Open')
+        setStatus('No packs available — skipping Open')
     else
-        log('Pack balance unknown — skipping Open until next State')
+        setStatus('Pack balance unknown — skipping Open until next State')
     end
     for attempt=1,3 do
-        log('Selecting Auto Team, attempt '..attempt..'/3')
+        setStatus('Selecting Auto Team, attempt '..attempt..'/3')
         local result=call('AutoTeam',nil,nil)
         if result.ok then
             pause(app.config.delay);refresh()
@@ -201,12 +360,12 @@ local function prepare()
             if not validTeam(run) then error('AutoTeam did not confirm a valid four-card team.',0) end
             return
         end
-        log('AutoTeam rejected: '..tostring(result.reason))
+        setStatus('AutoTeam rejected: '..tostring(result.reason))
         refresh();run=activeRun()
         if not run or run.id~=runId then return end
         if result.uncertain or not result.loading or attempt==3 then
             if validTeam(run) then
-                log('Using the current four-card team confirmed by State')
+                setStatus('Using the current four-card team confirmed by State')
                 return
             end
             error('AutoTeam unavailable and State has no valid four-card team; paused.',0)
@@ -224,16 +383,16 @@ end
 local lower={medium='easy',hard='medium',boss='hard'}
 local function fight(target)
     if app.snapshot and app.snapshot.fighting then
-        log('Waiting for current fight')
+        setStatus('Waiting for current fight')
         if not waitFor(function() return app.snapshot and not app.snapshot.fighting end,app.config.timeout) then
             error('Current fight timed out; no additional Fight was sent.',0)
         end
     end
     local version=app.resultVersion
-    log('Fighting '..(target=='boss' and ('boss '..tostring(activeRun() and activeRun().boss)) or target))
+    setStatus('Fighting '..(target=='boss' and ('boss '..tostring(activeRun() and activeRun().boss)) or target))
     local sent=call('Fight',target,nil)
     if not sent.ok then
-        log('Fight response not accepted — checking State before any further action')
+        setStatus('Fight response not accepted — checking State before any further action')
         refresh()
         local fighting=app.snapshot and app.snapshot.fighting
         local confirmed=fighting==target or (target=='boss' and type(fighting)=='string' and fighting:match('^boss%d+$'))
@@ -254,7 +413,7 @@ local function fight(target)
     end
     if result.result=='Victory' then app.wins=app.wins+1 else app.losses=app.losses+1 end
     if result.summary and result.summary.How=='cleared' then app.clears=app.clears+1 end
-    log(tostring(result.name or key)..' — '..result.result)
+    setStatus(tostring(result.name or key)..' — '..result.result)
     if not waitFor(function()
         return app.version>(app.resultStateVersion or 0) and app.snapshot and not app.snapshot.fighting
     end,8) then
@@ -267,14 +426,14 @@ local function fight(target)
     return result
 end
 local function runLoop()
-    log('Syncing Draft state')
+    setStatus('Syncing Draft state')
     local initialVersion=app.version
     refresh()
     if not waitFor(function() return app.version>initialVersion end,8) then
         error('State not received. Capture the State RETURN if this repeats.',0)
     end
     if app.snapshot.fighting then
-        log('Waiting for existing fight')
+        setStatus('Waiting for existing fight')
         if not waitFor(function() return not app.snapshot.fighting end,app.config.timeout) then
             error('Existing fight timed out.',0)
         end
@@ -287,9 +446,9 @@ local function runLoop()
         if not run then
             app.recovery={}; app.stage=nil; app.runId=nil
             prepared=false
-            log('Starting a new run')
+            setStatus('Starting a new run')
             local started=call('Start',{},nil)
-            if not started.ok then log('Start response not accepted — resyncing without replay') end
+            if not started.ok then setStatus('Start response not accepted — resyncing without replay') end
             pause(app.config.delay)
             refresh()
             run=activeRun()
@@ -316,14 +475,14 @@ local function runLoop()
                     if fallback then
                         local n=target=='boss' and app.config.bossFarm or app.config.farm
                         table.insert(app.recovery,{target=fallback,remaining=n})
-                        log('Recovery: win '..n..' '..fallback..' fights, then retry '..target)
-                    else log('Easy lost; retrying with refreshed team') end
+                        setStatus('Recovery: win '..n..' '..fallback..' fights, then retry '..target)
+                    else setStatus('Easy lost; retrying with refreshed team') end
                 end
                 -- Save fight progression before pack/team requests can fail.
                 prepare()
             else
                 app.recovery={}; app.runId=nil; app.stage=nil
-                log('Run ended; restarting')
+                setStatus('Run ended; restarting')
             end
         end
         pause(app.config.delay)
@@ -331,7 +490,7 @@ local function runLoop()
 end
 function app.stop()
     app.enabled=false
-    log(app.worker and 'Stopping — current server fight continues' or 'Stopped')
+    setStatus(app.worker and 'Stopping — current server fight continues' or 'Stopped')
 end
 function app.start()
     if not app.alive or app.worker then return end
@@ -340,8 +499,8 @@ function app.start()
         local ok,err=pcall(runLoop)
         app.enabled=false; app.worker=false
         if not ok and tostring(err)~='__STOP__' then
-            log('ERROR: '..tostring(err))
-        else log('Stopped') end
+            setStatus('ERROR: '..tostring(err))
+        else setStatus('Stopped') end
     end)
 end
 
@@ -403,7 +562,7 @@ skin(nav,'BackgroundColor3','side')
 local body=make('Frame',main,{Position=UDim2.fromOffset(140,58),Size=UDim2.new(1,-140,1,-58),BackgroundTransparency=1})
 local pages,navButtons={},{}
 local selected='Draft'
-for i,name in ipairs({'Draft','Settings','Logs'}) do
+for i,name in ipairs({'Draft','Settings','Config'}) do
     local b=button(nav,name,UDim2.new(1,-16,0,38));b.Position=UDim2.fromOffset(8,12+(i-1)*46)
     navButtons[name]=b
     local page=make('ScrollingFrame',body,{Name=name,Size=UDim2.fromScale(1,1),Visible=name==selected,
@@ -441,11 +600,14 @@ local scoreLabel=status('Session results')
 local hint=row('Draft','Strategy',76)
 local hintText=text(hint,'Easy → Medium → Hard → Boss 1 / 2 / 3\nAfter each fight: Open packs → Auto Team')
 hintText.Position=UDim2.fromOffset(12,29);hintText.Size=UDim2.new(1,-24,0,40);hintText.TextWrapped=true
+local configInputs={}
+local paintedTheme=nil
 local function numberInput(label,key,low,high)
     local r=row('Settings',label,69)
     local box=make('TextBox',r,{Position=UDim2.fromOffset(12,31),Size=UDim2.new(1,-24,0,29),
         Text=tostring(app.config[key]),ClearTextOnFocus=false,Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0})
     corner(box);skin(box,'BackgroundColor3','row');skin(box,'TextColor3','text')
+    configInputs[key]=box
     track(box.FocusLost,function()
         local n=tonumber(box.Text)
         if n and n==n and n>=low and n<=high then
@@ -469,19 +631,38 @@ track(themeButton.Activated,function()
     render()
 end)
 numberInput('Window transparency % (0–65)','transparency',0,65)
-local logRow=row('Logs','Session log',300)
-local logText=text(logRow,'No actions yet')
-logText.Position=UDim2.fromOffset(12,32);logText.Size=UDim2.new(1,-24,1,-40)
-logText.TextWrapped=true;logText.TextYAlignment=Enum.TextYAlignment.Top
-logText.TextTruncate=Enum.TextTruncate.None;logText.TextSize=11
-local copyRow=row('Logs','Copy session log',69)
-local copy=button(copyRow,'COPY',UDim2.new(1,-24,0,29));copy.Position=UDim2.fromOffset(12,31)
-track(copy.Activated,function()
-    if type(setclipboard)=='function' then
-        local ok=pcall(setclipboard,table.concat(app.logs,'\n'))
-        if ok then log('Log copied') else log('Clipboard unavailable') end
-    else log('Clipboard unavailable; read [AnimeDuel] in console') end
-end)
+local function settingToggle(label,key)
+    local r=row('Settings',label,69)
+    local b=button(r,'',UDim2.new(1,-24,0,29));b.Position=UDim2.fromOffset(12,31)
+    track(b.Activated,function() app.config[key]=not app.config[key];render() end)
+    return b
+end
+local reconnectToggle=settingToggle('Auto reconnect on connection loss','autoReconnect')
+local autoStartToggle=settingToggle('Start Draft when this profile is auto-loaded','autoStart')
+local reconnectRow=row('Settings','Connection',69)
+local reconnectLabel=text(reconnectRow,'Monitoring');reconnectLabel.Position=UDim2.fromOffset(12,31);reconnectLabel.Size=UDim2.new(1,-24,0,29)
+local rejoinRow=row('Settings','Rejoin this place',69)
+local rejoin=button(rejoinRow,'REJOIN',UDim2.new(1,-24,0,29));rejoin.Position=UDim2.fromOffset(12,31)
+track(rejoin.Activated,function() app.requestReconnect(true) end)
+local unloadRow=row('Settings','Unload UI and stop controllers',69)
+local unload=button(unloadRow,'STOP SCRIPT',UDim2.new(1,-24,0,29));unload.Position=UDim2.fromOffset(12,31)
+track(unload.Activated,function() app.destroy() end)
+local profileRow=row('Config','Profile name (letters, digits, _ or -)',69)
+local profileBox=make('TextBox',profileRow,{Position=UDim2.fromOffset(12,31),Size=UDim2.new(1,-24,0,29),Text=app.profiles.current,
+    ClearTextOnFocus=false,Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0})
+corner(profileBox);skin(profileBox,'BackgroundColor3','row');skin(profileBox,'TextColor3','text')
+for _,entry in ipairs({{'Save settings','SAVE','saveProfile'},{'Load settings (stop Draft first)','LOAD','loadProfile'},
+    {'Delete profile','DELETE','deleteProfile'},{'Save and use on next execution','SET AUTO LOAD','setAutoProfile'},
+    {'Disable automatic profile loading','CLEAR AUTO LOAD','clearAutoProfile'}}) do
+    local r=row('Config',entry[1],69)
+    local b=button(r,entry[2],UDim2.new(1,-24,0,29));b.Position=UDim2.fromOffset(12,31)
+    local method=entry[3]
+    track(b.Activated,function() app[method](profileBox.Text) end)
+end
+local configRow=row('Config','Storage / active profile',84)
+local configLabel=text(configRow,'');configLabel.Position=UDim2.fromOffset(12,29);configLabel.Size=UDim2.new(1,-24,0,48);configLabel.TextWrapped=true
+local savedRow=row('Config','Saved profiles',76)
+local savedLabel=text(savedRow,'Default');savedLabel.Position=UDim2.fromOffset(12,29);savedLabel.Size=UDim2.new(1,-24,0,40);savedLabel.TextWrapped=true
 render=function()
     if not app.alive then return end
     statusLabel.Text=(app.bosses.world or app.bosses.raid) and 'Boss priority — waiting for boss death' or app.status
@@ -496,9 +677,17 @@ render=function()
     start.Active=not app.worker
     for name,b in pairs(navButtons) do b.BackgroundColor3=color(name==selected and 'accent' or 'row');b.TextColor3=color(name==selected and 'bg' or 'text') end
     main.BackgroundTransparency=app.config.transparency/100
-    local lines={}
-    for i=math.max(1,#app.logs-13),#app.logs do table.insert(lines,app.logs[i]) end
-    logText.Text=table.concat(lines,'\n')
+    reconnectToggle.Text=app.config.autoReconnect and 'ON' or 'OFF'
+    autoStartToggle.Text=app.config.autoStart and 'ON' or 'OFF'
+    reconnectLabel.Text=app.config.autoReconnect and app.reconnect.status or 'OFF'
+    configLabel.Text=app.profiles.status..' / '..app.profiles.current..' / Auto: '..(app.profiles.auto or 'OFF')
+    savedLabel.Text=table.concat(app.profiles.names,', ')
+    for key,box in pairs(configInputs) do if not box:IsFocused() then box.Text=tostring(app.config[key]) end end
+    themeButton.Text=app.config.theme
+    if paintedTheme~=app.config.theme then
+        paintedTheme=app.config.theme
+        for _,entry in ipairs(skins) do entry[1][entry[2]]=color(entry[3]) end
+    end
 end
 local minimized=false
 local compact=false
@@ -518,7 +707,7 @@ local function layout()
     body.Position=UDim2.fromOffset(compact and 0 or 140,compact and 104 or 58)
     body.Size=compact and UDim2.new(1,0,1,-104) or UDim2.new(1,-140,1,-58)
     nav.Visible=not minimized;body.Visible=not minimized
-    for i,name in ipairs({'Draft','Settings','Logs'}) do
+    for i,name in ipairs({'Draft','Settings','Config'}) do
         local b=navButtons[name]
         b.Position=compact and UDim2.new((i-1)/3,5,0,4) or UDim2.fromOffset(8,12+(i-1)*46)
         b.Size=compact and UDim2.new(1/3,-10,0,36) or UDim2.new(1,-16,0,38)
@@ -563,4 +752,6 @@ bindCamera()
 local view=Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
 main.Position=UDim2.fromOffset(math.max(8,(view.X-main.Size.X.Offset)/2),math.max(8,(view.Y-main.Size.Y.Offset)/2))
 layout();render()
-log('Ready — press START. Right Shift / AD hides or shows UI.')
+setStatus('Ready — press START. Right Shift / AD hides or shows UI.')
+monitorConnection()
+if autoLoaded and app.config.autoStart then app.start() end
