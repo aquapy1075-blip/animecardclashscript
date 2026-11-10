@@ -82,21 +82,46 @@ local function waitFor(predicate, seconds)
     until os.clock()>=untilAt
     return false
 end
+local function loadingRejection(reason)
+    return type(reason)=='string'
+        and reason:lower():find('your data is still loading',1,true)~=nil
+end
 local function invoke(name, a, b)
-    check()
-    local version=app.version
-    local values=table.pack(pcall(function() return action:InvokeServer(name,a,b) end))
-    -- Stop during a yielding request must prevent subsequent mutations.
-    check()
-    if not values[1] then error(name..': '..tostring(values[2]),0) end
-    if values[2]==false then error(name..' rejected: '..tostring(values[3]),0) end
-    if type(values[2])=='table' and values[2].ok==false then
-        error(name..' rejected: '..tostring(values[2].reason or values[2].message),0)
-    end
-    if app.version==version then
-        for i=2,values.n do
-            local v=values[i]
-            if accept(v) or (type(v)=='table' and accept(v.state)) then break end
+    local loadingUntil=os.clock()+45
+    local retries=0
+    while true do
+        check()
+        local version=app.version
+        local values=table.pack(pcall(function() return action:InvokeServer(name,a,b) end))
+        -- Retry only explicit loading rejections, never uncertain transport errors.
+        check()
+        if not values[1] then error(name..': '..tostring(values[2]),0) end
+        local rejected=values[2]==false
+        local reason=values[3]
+        if type(values[2])=='table' and values[2].ok==false then
+            rejected=true
+            reason=values[2].reason or values[2].message
+        end
+        if rejected then
+            if not loadingRejection(reason) then
+                error(name..' rejected: '..tostring(reason),0)
+            end
+            local remaining=loadingUntil-os.clock()
+            if remaining<=0 then
+                error(name..': data still loading after 45s; press START to resync.',0)
+            end
+            retries=retries+1
+            local delay=math.min(2*retries,6,remaining)
+            log('Data loading — waiting '..string.format('%.1f',delay)..'s before '..name..' retry')
+            pause(delay)
+        else
+            if app.version==version then
+                for i=2,values.n do
+                    local v=values[i]
+                    if accept(v) or (type(v)=='table' and accept(v.state)) then break end
+                end
+            end
+            return
         end
     end
 end
@@ -155,7 +180,6 @@ local function fight(target)
             error('Post-fight State not confirmed. Press START to resync.',0)
         end
     end
-    if activeRun() then prepare() end
     return result
 end
 local function runLoop()
@@ -171,12 +195,13 @@ local function runLoop()
             error('Existing fight timed out.',0)
         end
     end
-    if activeRun() then prepare() end
+    local prepared=false
     while app.enabled do
         check()
         local run=activeRun()
         if not run then
             app.recovery={}; app.stage=nil; app.runId=nil
+            prepared=false
             log('Starting a new run')
             invoke('Start',{},nil)
             pause(app.config.delay)
@@ -186,8 +211,8 @@ local function runLoop()
         end
         if app.runId~=run.id then
             app.runId=run.id; app.recovery={}; app.stage=nextStage(run)
-            prepare()
         end
+        if not prepared then prepare();prepared=true end
         if activeRun() then
             local job=app.recovery[#app.recovery]
             local target=job and job.target or app.stage
@@ -208,6 +233,8 @@ local function runLoop()
                         log('Recovery: win '..n..' '..fallback..' fights, then retry '..target)
                     else log('Easy lost; retrying with refreshed team') end
                 end
+                -- Save fight progression before pack/team requests can fail.
+                prepare()
             else
                 app.recovery={}; app.runId=nil; app.stage=nil
                 log('Run ended; restarting')
