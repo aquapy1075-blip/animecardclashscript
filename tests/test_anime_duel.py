@@ -629,7 +629,7 @@ app.start('story');app.start('story');drain()
 assert(#storyCalls==3 and app.story.requests==3)
 for i,c in ipairs(storyCalls)do
  assert(c.id=='toy_kingdom_boss' and c.difficulty=='Nightmare')
- if i>1 then assert(c.at-storyCalls[i-1].at>=5,'request interval')end
+ if i>1 then assert(c.at-storyCalls[i-1].at>=10,'request interval')end
 end
 assert(not app.story.worker and app.story.status=='Stopped',app.story.status)
 assert(#calls==0,'Story mode must never invoke DraftAction')
@@ -687,7 +687,66 @@ app.config.story_purple_town=true;app.config.storyDifficulty='Medium';app.config
 app.config.mode='story';assert(app.setAutoProfile('Bosses'))
 app.destroy();loadScript();app=env.AnimeDuelScript
 assert(app.config.mode=='story' and app.config.story_purple_town)
-assert(app.config.storyDifficulty=='Medium' and app.config.storyInterval==7)
+assert(app.config.storyDifficulty=='Medium' and app.config.storyInterval==10)
 assert(not app.story.worker,'loading settings does not start unless opted in')
 app.destroy()
+''')
+
+cooldown_mock=story_mock.replace("return false,'A fight is already running'", "return {ok=false,reason='Ready in 9m 53s'}")
+run_case('observed 9m 53s response sets a 593-second cooldown and prevents early requests',mock+cooldown_mock,r'''
+local app=env.AnimeDuelScript
+app.start('story')
+schedule(1,function()
+ local deadline=app.story.cooldowns['toy_kingdom_boss:Nightmare']
+ assert(deadline==593,'exact parsed cooldown')
+end)
+schedule(592,function()assert(#storyCalls==1,'no requests before server cooldown expires')end)
+drain()
+assert(#storyCalls==3 and storyCalls[2].at>=593)
+assert(storyCalls[3].at-storyCalls[2].at>=10,'10 second cadence after cooldown')
+app.destroy()
+''')
+
+run_case('a cooling boss is skipped while other selected bosses are attempted',mock+cooldown_mock,r'''
+local app=env.AnimeDuelScript
+app.config.story_purple_town=true
+app.start('story');drain()
+assert(storyCalls[1].id=='purple_town_boss')
+assert(storyCalls[2].id=='toy_kingdom_boss' and storyCalls[3].id=='toy_kingdom_boss')
+assert(storyCalls[2].at>=10 and storyCalls[3].at>=20)
+app.destroy()
+''')
+
+run_case('cooldown is keyed by both boss and difficulty',mock+cooldown_mock,r'''
+local app=env.AnimeDuelScript
+app.start('story')
+schedule(2,function()app.config.storyDifficulty='Easy'end)
+schedule(12,function()
+ assert(#storyCalls==2 and storyCalls[2].difficulty=='Easy')
+ assert(app.story.cooldowns['toy_kingdom_boss:Nightmare']==593)
+ app.stop('story')
+end)
+drain();app.destroy()
+''')
+
+for reason,seconds in [('Ready in 59s',59),('Ready in 10m',600),('Ready in 1h 2m 3s',3723),('Ready in 0s',0),('Ready in 9m53s',593),('Loading 9m 53s',None),('Ready in soon',None),('Ready in 9m nonsense',None)]:
+    fixture=story_mock.replace("return false,'A fight is already running'", "return {ok=false,reason="+repr(reason)+"}")
+    expected='nil' if seconds is None else str(seconds)
+    run_case('cooldown parsing: '+reason,mock+fixture,r'''
+local app=env.AnimeDuelScript
+app.start('story')
+schedule(.2,function()
+ assert(app.story.cooldowns['toy_kingdom_boss:Nightmare']==EXPECTED,'cooldown parsing')
+ app.stop('story')
+end)
+drain();app.destroy()
+'''.replace('EXPECTED',expected))
+
+run_case('Stop and Start preserve the learned cooldown in the same session',mock+cooldown_mock,r'''
+local app=env.AnimeDuelScript
+app.start('story')
+schedule(2,function()app.stop('story')end)
+schedule(3,function()app.start('story')end)
+schedule(5,function()assert(#storyCalls==1);assert(app.story.cooldowns['toy_kingdom_boss:Nightmare']==593);app.stop('story')end)
+drain();app.destroy()
 ''')
