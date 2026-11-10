@@ -609,3 +609,85 @@ if 'MODE'=='draft' then assert(#climbPicks==2,'Climb still replaces and skips')
 else assert(fightIndex==15,'Draft still progresses') end
 app.destroy()
 '''.replace('CAPTION',caption).replace('MODE',mode))
+
+story_mock=r'''
+local storyCalls={}
+local storyRemote={}
+function storyRemote:InvokeServer(...)
+ local args=table.pack(...)
+ assert(args.n==2,'StoryFight must receive exactly stage ID and difficulty')
+ table.insert(storyCalls,{id=args[1],difficulty=args[2],at=now})
+ if #storyCalls==3 then schedule(.1,function()env.AnimeDuelScript.stop('story')end)end
+ if #storyCalls==1 then return false,'A fight is already running' end
+ return true
+end
+remotes.FindFirstChild=function(_,name)assert(name=='StoryFight');return storyRemote end
+'''
+run_case('StoryFight uses captured arguments, spaces requests and continues after busy rejection',mock+story_mock,r'''
+local app=env.AnimeDuelScript
+app.start('story');app.start('story');drain()
+assert(#storyCalls==3 and app.story.requests==3)
+for i,c in ipairs(storyCalls)do
+ assert(c.id=='toy_kingdom_boss' and c.difficulty=='Nightmare')
+ if i>1 then assert(c.at-storyCalls[i-1].at>=5,'request interval')end
+end
+assert(not app.story.worker and app.story.status=='Stopped',app.story.status)
+assert(#calls==0,'Story mode must never invoke DraftAction')
+app.destroy()
+''')
+
+rotation=story_mock.replace('#storyCalls==3','#storyCalls==6')
+run_case('selected Story bosses rotate through the five IDs from StoryConfig',mock+rotation,r'''
+local app=env.AnimeDuelScript
+for _,key in ipairs({'purple_forest','android_games','hollow_world','purple_town','toy_kingdom'})do app.config['story_'..key]=true end
+app.config.storyDifficulty='Hard';app.config.storyInterval=3
+app.start('story');drain()
+local expected={'purple_forest_boss','android_games_boss','hollow_world_boss','purple_town_boss','toy_kingdom_boss','purple_forest_boss'}
+assert(#storyCalls==#expected)
+for i,c in ipairs(storyCalls)do assert(c.id==expected[i] and c.difficulty=='Hard')end
+app.destroy()
+''')
+
+run_case('Story mode with no selected bosses sends no request',mock+story_mock,r'''
+local app=env.AnimeDuelScript
+app.config.story_toy_kingdom=false
+app.start('story')
+schedule(2,function()assert(app.story.status=='Select at least one Story boss');app.stop('story')end)
+drain();assert(#storyCalls==0)
+app.destroy()
+''')
+
+transport=story_mock.replace("if #storyCalls==1 then return false,'A fight is already running' end", "error('Response lost')")
+run_case('uncertain StoryFight transport errors stop without repeating a mutation',mock+transport,r'''
+local app=env.AnimeDuelScript
+app.start('story');drain()
+assert(#storyCalls==1 and not app.story.worker)
+assert(app.story.status:find('response lost',1,true),app.story.status)
+app.destroy()
+''')
+
+run_case('STOP BOSS leaves both Draft and Climb workers running',concurrent+story_mock,r'''
+local app=env.AnimeDuelScript
+app.start('draft');app.start('climb');app.start('story')
+schedule(.2,function()
+ for _,obj in ipairs(objects)do
+  if obj.ClassName=='TextButton' and obj.Text=='STOP BOSS' then obj.Activated:Fire();break end
+ end
+ assert(not app.story.enabled and app.enabled and app.climb.enabled,'mode isolation')
+end)
+drain()
+assert(fightIndex==15 and #climbPicks==2,'Draft and Climb keep progressing')
+assert(#storyCalls==1,'Story stops further start attempts')
+app.destroy()
+''')
+
+run_case('Story selections, difficulty and request interval persist in profiles',mock+file_mock,r'''
+local app=env.AnimeDuelScript
+app.config.story_purple_town=true;app.config.storyDifficulty='Medium';app.config.storyInterval=7
+app.config.mode='story';assert(app.setAutoProfile('Bosses'))
+app.destroy();loadScript();app=env.AnimeDuelScript
+assert(app.config.mode=='story' and app.config.story_purple_town)
+assert(app.config.storyDifficulty=='Medium' and app.config.storyInterval==7)
+assert(not app.story.worker,'loading settings does not start unless opted in')
+app.destroy()
+''')
