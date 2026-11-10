@@ -15,8 +15,14 @@ local previous = env.AnimeDuelScript
 if type(previous) == 'table' and type(previous.destroy) == 'function' then
     if previous.worker or (previous.climb and previous.climb.worker) then
         previous.stop()
-        previous.status='Previous worker is stopping; run again when stopped.'
-        return
+        local deadline=os.clock()+10
+        while previous.worker or (previous.climb and previous.climb.worker) do
+            if os.clock()>=deadline then
+                previous.status='Old request is still pending; wait for it to finish before upgrading.'
+                return
+            end
+            task.wait(.1)
+        end
     end
     previous.destroy()
 end
@@ -30,7 +36,7 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='independent-controls-v2',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft'}}
@@ -753,7 +759,7 @@ skin(main,'BackgroundColor3','bg')
 local header=make('Frame',main,{Size=UDim2.new(1,0,0,58),BackgroundTransparency=1})
 local title=text(header,'ANIME DUEL SCRIPT',true)
 title.TextSize=17;title.Position=UDim2.fromOffset(18,11);title.Size=UDim2.new(1,-110,0,23)
-local subtitle=text(header,'DRAFT CONTROL CENTER',false)
+local subtitle=text(header,'INDEPENDENT CONTROLS · v2',false)
 subtitle.TextSize=10;subtitle.Position=UDim2.fromOffset(19,35);subtitle.Size=UDim2.new(1,-110,0,16)
 local minimize=button(header,'—',UDim2.fromOffset(30,28));minimize.Position=UDim2.new(1,-76,0,15)
 local hide=button(header,'×',UDim2.fromOffset(30,28));hide.Position=UDim2.new(1,-40,0,15)
@@ -792,7 +798,7 @@ local function status(label)
 end
 local controls=row('Draft','Automation',69)
 local start=button(controls,'START',UDim2.new(.5,-18,0,30));start.Position=UDim2.fromOffset(12,31)
-local stop=button(controls,'STOP',UDim2.new(.5,-18,0,30));stop.Position=UDim2.new(.5,6,0,31)
+local stop=button(controls,'STOP DRAFT',UDim2.new(.5,-18,0,30));stop.Position=UDim2.new(.5,6,0,31)
 track(start.Activated,function() app.start('draft') end);track(stop.Activated,function() app.stop('draft') end)
 local statusLabel=status('Status')
 statusLabel.Parent.Size=UDim2.new(1,-2,0,112)
@@ -807,7 +813,7 @@ local hintText=text(hint,'Easy → Medium → Hard → Boss 1 / 2 / 3\nAfter eac
 hintText.Position=UDim2.fromOffset(12,29);hintText.Size=UDim2.new(1,-24,0,40);hintText.TextWrapped=true
 local climbControls=row('Climb','Auto Draft Climb',69)
 local climbStart=button(climbControls,'START CLIMB',UDim2.new(.5,-18,0,30));climbStart.Position=UDim2.fromOffset(12,31)
-local climbStop=button(climbControls,'STOP',UDim2.new(.5,-18,0,30));climbStop.Position=UDim2.new(.5,6,0,31)
+local climbStop=button(climbControls,'STOP CLIMB',UDim2.new(.5,-18,0,30));climbStop.Position=UDim2.new(.5,6,0,31)
 track(climbStart.Activated,function() app.start('climb') end)
 track(climbStop.Activated,function() app.stop('climb') end)
 local function climbStatusRow(label)
