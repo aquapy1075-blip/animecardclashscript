@@ -990,8 +990,7 @@ end,function(value) setFlag('AutoSkills',internalSet(skillIds,value)) end,'Skill
 addDropdown('Skill Tree','Buy mode','SkillPurchaseMode',{'Purchase','PurchaseMax'})
 addToggle('Skill Tree','Auto prerequisites (spends coins)','SkillPrerequisites')
 addInput('Skill Tree','Request interval (1–10s)','SkillInterval','2')
-addAction('Skill Tree','Start selected skills','START',ctx.startSkills)
-addAction('Skill Tree','Stop skill upgrades','STOP',ctx.stopSkills)
+addToggle('Skill Tree','Auto Skill Tree','SkillRunning')
 local skillLive=addStatus('Skill Tree','Upgrade status','OFF')
 section('Skill Tree','Branches from SkillDefinitions')
 for _,id in ipairs(Skills.Order) do
@@ -1329,7 +1328,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -1370,7 +1369,7 @@ local battleEvent=net:WaitForChild('BattleEvent',15)
 assert(battleEvent and battleEvent:IsA('RemoteEvent'),'BattleEvent RemoteEvent missing')
 state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
     local attempt=state.attempt
-    if not attempt or not state.enabled then return end
+    if not attempt or not state.alive then return end
     Combat.event(attempt,event)
     if type(event)=='table' and event.type=='BattleEnd' and (not attempt.battleId or event.battleId==attempt.battleId) then
         log('BattleEnd',{battleId=event.battleId,lane=event.lane,difficulty=event.difficulty,won=event.won,matched=Combat.match(attempt,event)})
@@ -1405,7 +1404,7 @@ local function beginRun()
                 end))
                 state.pending=false;attempt.returned=true;attempt.response=response
                 log('StartResponse',response)
-                if active() then Combat.accept(attempt,response,item) end
+                if state.alive and state.attempt==attempt then Combat.accept(attempt,response,item) end
             end)
             local startDeadline=os.clock()+30
             while active() and state.pending and os.clock()<startDeadline do task.wait(.1) end
@@ -1456,16 +1455,6 @@ local function exportCapture()
     if type(setclipboard)=='function' then setclipboard(data);message('Battle capture copied.','success')
     elseif type(writefile)=='function' then writefile('OriginStory-capture.json',data);message('Saved OriginStory-capture.json','success')
     else print(data);message('Battle capture printed in console.') end
-end
-local function setFlag(key,value)
-    if key=='StoryRunning' then
-        if value then beginRun() else stopRun('Story stopped; native fight continues.') end
-        flags.StoryRunning=state.enabled
-    elseif key=='HLRunning' then
-        if value then startHL() else stopHL() end
-        flags.HLRunning=state.hlEnabled
-    else flags[key]=value end
-    if ui then ui.Repaint() end
 end
 state.skillStatus='OFF';state.skillEnabled=false;state.skillPending=false;state.skillRunId=0
 local skillRemote=net:FindFirstChild('SkillAction')
@@ -1641,6 +1630,30 @@ local function startHL()
     end)
 end
 
+local function syncRunFlags()
+    flags.StoryRunning=state.enabled==true
+    flags.SkillRunning=state.skillEnabled==true
+    flags.HLRunning=state.hlEnabled==true
+end
+local function applyRunFlags()
+    local storyOn,skillOn,hlOn=flags.StoryRunning,flags.SkillRunning,flags.HLRunning
+    if storyOn then beginRun() end
+    if skillOn then startSkills() end
+    if hlOn then startHL() end
+    syncRunFlags()
+end
+local function setFlag(key,value)
+    if state.profileLoading then message('Profile is loading; wait for mode transitions.','warning');return end
+    if key=='StoryRunning' then
+        if value then beginRun() else stopRun('Story stopped; native fight continues.') end
+    elseif key=='SkillRunning' then
+        if value then startSkills() else stopSkills() end
+    elseif key=='HLRunning' then
+        if value then startHL() else stopHL() end
+    else flags[key]=value end
+    syncRunFlags()
+    if ui then ui.Repaint() end
+end
 local profile={currentProfile='Default',autoProfile='',storedNames={},status='Ready',revision=0}
 local profileDir='OriginStory'
 local canFiles=type(readfile)=='function' and type(writefile)=='function' and type(isfile)=='function' and type(makefolder)=='function'
@@ -1652,13 +1665,28 @@ local function path(name) return profileDir..'/'..name..'.json' end
 local function writeIndex() writefile(profileDir..'/index.json',HttpService:JSONEncode(index)) end
 local function profileMessage(text,kind) profile.status=text;message(text,kind) end
 local function loadProfile(name,quiet)
-    if state.enabled or state.pending or state.skillEnabled or state.skillPending or state.hlEnabled or state.hlPending or state.hlBusy then profileMessage('Stop Story and Auto Skill before loading a profile.','warning');return false end
+    if state.profileLoading then profileMessage('A profile is already loading.','warning');return false end
     if not canFiles or not validName(name) then profileMessage('File APIs unavailable or invalid profile name.','warning');return false end
     local ok,data=pcall(function() return HttpService:JSONDecode(readfile(path(name))) end)
     if not ok or type(data)~='table' or data.version~=1 or type(data.flags)~='table' then
         profileMessage('Cannot load profile: '..tostring(name),'error');return false
     end
     local nextFlags=data.flags
+    state.profileLoading=true
+    if state.enabled then stopRun('Loading profile; stopping Story scheduling.') end
+    if state.skillEnabled then stopSkills() end
+    if state.hlEnabled then stopHL() end
+    local deadline=os.clock()+30
+    while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy
+        or (nextFlags.StoryRunning==true and state.attempt and state.attempt.started and not state.attempt.ended)) do
+        profile.status='Waiting for current request / battle before loading'
+        if os.clock()>deadline then
+            state.profileLoading=false;syncRunFlags()
+            profileMessage('Still waiting for current battle/request; load again when it ends.','warning');return false
+        end
+        task.wait(.1)
+    end
+    if not state.alive then state.profileLoading=false;return false end
     local maps,cards,modes={},{},{}
     for _,world in ipairs(Story.Worlds) do
         if type(nextFlags.StoryMaps)=='table' and nextFlags.StoryMaps[world.map]==true then maps[world.map]=true end
@@ -1674,6 +1702,9 @@ local function loadProfile(name,quiet)
     flags.StoryMaps=maps;flags.StoryCards=cards;flags.StoryModes=modes
     flags.StoryRepeat=nextFlags.StoryRepeat==true
     flags.HLRepeat=nextFlags.HLRepeat==true
+    flags.StoryRunning=nextFlags.StoryRunning==true
+    flags.SkillRunning=nextFlags.SkillRunning==true
+    flags.HLRunning=nextFlags.HLRunning==true
     flags.AutoSkills={}
     for _,id in ipairs(Skills.Order) do if type(nextFlags.AutoSkills)=='table' and nextFlags.AutoSkills[id]==true then flags.AutoSkills[id]=true end end
     flags.SkillPurchaseMode=nextFlags.SkillPurchaseMode=='PurchaseMax' and 'PurchaseMax' or 'Purchase'
@@ -1683,11 +1714,14 @@ local function loadProfile(name,quiet)
         if type(key)=='string' and key:match('^AO_UI_') and (type(value)=='string' or type(value)=='number') then flags[key]=value end
     end
     profile.currentProfile=name;profile.status='Loaded: '..name
-    if ui then ui.Repaint() end
+    state.profileLoading=false
+    if ui then applyRunFlags();ui.Repaint() else state.restoreModes=true end
     if not quiet then profileMessage(profile.status,'success') end
     return true
 end
 local function saveProfile(name)
+    if state.profileLoading then profileMessage('Wait for profile load to finish.','warning');return end
+    syncRunFlags()
     if not canFiles then profileMessage('Executor file APIs unavailable.','warning');return end
     if not validName(name) then profileMessage('Use 1–48 letters, numbers, spaces, _ or -.','warning');return end
     local ok=pcall(function()
@@ -1741,6 +1775,7 @@ ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=
     exportCapture=exportCapture,
 })
 task.spawn(function()
-    while state.alive do flags.StoryRunning=state.enabled;flags.HLRunning=state.hlEnabled;ui.Repaint();ui.Refresh();task.wait(.3) end
+    while state.alive do if not state.profileLoading and not state.restoreModes then syncRunFlags() end;ui.Repaint();ui.Refresh();task.wait(.3) end
 end)
 message('Ready: server BattleEnd results matched by battleId.')
+if state.restoreModes then state.restoreModes=false;applyRunFlags();ui.Repaint() end
