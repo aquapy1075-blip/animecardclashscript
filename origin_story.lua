@@ -46,66 +46,42 @@ return Story
 
 end)()
 local Combat=(function()
--- Stable dual-screen UI plus verified StartEncounter admission.
-local Combat = {StableSeconds=1.5,RewardSeconds=3}
-function Combat.sample(player)
-    local gui=player:FindFirstChild('PlayerGui')
-    local eye=gui and gui:FindFirstChild('BattleEyeGui')
-    local first=eye and eye:FindFirstChild('ShowBattle')
-    local second=eye and eye:FindFirstChild('ShowBattle2')
-    local rewards=gui and gui:FindFirstChild('BattleRewards')
-    if not first or not second then return nil end
-    local a,b=first.Visible==true,second.Visible==true
-    return {a=a,b=b,count=(a and 1 or 0)+(b and 1 or 0),reward=rewards and rewards.Enabled==true or false,rewardKnown=rewards~=nil,rewardObject=rewards}
+-- Server protocol verified from captured StartResponse and BattleEnd messages.
+local Combat = {}
+function Combat.new()
+    return {started=false,ended=false,results={},order={}}
 end
-function Combat.new(baseline,sample)
-    return {baseline=baseline,started=false,ended=false,rewardArmed=not sample.reward,rewardSeen=false,rewardObject=sample.rewardObject}
+function Combat.match(attempt,event)
+    if type(event)~='table' or event.type~='BattleEnd' or type(event.won)~='boolean' then return false end
+    if not attempt.battleId or event.battleId~=attempt.battleId then return false end
+    if event.lane~=nil and attempt.lane~=nil and event.lane~=attempt.lane then return false end
+    if event.difficulty~=nil and attempt.difficulty~=nil and event.difficulty~=attempt.difficulty then return false end
+    return true
 end
--- This shape is verified from the user's capture: pcall flag, admission flag, nil, snapshot.
+function Combat.event(attempt,event)
+    if type(event)~='table' or event.type~='BattleEnd' or type(event.battleId)~='string' or type(event.won)~='boolean' then return end
+    if attempt.battleId then
+        if Combat.match(attempt,event) and not attempt.ended then
+            attempt.ended=true;attempt.won=event.won
+        end
+    else
+        -- A fast result may arrive before InvokeServer returns its admission snapshot.
+        if not attempt.results[event.battleId] then attempt.order[#attempt.order+1]=event.battleId end
+        attempt.results[event.battleId]=event
+        if #attempt.order>32 then attempt.results[table.remove(attempt.order,1)]=nil end
+    end
+end
 function Combat.accept(attempt,response,item)
     local snapshot=response[4]
     if response[1]~=true or response[2]~=true or type(snapshot)~='table' then return false end
     local portrait=snapshot.enemy and snapshot.enemy.portrait
     if snapshot.active~=true or snapshot.fresh~=true or type(snapshot.battleId)~='string'
-        or not portrait or portrait.cardId~=item.cardId then return false end
-    attempt.serverAccepted=true;attempt.started=true;attempt.battleId=snapshot.battleId;attempt.lane=snapshot.lane
+        or type(portrait)~='table' or portrait.cardId~=item.cardId then return false end
+    attempt.started=true;attempt.battleId=snapshot.battleId;attempt.lane=snapshot.lane;attempt.difficulty=item.difficulty
+    local buffered=attempt.results[attempt.battleId]
+    if buffered then Combat.event(attempt,buffered) end
+    attempt.results={};attempt.order={}
     return true
-end
-function Combat.step(attempt,sample,now)
-    if not sample then
-        attempt.startAt=nil;attempt.endAt=nil;attempt.ended=false
-        return
-    end
-    if sample.rewardObject~=attempt.rewardObject then
-        attempt.rewardObject=sample.rewardObject
-        if sample.rewardKnown then attempt.rewardArmed=true end
-    end
-    if not sample.reward then attempt.rewardArmed=true end
-    -- Keep new popup evidence even when rewards appear before the eyes hide.
-    if attempt.rewardArmed and sample.reward and sample.rewardKnown then attempt.rewardAt=now end
-    local occupied=sample.count>attempt.baseline
-    if occupied then attempt.occupiedSeen=true end
-    if not attempt.started then
-        if occupied then
-            attempt.startAt=attempt.startAt or now
-            if now-attempt.startAt>=Combat.StableSeconds then attempt.started=true end
-        else attempt.startAt=nil end
-        return
-    end
-    if occupied then
-        attempt.endAt=nil;attempt.ended=false
-    elseif attempt.occupiedSeen or (attempt.serverAccepted and attempt.rewardAt) then
-        -- Accepted-but-not-rendered is not an ended fight. Short fights can be
-        -- confirmed by their new reward popup even if no eye occupied a full frame.
-        attempt.endAt=attempt.endAt or now
-        if now-attempt.endAt>=Combat.StableSeconds then attempt.ended=true end
-    end
-    if attempt.endAt and attempt.rewardAt then
-        local delta=attempt.rewardAt-attempt.endAt
-        if delta>=-Combat.RewardSeconds and delta<=Combat.StableSeconds+Combat.RewardSeconds then
-            attempt.rewardSeen=true
-        end
-    end
 end
 return Combat
 
@@ -881,8 +857,8 @@ preview.LayoutOrder=orderCounter;preview.Size=UDim2.new(1,-4,0,40)
 preview.TextWrapped=true;preview.TextTruncate=Enum.TextTruncate.None
 preview.TextYAlignment=Enum.TextYAlignment.Top
 section('Story','Combat detection')
-addStatus('Story','Combat signal','Stable baseline → occupied → baseline')
-addStatus('Story','Victory signal','BattleRewards.Enabled (3s window)')
+addStatus('Story','Combat signal','Server battleId / lane')
+addStatus('Story','Victory signal','BattleEnd.won (matching battleId)')
 addAction('Story','Export received battle payloads','COPY CAPTURE',ctx.exportCapture)
 section('Config','Profiles')
 local profileName=profile.currentProfile
@@ -1196,15 +1172,14 @@ local function stopRun(reason)
     state.enabled=false;state.runId=state.runId+1
     if reason then message(reason,'warning') end
 end
-state.connections[#state.connections+1]=game:GetService('RunService').Heartbeat:Connect(function()
+local battleEvent=net:WaitForChild('BattleEvent',15)
+assert(battleEvent and battleEvent:IsA('RemoteEvent'),'BattleEvent RemoteEvent missing')
+state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
     local attempt=state.attempt
-    if not attempt then return end
-    local sample=Combat.sample(player)
-    Combat.step(attempt,sample,os.clock())
-    local signature=sample and (tostring(sample.a)..'/'..tostring(sample.b)..'/'..tostring(sample.reward)..'/'..tostring(attempt.started)..'/'..tostring(attempt.ended)) or 'missing'
-    if signature~=attempt.lastLogged then
-        attempt.lastLogged=signature
-        log('CombatUI',{battleId=attempt.battleId,baseline=attempt.baseline,showBattle=sample and sample.a,showBattle2=sample and sample.b,rewardsEnabled=sample and sample.reward,started=attempt.started,ended=attempt.ended,rewardSeen=attempt.rewardSeen})
+    if not attempt or not state.enabled then return end
+    Combat.event(attempt,event)
+    if type(event)=='table' and event.type=='BattleEnd' then
+        log('BattleEnd',{battleId=event.battleId,lane=event.lane,difficulty=event.difficulty,won=event.won,matched=Combat.match(attempt,event)})
     end
 end)
 local function beginRun()
@@ -1223,32 +1198,10 @@ local function beginRun()
         local i=1
         while active() and i<=#queue do
             local item=queue[i]
-            state.index=i;state.current=item;state.attempt=nil
-            -- Snapshot a stable baseline, allowing a concurrent Inf fight in the other screen.
-            local baseline,stableAt,signature,unknownAt
-            while active() do
-                local sample=Combat.sample(player)
-                if not sample then
-                    stableAt=nil;signature=nil;unknownAt=unknownAt or os.clock()
-                    state.status='Waiting for BattleEyeGui'
-                    if os.clock()-unknownAt>15 then stopRun('Combat UI missing; stopped.');break end
-                elseif sample.count==2 then
-                    stableAt=nil;signature=nil;unknownAt=nil
-                    state.status='Both screens busy; waiting for a free screen'
-                else
-                    unknownAt=nil
-                    local nextSignature=(sample.a and '1' or '0')..(sample.b and '1' or '0')
-                    if nextSignature~=signature then signature=nextSignature;stableAt=os.clock() end
-                    state.status='Checking stable pre-battle screen state'
-                    if os.clock()-stableAt>=Combat.StableSeconds then baseline=sample;break end
-                end
-                task.wait(.1)
-            end
-            if not active() then break end
-            local attempt=Combat.new(baseline.count,baseline)
-            state.attempt=attempt;state.awaiting=true;state.pending=true
-            log('StartRequest',{index=i,cardId=item.cardId,difficulty=item.difficulty,baseline=baseline.count,showBattle=baseline.a,showBattle2=baseline.b,rewardsEnabled=baseline.reward})
-            message('Starting '..item.cardId..' / '..item.difficulty..' (screens before: '..baseline.count..')')
+            local attempt=Combat.new()
+            state.index=i;state.current=item;state.attempt=attempt;state.awaiting=true;state.pending=true
+            log('StartRequest',{index=i,cardId=item.cardId,difficulty=item.difficulty})
+            message('Starting '..item.cardId..' / '..item.difficulty)
             task.spawn(function()
                 local response=table.pack(pcall(function()
                     return action:InvokeServer('StartEncounter',{difficulty=item.difficulty,cardId=item.cardId})
@@ -1257,60 +1210,36 @@ local function beginRun()
                 log('StartResponse',response)
                 if active() then Combat.accept(attempt,response,item) end
             end)
-            local startDeadline=os.clock()+20
-            while active() and not attempt.started and os.clock()<startDeadline do task.wait(.1) end
+            local startDeadline=os.clock()+30
+            while active() and state.pending and os.clock()<startDeadline do task.wait(.1) end
             if not active() then break end
+            if state.pending then stopRun('Start request still pending; stopped without sending another request.');break end
             if not attempt.started then
-                if state.pending then stopRun('StartEncounter still pending; stopped.');break end
-                if not Combat.sample(player) then stopRun('Combat UI missing; stopped.');break end
-                if attempt.response and not attempt.response[1] then stopRun('Request failed; stopped.');break end
-                state.awaiting=false;state.attempt=nil
-                message('No stable combat start; retrying '..item.cardId..' / '..item.difficulty,'warning')
-                if not waitSeconds(3) then break end
-            else
-                local endDeadline=os.clock()+900
-                local unknownAt
-                state.status='In combat: '..item.cardId..' / '..item.difficulty
-                while active() and not attempt.ended do
-                    if not Combat.sample(player) then
-                        unknownAt=unknownAt or os.clock()
-                        if os.clock()-unknownAt>15 then stopRun('Combat UI missing; stopped.');break end
-                    else unknownAt=nil end
-                    if os.clock()>endDeadline then stopRun('Battle timeout; stopped.');break end
-                    task.wait(.1)
-                end
-                if not active() then break end
-                state.status='Combat ended; checking BattleRewards'
-                -- Wait the full reward window after confirmed end; retain earlier new popup evidence.
-                local rewardDeadline=os.clock()+Combat.RewardSeconds
-                while active() and os.clock()<rewardDeadline do task.wait(.1) end
-                if not active() then break end
-                local sample=Combat.sample(player)
-                if not sample then stopRun('Combat UI missing during result check; stopped.');break end
-                if not attempt.ended or not attempt.endAt then stopRun('Combat resumed during result check; stopped.');break end
-                -- Calls cannot be cancelled: never overlap them with the following request.
-                local pendingDeadline=os.clock()+15
-                while active() and state.pending and os.clock()<pendingDeadline do task.wait(.1) end
-                if not active() then break end
-                if state.pending then stopRun('Request still pending after combat; stopped.');break end
-                if not sample.rewardKnown then stopRun('BattleRewards missing; cannot determine result.');break end
-                local won=attempt.rewardSeen
-                log('BattleResult',{battleId=attempt.battleId,index=i,cardId=item.cardId,difficulty=item.difficulty,won=won,rewardSeen=attempt.rewardSeen,rewardAt=attempt.rewardAt,endAt=attempt.endAt,serverAccepted=attempt.serverAccepted})
-                state.awaiting=false;state.attempt=nil
-                if won then
-                    message('WIN: '..item.cardId..' / '..item.difficulty,'success')
-                    i=i+1
-                    if i>#queue and flags.StoryRepeat then i=1 end
-                else
-                    message('No new BattleRewards in 3 seconds; retrying '..item.cardId..' / '..item.difficulty,'warning')
-                end
-                if not waitSeconds(won and 1 or 3) then break end
+                -- Unknown admission is not a loss. Do not repeatedly start an untracked fight.
+                state.attempt=nil;state.awaiting=false
+                stopRun('Server did not return a verified Story battle ID; see COPY CAPTURE.');break
             end
+            log('StoryAdmitted',{battleId=attempt.battleId,lane=attempt.lane,cardId=item.cardId,difficulty=item.difficulty})
+            state.status='Waiting for BattleEnd: '..item.cardId..' / '..item.difficulty
+            local endDeadline=os.clock()+900
+            while active() and not attempt.ended do
+                if os.clock()>endDeadline then stopRun('No matching BattleEnd after 15 minutes; stopped, result unknown.');break end
+                task.wait(.1)
+            end
+            if not active() then break end
+            local won=attempt.won
+            log('BattleResult',{battleId=attempt.battleId,lane=attempt.lane,index=i,cardId=item.cardId,difficulty=item.difficulty,won=won})
+            state.awaiting=false;state.attempt=nil
+            if won then
+                message('WIN: '..item.cardId..' / '..item.difficulty,'success')
+                i=i+1
+                if i>#queue and flags.StoryRepeat then i=1 end
+            else
+                message('LOSS: retrying '..item.cardId..' / '..item.difficulty,'warning')
+            end
+            if not waitSeconds(won and 1 or 3) then break end
         end
-        if active() then
-            state.enabled=false;state.attempt=nil
-            message('Selected story queue won and completed.','success')
-        end
+        if active() then state.enabled=false;state.attempt=nil;message('Selected story queue won and completed.','success') end
     end)
 end
 state.stop=function()
@@ -1424,4 +1353,4 @@ ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=
 task.spawn(function()
     while state.alive do ui.Repaint();ui.Refresh();task.wait(.3) end
 end)
-message('Ready: stable dual-screen combat + BattleRewards win detection.')
+message('Ready: server BattleEnd results matched by battleId.')
