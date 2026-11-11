@@ -1,44 +1,36 @@
-# Origin Story (draft)
+# Origin Story
 
-UI adapted from `anime_origin_ui.lua`, upstream blob `543f7f2b12f690f6b6592dcf10d805807fe2c29b`. The standalone file embeds the adapted UI and adds searchable multi-select controls. Existing gameplay scripts and upstream UI are unchanged.
+Standalone Story UI adapted from anime_origin_ui.lua (upstream blob 543f7f2b12f690f6b6592dcf10d805807fe2c29b), with searchable multi-dropdowns.
 
-## Current limitation
-
-**Fully automatic progression is not implemented for the live game yet.** The uploaded place exposes BattleState/BattleEvent remotes but does not contain their server handlers or a verified completion payload. This draft starts encounters using the supplied StartEncounter request, then waits for manual confirmation or a separately configured verified adapter. It does not guess completion based on elapsed time, report victories to the server, turn on the game's combat AUTO, teleport between maps, or bypass unlock conditions.
-
-## Try the draft
+## Load
 
 ```lua
 loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/codex/origin-story-ui-draft/origin_story.lua"))()
 ```
 
-Requires a Roblox client executor supporting loadstring and game:HttpGet for this loader. The standalone script itself does not download more code.
+Choose Maps and Mob / Boss, then choose independent difficulties for each selected target. Easy is selected initially; deselect it if unwanted. PREVIEW displays the exact queue. START uses the supplied StartEncounter request. Enable the native game's combat AUTO yourself where needed.
 
-1. Story → Maps: choose one or more maps.
-2. Mob / Boss: choose one or more encounters.
-3. Each selected target on a selected map reveals its own multi-select difficulty control; Easy is selected initially. Deselect Easy if unwanted.
-4. PREVIEW lists the exact order. Maps follow story order; targets follow route order within a map; difficulties follow Easy, Medium, Hard, Impossible, Cosmic. All selected difficulties for one target run before moving to the next target.
-5. START sends the first request. Enable the game's combat AUTO yourself if needed.
-6. Until the adapter is implemented, click CONFIRM WIN only after that fight actually ends in victory. CONFIRM LOSS stops the run. These buttons advance/stop the local queue only.
-7. STOP stops scheduling; the current native battle continues. After it ends, CLEAR BATTLE allows a fresh run.
-8. Repeat whole queue is off initially. Losses, explicit start rejection, request errors and a 15-minute result timeout stop the run.
+Order: story maps, then route encounter order within each map, then Easy / Medium / Hard / Impossible / Cosmic within each target. All selected difficulties of one target run before the next target. Selections are snapshotted at START. Repeat whole queue defaults OFF, so the run stops after one pass.
 
-Selections are session-only. Queue selections are snapshotted at START; edits apply to the next run. Repeat applies to that same queue. Right Shift or the mobile AO button hides/shows the UI.
+## Combat detection and retry
 
-## Capture the missing protocol
+Uses the user supplied signal in LocalPlayer.PlayerGui.BattleEyeGui:
+- ShowBattle.Visible OR ShowBattle2.Visible true means combat.
+- Both false continuously for one second means combat ended.
+- Missing either object is unknown, not combat ended; missing UI for 15 seconds stops the run.
+- Existing combat must end before any new request.
+- Observe visibility concurrently with InvokeServer so a yielding call does not hide combat transitions.
+- After requesting an encounter, wait up to 12 seconds for combat.
+- If no combat starts and the request has returned, go back one entry in the selected queue, replay it, then try the following entry again. At the first entry, retry that same entry. Wait three seconds before retrying.
+- Retries continue until admission succeeds or STOP is pressed. Failed admission can also mean a locked target, cooldown or server refusal; it does not prove the previous battle was lost. The rollback behavior follows the user's requested heuristic.
+- Pending requests are never overlapped. Request errors, unresolved start calls, or a battle exceeding 15 minutes stop the run.
+- Final entry: stop when combat ends. Visibility alone cannot determine the final win/loss.
+- STOP invalidates the worker; the native battle continues. Restart waits for any existing combat to end.
 
-Run the script before starting a battle. After the battle ends, press COPY CAPTURE and share the captured BattleState/BattleEvent/StartResponse payloads. With no clipboard API, it writes OriginStory-capture.json when writefile exists, otherwise prints to the console. Capture stores only the latest 60 received messages, with bounded depth/size. It makes no network upload.
+Right Shift or mobile AO toggles the UI. Selections and appearance are session-only. COPY CAPTURE exports bounded local response diagnostics to clipboard, local file if supported, or console; no network upload.
 
-## Verified adapter extension
-
-Set `getgenv().OriginStoryBattleAdapter` to a function taking `(source, packedArgs, currentQueueItem)`. Source is BattleState, BattleEvent, or StartResponse. It should return nil for unrelated messages, or a normalized table:
-
-- Start: `{phase="started", id=actualBattleId, cardId=actualCardId, difficulty=actualDifficulty}`
-- Finish: `{phase="finished", id=actualBattleId, cardId=actualCardId, difficulty=actualDifficulty, won=actualBoolean}`
-- Rejection: `{phase="rejected", cardId=actualCardId, difficulty=actualDifficulty, reason=actualReason}`
-
-These names are an internal adapter contract, **not a claim about the game's payload schema**. Implement mappings only after inspecting live payloads. Finish requires a matching battle ID and target/difficulty. Unknown/stale results do not advance.
+This script does not teleport between maps or bypass server progress locks. If the server requires location changes, travel there using the native game. Repeated start failure will otherwise keep retrying per the configured behavior.
 
 ## Validation
 
-Full standalone file passed Lua 5.4 syntax compilation. Mock tests checked queue ordering, selected-map filtering, empty mode selection, all 180 target/difficulty pairs, boss markers, manual progression gating, loss/stop/restart, explicit rejection, verified adapter progression and stale battle-ID rejection. Roblox visuals, executor integration, unlocked target admission and real battle completion remain untested.
+Full script syntax compilation and mocked tests passed for all 180 target/difficulty combinations, selected-map filtering, queue ordering, boss markers, either eye indicating combat, stable hidden completion, failed-next rollback, one-pass stop, missing UI, and STOP/restart waiting for existing combat. Live Roblox UI, executor and server integration remain untested.
