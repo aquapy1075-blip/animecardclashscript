@@ -53,3 +53,36 @@ Bold headings and control labels use a violet → blue → mint text gradient. D
 Dropdown choices use selected background/text colors only, with no tick badge or ASCII checkbox. Selection still updates in place and preserves scroll.
 
 Settings → Transparency is now a mouse/touch slider from 0 to 65%, with a gradient fill, thumb and numeric percentage. It uses AO_UI_Transparency, preserving existing profile compatibility and the upper limit for readable surfaces. The shared input lifecycle cancels dragging when the window hides. Slider endpoint, midpoint, clamping and zero-width guard checks passed, along with script compilation and server controller regression checks. Roblox rendering and physical input still need a live-game check.
+
+## Auto Skill Tree
+
+The uploaded place contains 16 nodes in ReplicatedStorage.Shared.Config.SkillDefinitions. The new Skill Tree tab lists all nodes, max ranks and prerequisites. Select multiple skills, choose Purchase or PurchaseMax, set a 1–10-second request interval, and START. STOP is separate from Story; UNLOAD stops both. Settings are saved in Config, but Auto Load never starts purchases automatically.
+
+Uses the user's supplied SkillAction:InvokeServer("Purchase" or "PurchaseMax", skillId). Requests are sequential, at least one second apart; errors stop the worker. Server funds, locks and caps still apply. Responses are logged as SkillResponse and SkillResult; request success is not invented from pcall success.
+
+Rank synchronization reads validated numeric profile.skills values from ProfileSync. The skills property is referenced by TitleConfig in the place, but the live ProfileSync envelope has not been captured. A RequestSync event is requested once at START where available. Confirmed ranks let the scheduler skip capped nodes and stop once selected goals are reached. Without a recognized rank snapshot, selected-only mode can still send the supplied purchase requests and reports ranks as unconfirmed.
+
+Optional Auto prerequisites spends coins on dependencies and requires confirmed ranks. It waits without spending if rank data is unavailable. It purchases prerequisites one rank at a time up to their required thresholds; PurchaseMax applies only to explicitly selected nodes. Selected nodes themselves target their definition's maximum rank. Selection is snapshotted at START; restart after changing selected targets.
+
+| Skill ID | Max rank | Requires |
+| --- | ---: | --- |
+| Awakening | 1 | None |
+| LuckBoost | 1000 | Awakening 1 |
+| SwiftHands | 1500 | Awakening 1 |
+| BorderChance | 100 | Awakening 1 |
+| BattleSpeed1 | 1 | Awakening 1 |
+| FortuneFlow | 250 | LuckBoost 100 |
+| CoinAffinity | 1000 | LuckBoost 50 + SwiftHands 200 |
+| RapidDraw | 1000 | SwiftHands 350 |
+| BossChance | 100 | BorderChance 25 |
+| BattleSpeed2 | 1 | BattleSpeed1 1 |
+| Windwalker | 1000 | RapidDraw 400 + CoinAffinity 300 |
+| PotionDuration | 100 | BossChance 25 |
+| BattleSpeed3 | 1 | BattleSpeed2 1 |
+| ElderAscension | 1 | FortuneFlow 100 + Windwalker 400 + PotionDuration 100 |
+| BattleSpeed4 | 1 | BattleSpeed3 1 |
+| TwinBattle | 1 | BattleSpeed4 1 |
+
+Coin Affinity example: Awakening 1, Luck Boost 50, Swift Hands 200, then Coin Affinity. Windwalker crosses Rapid Draw 400 and Coin Affinity 300. Elder Ascension requires Fortune Flow 100, Windwalker 400 and Potion Duration 100. Battle Speed I–IV lead to Twin Battle.
+
+Checks passed for all 16 definitions, prerequisite thresholds/chains, confirmed caps, unknown-rank spending guard, single-rank prerequisite purchases versus selected PurchaseMax, and Stop/restart worker invalidation. Existing Story server-protocol regression checks still pass. Live SkillAction/SkillResult/ProfileSync integration remains untested; COPY CAPTURE contains skill request/response diagnostics.
