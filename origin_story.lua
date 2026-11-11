@@ -34,6 +34,51 @@ end
 return Story
 
 end)()
+local Combat=(function()
+-- Stable dual-screen transitions, sampled before and throughout the request.
+local Combat = {StableSeconds=1.5,RewardSeconds=3}
+function Combat.sample(player)
+    local gui=player:FindFirstChild('PlayerGui')
+    local eye=gui and gui:FindFirstChild('BattleEyeGui')
+    local first=eye and eye:FindFirstChild('ShowBattle')
+    local second=eye and eye:FindFirstChild('ShowBattle2')
+    local rewards=gui and gui:FindFirstChild('BattleRewards')
+    if not first or not second then return nil end
+    local a,b=first.Visible==true,second.Visible==true
+    return {a=a,b=b,count=(a and 1 or 0)+(b and 1 or 0),reward=rewards and rewards.Enabled==true or false,rewardKnown=rewards~=nil}
+end
+function Combat.new(baseline,sample)
+    return {baseline=baseline,started=false,ended=false,rewardArmed=not sample.reward,rewardSeen=false,lastReward=sample.reward}
+end
+function Combat.step(attempt,sample,now)
+    if not sample then
+        attempt.startAt=nil;attempt.endAt=nil;attempt.rewardSeen=false
+        return
+    end
+    local rewardRise=sample.reward and attempt.lastReward==false
+    attempt.lastReward=sample.reward
+    if not sample.reward then attempt.rewardArmed=true end
+    local occupied=sample.count>attempt.baseline
+    if not attempt.started then
+        if occupied then
+            attempt.startAt=attempt.startAt or now
+            if now-attempt.startAt>=Combat.StableSeconds then attempt.started=true end
+        else attempt.startAt=nil end
+        return
+    end
+    if occupied then
+        -- A brief disappearance during a floor transition is not a completed fight.
+        attempt.endAt=nil;attempt.rewardSeen=false;attempt.ended=false
+    else
+        attempt.endAt=attempt.endAt or now
+        -- A new reward popup must occur in the result window, not be left from a prior fight.
+        if attempt.rewardArmed and rewardRise and sample.rewardKnown and now-attempt.endAt<=Combat.RewardSeconds then attempt.rewardSeen=true end
+        if now-attempt.endAt>=Combat.StableSeconds then attempt.ended=true end
+    end
+end
+return Combat
+
+end)()
 local Library=(function()
 -- Anime Origin UI library. Rendering only; gameplay stays in cardorrigin.lua.
 local Library={Version=1}
@@ -779,7 +824,8 @@ preview.LayoutOrder=orderCounter;preview.Size=UDim2.new(1,-4,0,40)
 preview.TextWrapped=true;preview.TextTruncate=Enum.TextTruncate.None
 preview.TextYAlignment=Enum.TextYAlignment.Top
 section('Story','Combat detection')
-addStatus('Story','Combat signal','ShowBattle OR ShowBattle2')
+addStatus('Story','Combat signal','Stable baseline → occupied → baseline')
+addStatus('Story','Victory signal','BattleRewards.Enabled (3s window)')
 addAction('Story','Export received battle payloads','COPY CAPTURE',ctx.exportCapture)
 section('Config','Profiles')
 local profileName=profile.currentProfile
@@ -1093,26 +1139,8 @@ local function stopRun(reason)
     state.enabled=false;state.runId=state.runId+1
     if reason then message(reason,'warning') end
 end
--- User supplied combat signal. Missing UI is unknown, never an ended battle.
-local function combatVisible()
-    local gui=player:FindFirstChild('PlayerGui')
-    local eye=gui and gui:FindFirstChild('BattleEyeGui')
-    local first=eye and eye:FindFirstChild('ShowBattle')
-    local second=eye and eye:FindFirstChild('ShowBattle2')
-    if not first or not second then return nil end
-    return first.Visible==true or second.Visible==true
-end
 state.connections[#state.connections+1]=game:GetService('RunService').Heartbeat:Connect(function()
-    local visible=combatVisible()
-    local attempt=state.attempt
-    if not attempt then return end
-    if visible==nil then attempt.hiddenAt=nil;return end
-    if visible then
-        attempt.started=true;attempt.hiddenAt=nil
-    elseif attempt.started then
-        attempt.hiddenAt=attempt.hiddenAt or os.clock()
-        if os.clock()-attempt.hiddenAt>=1 then attempt.ended=true end
-    end
+    if state.attempt then Combat.step(state.attempt,Combat.sample(player),os.clock()) end
 end)
 local function beginRun()
     if state.enabled or state.pending then message('A run/request is already active.','warning');return end
@@ -1131,71 +1159,90 @@ local function beginRun()
         while active() and i<=#queue do
             local item=queue[i]
             state.index=i;state.current=item;state.attempt=nil
-            -- Wait for pre-existing combat to end, also after STOP/restart.
-            local hiddenAt;local unknownAt
+            -- Snapshot a stable baseline, allowing a concurrent Inf fight in the other screen.
+            local baseline,stableAt,signature,unknownAt
             while active() do
-                local visible=combatVisible()
-                if visible==nil then
-                    hiddenAt=nil;unknownAt=unknownAt or os.clock()
-                    state.status='Waiting for BattleEyeGui / ShowBattle / ShowBattle2'
+                local sample=Combat.sample(player)
+                if not sample then
+                    stableAt=nil;signature=nil;unknownAt=unknownAt or os.clock()
+                    state.status='Waiting for BattleEyeGui'
                     if os.clock()-unknownAt>15 then stopRun('Combat UI missing; stopped.');break end
-                elseif visible then
-                    hiddenAt=nil;unknownAt=nil;state.status='Waiting for existing combat to end'
+                elseif sample.count==2 then
+                    stableAt=nil;signature=nil;unknownAt=nil
+                    state.status='Both screens busy; waiting for a free screen'
                 else
-                    unknownAt=nil;hiddenAt=hiddenAt or os.clock()
-                    if os.clock()-hiddenAt>=1 then break end
+                    unknownAt=nil
+                    local nextSignature=(sample.a and '1' or '0')..(sample.b and '1' or '0')
+                    if nextSignature~=signature then signature=nextSignature;stableAt=os.clock() end
+                    state.status='Checking stable pre-battle screen state'
+                    if os.clock()-stableAt>=Combat.StableSeconds then baseline=sample;break end
                 end
                 task.wait(.1)
             end
             if not active() then break end
-            local attempt={started=false,ended=false}
+            local attempt=Combat.new(baseline.count,baseline)
             state.attempt=attempt;state.awaiting=true;state.pending=true
-            message('Starting '..item.cardId..' / '..item.difficulty)
-            -- Observe combat concurrently: InvokeServer may itself yield through combat.
+            message('Starting '..item.cardId..' / '..item.difficulty..' (screens before: '..baseline.count..')')
             task.spawn(function()
                 local response=table.pack(pcall(function()
                     return action:InvokeServer('StartEncounter',{difficulty=item.difficulty,cardId=item.cardId})
                 end))
-                state.pending=false
-                attempt.returned=true;attempt.response=response
+                state.pending=false;attempt.returned=true;attempt.response=response
                 log('StartResponse',response)
             end)
             local startDeadline=os.clock()+20
             while active() and not attempt.started and os.clock()<startDeadline do task.wait(.1) end
             if not active() then break end
             if not attempt.started then
-                -- Never overlap an unresolved remote call, even after the visibility timeout.
-                if state.pending then stopRun('StartEncounter still pending; stopped to avoid overlapping requests.');break end
-                if combatVisible()==nil then stopRun('Combat UI missing; stopped.');break end
-                if attempt.response and not attempt.response[1] then
-                    stopRun('StartEncounter request failed; stopped.');break
-                end
+                if state.pending then stopRun('StartEncounter still pending; stopped.');break end
+                if not Combat.sample(player) then stopRun('Combat UI missing; stopped.');break end
+                if attempt.response and not attempt.response[1] then stopRun('Request failed; stopped.');break end
                 state.awaiting=false;state.attempt=nil
-                message('Waiting to enter next target: '..item.cardId..' / '..item.difficulty..'; retrying this target only.','warning')
+                message('No stable combat start; retrying '..item.cardId..' / '..item.difficulty,'warning')
                 if not waitSeconds(3) then break end
             else
                 local endDeadline=os.clock()+900
                 local unknownAt
                 state.status='In combat: '..item.cardId..' / '..item.difficulty
-                while active() and (not attempt.ended or state.pending) do
-                    if combatVisible()==nil then
+                while active() and not attempt.ended do
+                    if not Combat.sample(player) then
                         unknownAt=unknownAt or os.clock()
                         if os.clock()-unknownAt>15 then stopRun('Combat UI missing; stopped.');break end
                     else unknownAt=nil end
-                    if os.clock()>endDeadline then stopRun('Battle / request timeout; stopped.');break end
+                    if os.clock()>endDeadline then stopRun('Battle timeout; stopped.');break end
                     task.wait(.1)
                 end
                 if not active() then break end
+                state.status='Combat ended; checking BattleRewards'
+                -- Start the reward window at the first stable end candidate. Heartbeat also
+                -- captures rewards shown during the 1.5-second end debounce.
+                local rewardDeadline=(attempt.endAt or os.clock())+Combat.RewardSeconds
+                while active() and os.clock()<rewardDeadline do task.wait(.1) end
+                if not active() then break end
+                local sample=Combat.sample(player)
+                if not sample then stopRun('Combat UI missing during result check; stopped.');break end
+                if not attempt.ended or not attempt.endAt then stopRun('Combat resumed during result check; stopped.');break end
+                -- Calls cannot be cancelled: never overlap them with the following request.
+                local pendingDeadline=os.clock()+15
+                while active() and state.pending and os.clock()<pendingDeadline do task.wait(.1) end
+                if not active() then break end
+                if state.pending then stopRun('Request still pending after combat; stopped.');break end
+                if not sample.rewardKnown then stopRun('BattleRewards missing; cannot determine result.');break end
+                local won=attempt.rewardSeen
                 state.awaiting=false;state.attempt=nil
-                state.status='Combat ended: '..item.cardId..' / '..item.difficulty
-                i=i+1
-                if i>#queue and flags.StoryRepeat then i=1 end
-                if not waitSeconds(1) then break end
+                if won then
+                    message('WIN: '..item.cardId..' / '..item.difficulty,'success')
+                    i=i+1
+                    if i>#queue and flags.StoryRepeat then i=1 end
+                else
+                    message('No new BattleRewards in 3 seconds; retrying '..item.cardId..' / '..item.difficulty,'warning')
+                end
+                if not waitSeconds(won and 1 or 3) then break end
             end
         end
         if active() then
             state.enabled=false;state.attempt=nil
-            message('Selected queue ended. Final battle outcome is not shown by visibility alone.','info')
+            message('Selected story queue won and completed.','success')
         end
     end)
 end
@@ -1310,4 +1357,4 @@ ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=
 task.spawn(function()
     while state.alive do ui.Repaint();ui.Refresh();task.wait(.3) end
 end)
-message('Ready: combat detection uses ShowBattle / ShowBattle2 visibility.')
+message('Ready: stable dual-screen combat + BattleRewards win detection.')
