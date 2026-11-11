@@ -8,7 +8,7 @@ Standalone Roblox Story UI adapted from anime_origin_ui.lua. Multi-select maps/t
 loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/codex/origin-story-ui-draft/origin_story.lua"))()
 ```
 
-Select maps, then mob/boss options limited to those maps. Select difficulties independently per target (Easy initially selected). PREVIEW shows map → encounter → difficulty order. START snapshots selections; default is one pass. Native game AUTO should be enabled where needed. Right Shift or mobile AO toggles the UI.
+Select maps, then mob/boss options limited to those maps. Select difficulties independently per target (Easy initially selected). PREVIEW shows map → encounter → difficulty order. Auto Story ON snapshots selections; OFF stops scheduling. The toggle reflects actual running state and turns off at completion/errors. Default is one pass. Native game AUTO should be enabled where needed. Right Shift or mobile AO toggles the UI.
 
 ## Verified server combat/results
 
@@ -86,3 +86,23 @@ Optional Auto prerequisites spends coins on dependencies and requires confirmed 
 Coin Affinity example: Awakening 1, Luck Boost 50, Swift Hands 200, then Coin Affinity. Windwalker crosses Rapid Draw 400 and Coin Affinity 300. Elder Ascension requires Fortune Flow 100, Windwalker 400 and Potion Duration 100. Battle Speed I–IV lead to Twin Battle.
 
 Checks passed for all 16 definitions, prerequisite thresholds/chains, confirmed caps, unknown-rank spending guard, single-rank prerequisite purchases versus selected PurchaseMax, and Stop/restart worker invalidation. Existing Story server-protocol regression checks still pass. Live SkillAction/SkillResult/ProfileSync integration remains untested; COPY CAPTURE contains skill request/response diagnostics.
+
+## Higher or Lower
+
+The new Higher or Lower tab uses an ON/OFF toggle, live status, streak and loaded stat-entry count. Restart after game ends defaults OFF and is stored in Config. Stand near the native Higher or Lower activity where the server requires it; the script does not teleport or bypass proximity checks. Avoid manually submitting guesses while Auto Higher or Lower is running.
+
+From HigherLowerConfig and HubHigherLower in the uploaded place:
+- Compare total DMG + HP at level 0.
+- Card keys include identity and border: cardId|variant.
+- HigherLowerConfig.pool() computes the eligible pool using CardStats.compute(id,variant,0), excludes summonOnly and restricts evolve/legend cards to their proper variants.
+- entry(key) gives the exact eligible card stats, including the right card whose stats are hidden by the native UI.
+- start returns admission boolean and a run with round, a, b.
+- guess uses {guess="higher" or "lower", round=run.round}.
+- Successful ongoing responses provide correct, b, next, nextRound and streak; ended terminates a run.
+- HigherLowerEvent type ended handles server termination (for example timeout/away).
+
+The automation loads/prewarms the live config pool before starting. It compares exact entry totals, waits at least 1.1 seconds between guesses and advances only using server nextRound. Unknown keys, equal totals, visible-stat mismatches, malformed/stale rounds, rejected requests or lookup errors stop instead of guessing. It never sends a guessed victory/reward claim. Native server results and milestone rewards remain authoritative.
+
+Turning OFF stops future guesses and uses the native quit action for its active session after any pending request returns. Start is blocked until cleanup completes, preventing an old worker from quitting a new session. Reloading is blocked while a Higher or Lower worker is still active; turn it off and wait for cleanup first.
+
+Tests passed for variant-aware totals, higher/lower/higher rounds, equal/unknown/mismatched stats, server round advancement, request spacing, completed sessions, server-ended events, and Stop/restart cleanup. Story and skill regression tests passed. Live-game requests and actual pool contents still require verification in Roblox. COPY CAPTURE includes HigherLowerGuess, HigherLowerResponse and HigherLowerEnded records.
