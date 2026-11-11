@@ -30,7 +30,7 @@ COPY CAPTURE exports bounded StartRequest, StartResponse, StoryAdmitted, BattleE
 
 Config supports SAVE, LOAD, DELETE and SET AUTO LOAD. Profiles include map/target selections, independent difficulties, repeat flag, theme, transparency and window geometry.
 
-Files are OriginStory/<name>.json and OriginStory/index.json in executor storage. Names allow 1–48 letters/numbers/spaces/underscores/hyphens. Persistence requires readfile/writefile/isfile/makefolder; deletion requires delfile. Auto Load restores settings without starting combat. Loading during a running queue or pending request is blocked.
+Files are OriginStory/<name>.json and OriginStory/index.json in executor storage. Names allow 1–48 letters/numbers/spaces/underscores/hyphens. Persistence requires readfile/writefile/isfile/makefolder; deletion requires delfile. Auto Load restores settings and saved mode toggles. Loading stops old mode workers and waits for outstanding work before applying the new settings.
 
 ## Validation and limitations
 
@@ -56,7 +56,7 @@ Settings → Transparency is now a mouse/touch slider from 0 to 65%, with a grad
 
 ## Auto Skill Tree
 
-The uploaded place contains 16 nodes in ReplicatedStorage.Shared.Config.SkillDefinitions. The new Skill Tree tab lists all nodes, max ranks and prerequisites. Select multiple skills, choose Purchase or PurchaseMax, set a 1–10-second request interval, and START. STOP is separate from Story; UNLOAD stops both. Settings are saved in Config, but Auto Load never starts purchases automatically.
+The uploaded place contains 16 nodes in ReplicatedStorage.Shared.Config.SkillDefinitions. The new Skill Tree tab lists all nodes, max ranks and prerequisites. Select multiple skills, choose Purchase or PurchaseMax, set a 1–10-second request interval, and the Auto Skill Tree toggle. Its OFF state stops upgrades independently of Story; UNLOAD stops all modes. Settings are saved in Config, but Auto Load restores the saved Auto Skill toggle and starts purchases only when that saved toggle is ON.
 
 Uses the user's supplied SkillAction:InvokeServer("Purchase" or "PurchaseMax", skillId). Requests are sequential, at least one second apart; errors stop the worker. Server funds, locks and caps still apply. Responses are logged as SkillResponse and SkillResult; request success is not invented from pcall success.
 
@@ -106,3 +106,16 @@ The automation loads/prewarms the live config pool before starting. It compares 
 Turning OFF stops future guesses and uses the native quit action for its active session after any pending request returns. Start is blocked until cleanup completes, preventing an old worker from quitting a new session. Reloading is blocked while a Higher or Lower worker is still active; turn it off and wait for cleanup first.
 
 Tests passed for variant-aware totals, higher/lower/higher rounds, equal/unknown/mismatched stats, server round advancement, request spacing, completed sessions, server-ended events, and Stop/restart cleanup. Story and skill regression tests passed. Live-game requests and actual pool contents still require verification in Roblox. COPY CAPTURE includes HigherLowerGuess, HigherLowerResponse and HigherLowerEnded records.
+
+
+## Unified mode toggles and persisted execution state
+
+Story, Auto Skill Tree and Higher or Lower each use one ON/OFF toggle. Separate Skill Tree START/STOP buttons are removed.
+
+SAVE synchronizes actual current worker states into StoryRunning, SkillRunning and HLRunning, then writes those booleans with settings. LOAD restores both ON and OFF and applies them to actual workers. SET AUTO LOAD causes the next execution to restore selections/settings, build the UI/controllers, then start each mode saved ON. This includes selected skill purchases when Auto Skill Tree was saved ON. Older profiles missing a toggle key default that mode OFF.
+
+To persist a mode ON: configure it, turn it ON, SAVE, then SET AUTO LOAD for that profile. To change the saved state to OFF, turn it OFF and SAVE again. Finishing a queue turns its live toggle OFF but does not silently overwrite the saved profile.
+
+Manual LOAD first reads/validates the profile, stops existing mode scheduling, and waits for pending requests / Higher or Lower cleanup. If the new profile enables Story, it also waits for a currently tracked Story fight to end. After 30 seconds still waiting, the load aborts without applying new selections; load again after outstanding work ends. Tracked results are still received while Story scheduling is OFF. Parallel profile loads and edits during profile transitions are blocked.
+
+Mocks verified all three ON/OFF states, actual-state saves even before the repaint loop runs, loading an OFF profile while workers are active, restoring an ON profile, deferred startup auto-load, and legacy OFF defaults. Story, skills and Higher or Lower regression checks still pass. Live Roblox/executor file behavior remains untested.
