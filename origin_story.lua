@@ -1,7 +1,7 @@
 -- Origin Story - UI adapted from aquapy1075-blip/animecardclashscript/anime_origin_ui.lua
 -- Upstream SHA: 543f7f2b12f690f6b6592dcf10d805807fe2c29b
 -- Standalone: embeds the adapted Origin UI; no remote code download.
--- Auto advancement requires a verified OriginStoryBattleAdapter; see README.
+-- Combat detection uses user supplied ShowBattle / ShowBattle2 visibility.
 local Story=(function()
 -- Story queue: map order, then encounter order, then difficulty order.
 local Story = {}
@@ -746,11 +746,8 @@ preview=newText(tabPages.Story,'Press PREVIEW to show the ordered queue.',12,fal
 preview.LayoutOrder=orderCounter;preview.Size=UDim2.new(1,-4,0,40)
 preview.TextWrapped=true;preview.TextTruncate=Enum.TextTruncate.None
 preview.TextYAlignment=Enum.TextYAlignment.Top
-section('Story','Battle confirmation / capture')
-addStatus('Story','Auto progression',type(env.OriginStoryBattleAdapter)=='function' and 'Adapter configured' or 'Needs battle result payload')
-addAction('Story','Confirm current battle won','CONFIRM WIN',ctx.win)
-addAction('Story','Confirm current battle lost','CONFIRM LOSS',ctx.loss)
-addAction('Story','After Stop: battle has ended','CLEAR BATTLE',ctx.clearBattle)
+section('Story','Combat detection')
+addStatus('Story','Combat signal','ShowBattle OR ShowBattle2')
 addAction('Story','Export received battle payloads','COPY CAPTURE',ctx.exportCapture)
 section('Settings','Origin UI appearance')
 addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose','Light'})
@@ -1046,78 +1043,112 @@ local function stopRun(reason)
     state.enabled=false;state.runId=state.runId+1
     if reason then message(reason,'warning') end
 end
-local function complete(won)
-    if not state.enabled or not state.awaiting or state.completion~=nil then return end
-    state.completion=won==true
+-- User supplied combat signal. Missing UI is unknown, never an ended battle.
+local function combatVisible()
+    local gui=player:FindFirstChild('PlayerGui')
+    local eye=gui and gui:FindFirstChild('BattleEyeGui')
+    local first=eye and eye:FindFirstChild('ShowBattle')
+    local second=eye and eye:FindFirstChild('ShowBattle2')
+    if not first or not second then return nil end
+    return first.Visible==true or second.Visible==true
 end
--- No network payload schema was present in the supplied place. Never infer victory from a timer.
--- Adapter contract is documented in README. Without it, use the explicit WIN/LOSS buttons.
-local function receive(source,...)
-    local args=table.pack(...)
-    log(source,args)
-    local adapter=env.OriginStoryBattleAdapter
-    if type(adapter)~='function' or not state.enabled or not state.current then return end
-    local ok,event=pcall(adapter,source,args,state.current)
-    if not ok then stopRun('Battle adapter error; stopped.');return end
-    if type(event)~='table' then return end
-    if event.cardId~=state.current.cardId or event.difficulty~=state.current.difficulty then return end
-    if event.phase=='rejected' then state.awaiting=false;stopRun('Server rejected encounter: '..tostring(event.reason or 'unknown'));return end
-    if event.phase=='started' and event.id~=nil then state.battleId=event.id end
-    if event.phase=='finished' and state.battleId~=nil and event.id==state.battleId and type(event.won)=='boolean' then
-        complete(event.won)
+state.connections[#state.connections+1]=game:GetService('RunService').Heartbeat:Connect(function()
+    local visible=combatVisible()
+    local attempt=state.attempt
+    if not attempt then return end
+    if visible==nil then attempt.hiddenAt=nil;return end
+    if visible then
+        attempt.started=true;attempt.hiddenAt=nil
+    elseif attempt.started then
+        attempt.hiddenAt=attempt.hiddenAt or os.clock()
+        if os.clock()-attempt.hiddenAt>=1 then attempt.ended=true end
     end
-end
-for _,name in ipairs({'BattleState','BattleEvent'}) do
-    local remote=net:FindFirstChild(name)
-    if remote and remote:IsA('RemoteEvent') then
-        state.connections[#state.connections+1]=remote.OnClientEvent:Connect(function(...) receive(name,...) end)
-    end
-end
+end)
 local function beginRun()
     if state.enabled or state.pending then message('A run/request is already active.','warning');return end
-    -- Starting a new run intentionally discards the old queue, never silently resumes it.
     local queue=Story.buildQueue(flags)
     if #queue==0 then message('Select maps, targets and at least one mode per target.','warning');return end
-    if state.awaiting then message('Confirm the previous battle ended before starting again.','warning');return end
     state.queue=queue;state.index=0;state.enabled=true;state.runId=state.runId+1
     local runId=state.runId
     local function active() return state.alive and state.enabled and state.runId==runId end
+    local function waitSeconds(seconds)
+        local deadline=os.clock()+seconds
+        while active() and os.clock()<deadline do task.wait(.1) end
+        return active()
+    end
     task.spawn(function()
-        repeat
-            for i,item in ipairs(queue) do
-                if not active() then break end
-                state.index=i;state.current=item;state.battleId=nil;state.completion=nil
-                state.awaiting=true;state.pending=true
-                message('Starting '..item.cardId..' / '..item.difficulty)
+        local i=1
+        while active() and i<=#queue do
+            local item=queue[i]
+            state.index=i;state.current=item;state.attempt=nil
+            -- Wait for pre-existing combat to end, also after STOP/restart.
+            local hiddenAt;local unknownAt
+            while active() do
+                local visible=combatVisible()
+                if visible==nil then
+                    hiddenAt=nil;unknownAt=unknownAt or os.clock()
+                    state.status='Waiting for BattleEyeGui / ShowBattle / ShowBattle2'
+                    if os.clock()-unknownAt>15 then stopRun('Combat UI missing; stopped.');break end
+                elseif visible then
+                    hiddenAt=nil;unknownAt=nil;state.status='Waiting for existing combat to end'
+                else
+                    unknownAt=nil;hiddenAt=hiddenAt or os.clock()
+                    if os.clock()-hiddenAt>=1 then break end
+                end
+                task.wait(.1)
+            end
+            if not active() then break end
+            local attempt={started=false,ended=false}
+            state.attempt=attempt;state.awaiting=true;state.pending=true
+            message('Starting '..item.cardId..' / '..item.difficulty)
+            -- Observe combat concurrently: InvokeServer may itself yield through combat.
+            task.spawn(function()
                 local response=table.pack(pcall(function()
                     return action:InvokeServer('StartEncounter',{difficulty=item.difficulty,cardId=item.cardId})
                 end))
                 state.pending=false
-                if not state.alive then return end
-                if not response[1] then
-                    stopRun('Request failed; confirm the battle state before retrying.');break
+                attempt.returned=true;attempt.response=response
+                log('StartResponse',response)
+            end)
+            local startDeadline=os.clock()+12
+            while active() and not attempt.started and os.clock()<startDeadline do task.wait(.1) end
+            if not active() then break end
+            if not attempt.started then
+                -- Never overlap an unresolved remote call, even after the visibility timeout.
+                if state.pending then stopRun('StartEncounter still pending; stopped to avoid overlapping requests.');break end
+                if combatVisible()==nil then stopRun('Combat UI missing; stopped.');break end
+                if attempt.response and not attempt.response[1] then
+                    stopRun('StartEncounter request failed; stopped.');break
                 end
-                -- Preserve the full return tuple for payload inspection and verified adapters.
-                receive('StartResponse',table.unpack(response,2,response.n))
-                if response[2]==false or (type(response[2])=='table' and response[2].ok==false) then
-                    state.awaiting=false;stopRun('StartEncounter rejected; see capture.');break
-                end
-                if state.enabled then
-                    state.status=type(env.OriginStoryBattleAdapter)=='function' and 'Waiting for verified battle result' or 'Waiting for WIN / LOSS confirmation (adapter needed for auto)'
-                end
-                local deadline=os.clock()+900
-                while active() and state.completion==nil do
-                    if os.clock()>deadline then stopRun('No verified result after 15 min; stopped.');break end
-                    task.wait(.2)
+                state.awaiting=false;state.attempt=nil
+                local previousIndex=math.max(1,i-1)
+                message('No combat for '..item.cardId..' / '..item.difficulty..'; retrying '..queue[previousIndex].cardId..' / '..queue[previousIndex].difficulty,'warning')
+                i=previousIndex
+                if not waitSeconds(3) then break end
+            else
+                local endDeadline=os.clock()+900
+                local unknownAt
+                state.status='In combat: '..item.cardId..' / '..item.difficulty
+                while active() and (not attempt.ended or state.pending) do
+                    if combatVisible()==nil then
+                        unknownAt=unknownAt or os.clock()
+                        if os.clock()-unknownAt>15 then stopRun('Combat UI missing; stopped.');break end
+                    else unknownAt=nil end
+                    if os.clock()>endDeadline then stopRun('Battle / request timeout; stopped.');break end
+                    task.wait(.1)
                 end
                 if not active() then break end
-                state.awaiting=false
-                if state.completion==false then stopRun('Lost battle; stopped at '..item.cardId..' / '..item.difficulty);break end
-                state.status='Won: '..item.cardId..' / '..item.difficulty
-                task.wait(1)
+                state.awaiting=false;state.attempt=nil
+                state.status='Combat ended: '..item.cardId..' / '..item.difficulty
+                i=i+1
+                if i>#queue and flags.StoryRepeat then i=1 end
+                if not waitSeconds(1) then break end
             end
-        until not active() or not flags.StoryRepeat
-        if active() then state.enabled=false;message('Selected story queue completed.','success') end
+        end
+        if active() then
+            state.enabled=false;state.attempt=nil
+            message('Selected queue ended. Final battle outcome is not shown by visibility alone.','info')
+        end
     end)
 end
 state.stop=function()
@@ -1139,7 +1170,6 @@ end
 ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=flags,
     Workspace=game:GetService('Workspace'),UIS=game:GetService('UserInputService'),env=env,
     setFlag=setFlag,story=Story,start=beginRun,pause=function() stopRun('Stopped; current battle continues in game.') end,
-    win=function() complete(true) end,loss=function() complete(false) end,
     clearBattle=function()
         if state.pending or state.enabled then message('Stop and wait for pending request first.','warning');return end
         state.awaiting=false;message('Previous battle marked ended; ready to start.')
@@ -1149,6 +1179,4 @@ ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=
 task.spawn(function()
     while state.alive do ui.Repaint();ui.Refresh();task.wait(.3) end
 end)
-if type(env.OriginStoryBattleAdapter)~='function' then
-    message('UI ready. Auto progression needs a verified battle-result adapter; capture a completed battle.','warning')
-end
+message('Ready: combat detection uses ShowBattle / ShowBattle2 visibility.')
