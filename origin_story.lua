@@ -45,6 +45,73 @@ end
 return Story
 
 end)()
+local Skills=(function()
+local Skills={Data={},Order={}}
+Skills.Order[#Skills.Order+1]="Awakening"
+Skills.Data["Awakening"]={name="Awakening",maxRank=1,requires={}}
+Skills.Order[#Skills.Order+1]="LuckBoost"
+Skills.Data["LuckBoost"]={name="Luck Boost",maxRank=1000,requires={Awakening=1}}
+Skills.Order[#Skills.Order+1]="SwiftHands"
+Skills.Data["SwiftHands"]={name="Swift Hands",maxRank=1500,requires={Awakening=1}}
+Skills.Order[#Skills.Order+1]="BorderChance"
+Skills.Data["BorderChance"]={name="Border Chance",maxRank=100,requires={Awakening=1}}
+Skills.Order[#Skills.Order+1]="BattleSpeed1"
+Skills.Data["BattleSpeed1"]={name="Battle Speed I",maxRank=1,requires={Awakening=1}}
+Skills.Order[#Skills.Order+1]="FortuneFlow"
+Skills.Data["FortuneFlow"]={name="Fortune Flow",maxRank=250,requires={LuckBoost=100}}
+Skills.Order[#Skills.Order+1]="CoinAffinity"
+Skills.Data["CoinAffinity"]={name="Coin Affinity",maxRank=1000,requires={LuckBoost=50,SwiftHands=200}}
+Skills.Order[#Skills.Order+1]="RapidDraw"
+Skills.Data["RapidDraw"]={name="Rapid Draw",maxRank=1000,requires={SwiftHands=350}}
+Skills.Order[#Skills.Order+1]="BossChance"
+Skills.Data["BossChance"]={name="Boss Chance",maxRank=100,requires={BorderChance=25}}
+Skills.Order[#Skills.Order+1]="BattleSpeed2"
+Skills.Data["BattleSpeed2"]={name="Battle Speed II",maxRank=1,requires={BattleSpeed1=1}}
+Skills.Order[#Skills.Order+1]="Windwalker"
+Skills.Data["Windwalker"]={name="Windwalker",maxRank=1000,requires={RapidDraw=400,CoinAffinity=300}}
+Skills.Order[#Skills.Order+1]="PotionDuration"
+Skills.Data["PotionDuration"]={name="Potion Duration",maxRank=100,requires={BossChance=25}}
+Skills.Order[#Skills.Order+1]="BattleSpeed3"
+Skills.Data["BattleSpeed3"]={name="Battle Speed III",maxRank=1,requires={BattleSpeed2=1}}
+Skills.Order[#Skills.Order+1]="ElderAscension"
+Skills.Data["ElderAscension"]={name="Elder Ascension",maxRank=1,requires={FortuneFlow=100,Windwalker=400,PotionDuration=100}}
+Skills.Order[#Skills.Order+1]="BattleSpeed4"
+Skills.Data["BattleSpeed4"]={name="Battle Speed IV",maxRank=1,requires={BattleSpeed3=1}}
+Skills.Order[#Skills.Order+1]="TwinBattle"
+Skills.Data["TwinBattle"]={name="Twin Battle",maxRank=1,requires={BattleSpeed4=1}}
+function Skills.plan(selected,ranks,withPrerequisites)
+    local goals={}
+    local function requireGoal(id,rank)
+        local def=Skills.Data[id]
+        if not def then return end
+        rank=math.min(rank,def.maxRank)
+        if (goals[id] or 0)>=rank then return end
+        goals[id]=rank
+        if withPrerequisites then
+            for need,level in pairs(def.requires) do requireGoal(need,level) end
+        end
+    end
+    for _,id in ipairs(Skills.Order) do
+        if selected[id] then requireGoal(id,Skills.Data[id].maxRank) end
+    end
+    local plan={}
+    for _,id in ipairs(Skills.Order) do
+        local goal=goals[id]
+        if goal and (not ranks or (ranks[id] or 0)<goal) then
+            local unlocked=true
+            if ranks then
+                for need,level in pairs(Skills.Data[id].requires) do
+                    if (ranks[need] or 0)<level then unlocked=false end
+                end
+            end
+            if unlocked then plan[#plan+1]={id=id,goal=goal,prerequisite=not selected[id]} end
+        end
+    end
+    return plan,goals
+end
+return Skills
+
+end)()
 local Combat=(function()
 -- Server protocol verified from captured StartResponse and BattleEnd messages.
 local Combat = {}
@@ -388,7 +455,7 @@ local body=make('Frame',main,{
 local selectedTab='Story'
 local navButtons={}
 local tabPages={}
-local tabNames={'Story','Config','Settings'}
+local tabNames={'Story','Skill Tree','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
@@ -764,10 +831,10 @@ local function clearNotifications()
     toastBox.Visible=false
 end
 -- Multi-select reuses the Origin UI searchable popup and preserves selections while filtering.
-local function multiDropdown(label,options,getSet,onChange)
+local function multiDropdown(label,options,getSet,onChange,tab)
     local function currentOptions() return type(options)=='function' and options() or options end
     local button
-    button=addAction('Story',label,'SELECT  ▾',function()
+    button=addAction(tab or 'Story',label,'SELECT  ▾',function()
         if menu.Visible then hideMenu();return end
         openMenu(button,currentOptions(),function(_,value)
             local nextSet={}
@@ -877,6 +944,33 @@ section('Story','Combat detection')
 addStatus('Story','Combat signal','Server battleId / lane')
 addStatus('Story','Victory signal','BattleEnd.won (matching battleId)')
 addAction('Story','Export received battle payloads','COPY CAPTURE',ctx.exportCapture)
+section('Skill Tree','Auto skill upgrades')
+local skillLabels,skillIds={},{}
+for _,id in ipairs(Skills.Order) do
+    local def=Skills.Data[id]
+    local label=def.name..'  /  max '..def.maxRank
+    skillLabels[#skillLabels+1]=label;skillIds[label]=id
+end
+multiDropdown('Skills to upgrade',skillLabels,function()
+    return displaySet(skillIds,flags.AutoSkills or {})
+end,function(value) setFlag('AutoSkills',internalSet(skillIds,value)) end,'Skill Tree')
+addDropdown('Skill Tree','Buy mode','SkillPurchaseMode',{'Purchase','PurchaseMax'})
+addToggle('Skill Tree','Auto prerequisites (spends coins)','SkillPrerequisites')
+addInput('Skill Tree','Request interval (1–10s)','SkillInterval','2')
+addAction('Skill Tree','Start selected skills','START',ctx.startSkills)
+addAction('Skill Tree','Stop skill upgrades','STOP',ctx.stopSkills)
+local skillLive=addStatus('Skill Tree','Upgrade status','OFF')
+section('Skill Tree','Branches from SkillDefinitions')
+for _,id in ipairs(Skills.Order) do
+    local def=Skills.Data[id]
+    local requirements={}
+    for _,need in ipairs(Skills.Order) do
+        if def.requires[need] then requirements[#requirements+1]=need..' '..def.requires[need] end
+    end
+    local label=addStatus('Skill Tree',def.name..' / '..def.maxRank,#requirements>0 and table.concat(requirements,' + ') or 'Root skill')
+    tooltip(label,def.name..' ['..id..'] — requires: '..(#requirements>0 and table.concat(requirements,', ') or 'none'))
+end
+
 section('Config','Profiles')
 local profileName=profile.currentProfile
 local nameBox=addInput('Config','Profile name','ProfileName','Default')
@@ -1167,6 +1261,7 @@ local function refreshOverview()
     pumpToast()
     showStatus(sessionBadge,state.enabled and 'RUNNING' or 'STANDBY')
     showStatus(storyStatus,state.status or 'Ready')
+    showStatus(skillLive,state.skillStatus or 'OFF')
     showStatus(storyResult,state.lastResult or '--')
     showStatus(configStatus,profile.status or 'Ready')
     showStatus(configAuto,profile.autoProfile~='' and profile.autoProfile or 'None')
@@ -1184,7 +1279,7 @@ end)()
 local env=(getgenv and getgenv()) or _G
 local previous=env.OriginStory
 -- An InvokeServer cannot be cancelled. Do not create a second controller while one is pending.
-if previous and previous.pending then error('Origin Story: previous request still pending; wait for it to return.') end
+if previous and (previous.pending or previous.skillPending) then error('Origin Story: previous request still pending; wait for it to return.') end
 if previous and previous.stop then previous.stop() end
 local Players=game:GetService('Players')
 local HttpService=game:GetService('HttpService')
@@ -1198,7 +1293,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -1315,7 +1410,7 @@ local function beginRun()
     end)
 end
 state.stop=function()
-    state.alive=false;state.enabled=false
+    state.alive=false;state.enabled=false;state.skillEnabled=false
     for _,c in ipairs(state.connections) do pcall(function() c:Disconnect() end) end
     state.connections={}
     if ui then ui.Destroy() end
@@ -1330,6 +1425,86 @@ local function setFlag(key,value)
     flags[key]=value
     if ui then ui.Repaint() end
 end
+state.skillStatus='OFF';state.skillEnabled=false;state.skillPending=false;state.skillRunId=0
+local skillRemote=net:FindFirstChild('SkillAction')
+local skillRanks,skillRevision=nil,0
+local function syncSkills(data)
+    if type(data)~='table' or type(data.skills)~='table' then return end
+    local nextRanks={}
+    for _,id in ipairs(Skills.Order) do
+        local value=data.skills[id]
+        if value~=nil and (type(value)~='number' or value~=value or value<0 or value>Skills.Data[id].maxRank or value%1~=0) then return end
+        nextRanks[id]=value or 0
+    end
+    skillRanks=nextRanks;skillRevision=skillRevision+1
+end
+local profileSync=net:FindFirstChild('ProfileSync')
+if profileSync and profileSync:IsA('RemoteEvent') then
+    state.connections[#state.connections+1]=profileSync.OnClientEvent:Connect(syncSkills)
+end
+local skillResult=net:FindFirstChild('SkillResult')
+if skillResult and skillResult:IsA('RemoteEvent') then
+    state.connections[#state.connections+1]=skillResult.OnClientEvent:Connect(function(...)
+        if state.skillEnabled then log('SkillResult',table.pack(...)) end
+    end)
+end
+local function stopSkills()
+    state.skillEnabled=false;state.skillRunId=state.skillRunId+1;state.skillStatus=state.skillPending and 'Stopping after pending purchase' or 'OFF'
+end
+local function startSkills()
+    if state.skillEnabled or state.skillPending then message('Auto Skill is already active or waiting for a request.','warning');return end
+    skillRemote=net:FindFirstChild('SkillAction')
+    if not skillRemote or not skillRemote:IsA('RemoteFunction') then message('SkillAction missing.','warning');return end
+    local selected={}
+    for _,id in ipairs(Skills.Order) do if (flags.AutoSkills or {})[id] then selected[id]=true end end
+    if not next(selected) then message('Select at least one skill.','warning');return end
+    state.skillEnabled=true;state.skillRunId=state.skillRunId+1;state.skillStatus='Syncing skill ranks'
+    local skillRunId=state.skillRunId
+    local function activeSkill() return state.alive and state.skillEnabled and state.skillRunId==skillRunId end
+    local requestSync=net:FindFirstChild('RequestSync')
+    if requestSync and requestSync:IsA('RemoteEvent') then requestSync:FireServer() end
+    task.spawn(function()
+        local cursor=0
+        while activeSkill() do
+            local includePrerequisites=flags.SkillPrerequisites==true
+            if includePrerequisites and not skillRanks then
+                state.skillStatus='Waiting for ProfileSync.skills before buying prerequisites'
+                task.wait(1)
+            else
+                local plan,goals=Skills.plan(selected,skillRanks,includePrerequisites)
+                if #plan==0 then
+                    local done=skillRanks~=nil
+                    if skillRanks then
+                        for id,goal in pairs(goals) do if skillRanks[id]<goal then done=false end end
+                    end
+                    if done then state.skillEnabled=false;state.skillStatus='Selected skills maxed (confirmed ranks)';break end
+                    state.skillStatus='Selected skills locked; enable prerequisites or unlock in game'
+                    task.wait(3)
+                else
+                    cursor=cursor%#plan+1
+                    local item=plan[cursor]
+                    -- Max is used only for selected skills; prerequisite requests stay one rank at a time.
+                    local verb=(not item.prerequisite and flags.SkillPurchaseMode=='PurchaseMax') and 'PurchaseMax' or 'Purchase'
+                    local before=skillRevision
+                    state.skillPending=true;state.skillStatus=verb..': '..Skills.Data[item.id].name
+                    log('SkillRequest',{action=verb,id=item.id,rankKnown=skillRanks~=nil,goal=item.goal})
+                    local response=table.pack(pcall(function() return skillRemote:InvokeServer(verb,item.id) end))
+                    state.skillPending=false
+                    log('SkillResponse',response)
+                    if not activeSkill() then break end
+                    if not response[1] then state.skillEnabled=false;state.skillStatus='Request error; stopped (see COPY CAPTURE)';break end
+                    state.skillStatus='Request returned: '..Skills.Data[item.id].name..(skillRanks and ' — checking rank sync' or ' — rank unconfirmed')
+                    local waitTime=math.clamp(tonumber(flags.SkillInterval) or 2,1,10)
+                    if skillRanks and skillRevision==before then waitTime=math.max(waitTime,5) end
+                    local deadline=os.clock()+waitTime
+                    while activeSkill() and os.clock()<deadline do task.wait(.1) end
+                end
+            end
+        end
+        if not state.skillEnabled and state.skillStatus=='Stopping after pending purchase' then state.skillStatus='OFF' end
+    end)
+end
+
 local profile={currentProfile='Default',autoProfile='',storedNames={},status='Ready',revision=0}
 local profileDir='OriginStory'
 local canFiles=type(readfile)=='function' and type(writefile)=='function' and type(isfile)=='function' and type(makefolder)=='function'
@@ -1341,7 +1516,7 @@ local function path(name) return profileDir..'/'..name..'.json' end
 local function writeIndex() writefile(profileDir..'/index.json',HttpService:JSONEncode(index)) end
 local function profileMessage(text,kind) profile.status=text;message(text,kind) end
 local function loadProfile(name,quiet)
-    if state.enabled or state.pending then profileMessage('Stop Story before loading a profile.','warning');return false end
+    if state.enabled or state.pending or state.skillEnabled or state.skillPending then profileMessage('Stop Story and Auto Skill before loading a profile.','warning');return false end
     if not canFiles or not validName(name) then profileMessage('File APIs unavailable or invalid profile name.','warning');return false end
     local ok,data=pcall(function() return HttpService:JSONDecode(readfile(path(name))) end)
     if not ok or type(data)~='table' or data.version~=1 or type(data.flags)~='table' then
@@ -1362,6 +1537,11 @@ local function loadProfile(name,quiet)
     end
     flags.StoryMaps=maps;flags.StoryCards=cards;flags.StoryModes=modes
     flags.StoryRepeat=nextFlags.StoryRepeat==true
+    flags.AutoSkills={}
+    for _,id in ipairs(Skills.Order) do if type(nextFlags.AutoSkills)=='table' and nextFlags.AutoSkills[id]==true then flags.AutoSkills[id]=true end end
+    flags.SkillPurchaseMode=nextFlags.SkillPurchaseMode=='PurchaseMax' and 'PurchaseMax' or 'Purchase'
+    flags.SkillPrerequisites=nextFlags.SkillPrerequisites==true
+    flags.SkillInterval=math.clamp(tonumber(nextFlags.SkillInterval) or 2,1,10)
     for key,value in pairs(nextFlags) do
         if type(key)=='string' and key:match('^AO_UI_') and (type(value)=='string' or type(value)=='number') then flags[key]=value end
     end
@@ -1414,6 +1594,7 @@ else profile.status='File APIs unavailable; session only' end
 
 ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=flags,
     Workspace=game:GetService('Workspace'),UIS=game:GetService('UserInputService'),env=env,
+    startSkills=startSkills,stopSkills=stopSkills,
     profile=profile,saveProfile=saveProfile,loadProfile=loadProfile,deleteProfile=deleteProfile,setAutoProfile=setAutoProfile,
     setFlag=setFlag,story=Story,start=beginRun,pause=function() stopRun('Stopped; current battle continues in game.') end,
     clearBattle=function()
