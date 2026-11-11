@@ -1,6 +1,6 @@
 # Origin Story
 
-Standalone Roblox Story UI adapted from anime_origin_ui.lua, with layered dark themes, gradient accents, searchable multi-select dropdowns and Config profiles. Selection updates in place to preserve dropdown scroll.
+Standalone Roblox Story UI adapted from anime_origin_ui.lua, with layered dark themes, gradient accents, searchable multi-select dropdowns and Config profiles. Selection updates in place to preserve dropdown scroll. Mob / Boss options are resolved from selected maps each time the dropdown opens: two maps show their 12 encounters, and no maps show an empty dropdown. Hidden-map selections are retained for later but do not enter the run queue or visible selection count. Selected rows use contrasting theme-aware surfaces with a mint tick badge, rather than ASCII checkboxes. Semantic mint/violet/gold/rose accents distinguish controls, and selected-text palettes meet a calculated 4.5:1 contrast ratio for all six themes.
 
 ## Run
 
