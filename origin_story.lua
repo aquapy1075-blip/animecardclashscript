@@ -104,8 +104,8 @@ local tooltip=function() end
 local responsiveRows={}
 local themes={
     Light={bg='F2F5FC',side='E7EDF8',panel='FFFFFF',row='EAF0FA',text='14213A',muted='526781',accent='4264D9',line='D1DBED'},
-    Midnight={bg='0D1320',side='101A2B',panel='172338',row='22334D',text='EFF5FF',muted='96ABC8',accent='8BAFFF',line='2B405D'},
-    Ocean={bg='0D1922',side='112635',panel='173247',row='204159',text='ECFAFF',muted='9BBCCC',accent='53C8E6',line='325267'},
+    Midnight={bg='0B0D13',side='10121B',panel='171B28',row='202638',text='F0F4FF',muted='99A9C8',accent='6D8BFF',line='303B58'},
+    Ocean={bg='080F16',side='0C1822',panel='102635',row='17394B',text='ECFAFF',muted='8EBACD',accent='36DBCE',line='255166'},
     Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267'},
     Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454'},
     Rose={bg='23171C',side='311D27',panel='3E2633',row='503442',text='FFEFF4',muted='D9A9BC',accent='FF8FB2',line='704859'},
@@ -212,7 +212,8 @@ local accentLine=make('Frame',main,{
     Position=UDim2.fromOffset(18,0),Size=UDim2.new(1,-36,0,2),BorderSizePixel=0,
 })
 skin(accentLine,'BackgroundColor3','accent')
-make('UIGradient',accentLine,{Transparency=NumberSequence.new(0,.85)})
+accentLine.Size=UDim2.new(1,-36,0,3)
+make('UIGradient',accentLine,{Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(112,93,255)),ColorSequenceKeypoint.new(.5,Color3.fromRGB(62,159,255)),ColorSequenceKeypoint.new(1,Color3.fromRGB(46,229,199))})})
 local scale=make('UIScale',main,{Scale=1})
 local function viewport()
     local camera=Workspace.CurrentCamera
@@ -279,7 +280,7 @@ local monogram=newText(iconTile,'AO',12,true)
 skin(monogram,'TextColor3','bg')
 monogram.TextXAlignment=Enum.TextXAlignment.Center
 monogram.Size=UDim2.fromScale(1,1)
-local bigTitle=newText(header,'ANIME ORIGIN',17,true)
+local bigTitle=newText(header,'ORIGIN  /  STORY',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
 local smallTitle=newText(header,'CONTROL CENTER  /  STORY',11,false)
@@ -315,7 +316,7 @@ local body=make('Frame',main,{
 local selectedTab='Story'
 local navButtons={}
 local tabPages={}
-local tabNames={'Story','Settings'}
+local tabNames={'Story','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     tab.LayoutOrder=i
@@ -365,6 +366,7 @@ local function row(tab,label)
     })
     corner(r,10)
     skin(r,'BackgroundColor3','panel')
+    local glow=make('UIGradient',r,{Rotation=15,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(165,185,225))})
     stroke(r)
     local nameLabel=newText(r,label,13,true)
     nameLabel.Position=UDim2.fromOffset(14,0)
@@ -405,7 +407,7 @@ skin(menu,'BackgroundColor3','side')
 stroke(menu)
 local menuConnections={}
 local menuSearch=make('TextBox',menu,{Name='DropdownSearch',Position=UDim2.fromOffset(8,8),
-    Size=UDim2.new(1,-16,0,36),Text='',PlaceholderText='Search options…',ClearTextOnFocus=false,
+    Size=UDim2.new(1,-16,0,36),Text='',PlaceholderText='Search targets or maps…',ClearTextOnFocus=false,
     Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0,ZIndex=152})
 corner(menuSearch,8);skin(menuSearch,'BackgroundColor3','row');skin(menuSearch,'TextColor3','text')
 skin(menuSearch,'PlaceholderColor3','muted')
@@ -437,22 +439,36 @@ local function renderMenuOptions()
     for _,child in ipairs(menuList:GetChildren()) do
         if child:IsA('GuiButton') or child:IsA('TextLabel') then child:Destroy() end
     end
+    local scrollBefore=menuList.CanvasPosition
     local query=tostring(menuSearch.Text):lower()
     local count=0
     for index,label in ipairs(menuData.options) do
         if tostring(label):lower():find(query,1,true) then
             count=count+1
             local selected=menuData.multi and menuData.selected and menuData.selected()[label]
-            local caption=menuData.multi and ((selected and '[x] ' or '[ ] ')..tostring(label)) or tostring(label)
+            local caption=menuData.multi and ((selected and '✓   ' or '○   ')..tostring(label)) or tostring(label)
             local choice=uiButton(menuList,caption,UDim2.new(1,-4,0,38))
-            choice.LayoutOrder=index;choice.ZIndex=152
+            choice.LayoutOrder=index;choice.ZIndex=152;choice:SetAttribute('ChoiceLabel',tostring(label))
+            choice.TextXAlignment=Enum.TextXAlignment.Left
+            make('UIPadding',choice,{PaddingLeft=UDim.new(0,12)})
+            if selected then skin(choice,'BackgroundColor3','accent');skin(choice,'TextColor3','bg') end
             local callback=menuData.choose
             local indexValue,labelValue=index,label
             menuConnections[#menuConnections+1]=choice.MouseButton1Click:Connect(function()
                 local data=menuData
                 if data and data.multi then
                     callback(indexValue,labelValue)
-                    renderMenuOptions()
+                    for _,option in ipairs(menuList:GetChildren()) do
+                        if option:IsA('TextButton') then
+                            local label=option:GetAttribute('ChoiceLabel')
+                            if label then
+                                local checked=data.selected()[label]
+                                option.Text=(checked and '✓   ' or '○   ')..label
+                                skin(option,'BackgroundColor3',checked and 'accent' or 'row')
+                                skin(option,'TextColor3',checked and 'bg' or 'text')
+                            end
+                        end
+                    end
                 else hideMenu();callback(indexValue,labelValue) end
             end)
         end
@@ -461,20 +477,21 @@ local function renderMenuOptions()
         local empty=newText(menuList,'No matching options',12,false)
         empty.Size=UDim2.new(1,-8,0,38);empty.ZIndex=152
     end
-    menuList.CanvasPosition=Vector2.new(0,0)
+    menuList.CanvasPosition=scrollBefore
 end
-menuSearch:GetPropertyChangedSignal('Text'):Connect(renderMenuOptions)
+menuSearch:GetPropertyChangedSignal('Text'):Connect(function() menuList.CanvasPosition=Vector2.new(0,0);renderMenuOptions() end)
 local function openMenu(anchor,options,choose)
     hideMenu()
     local view=viewport()
-    local width=math.min(260,view.X-16)
-    local height=math.min(math.max(110,#options*43+60),300,view.Y-20)
+    local width=math.min(420,view.X-24)
+    local height=math.min(math.max(110,#options*43+60),420,view.Y-24)
     local position=anchor.AbsolutePosition
     local top=position.Y+anchor.AbsoluteSize.Y+6
     if top+height>view.Y-8 then top=position.Y-height-6 end
     menu.Size=UDim2.fromOffset(width,height)
     menu.Position=UDim2.fromOffset(math.clamp(position.X,8,math.max(8,view.X-width-8)),
         math.clamp(top,8,math.max(8,view.Y-height-8)))
+    menuList.CanvasPosition=Vector2.new(0,0)
     menuSearch.Text=''
     menuData={options=options,choose=choose}
     renderMenuOptions()
@@ -698,6 +715,21 @@ local function internalSet(lookup,selection)
     for label in pairs(selection) do if lookup[label] then result[lookup[label]]=true end end
     return result
 end
+orderCounter=orderCounter+1
+local hero=make('Frame',tabPages.Story,{Name='StoryHero',Size=UDim2.new(1,-2,0,106),LayoutOrder=orderCounter,BorderSizePixel=0})
+corner(hero,12);stroke(hero)
+hero.BackgroundColor3=Color3.fromRGB(255,255,255)
+make('UIGradient',hero,{Rotation=15,Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(43,39,91)),ColorSequenceKeypoint.new(.6,Color3.fromRGB(26,52,83)),ColorSequenceKeypoint.new(1,Color3.fromRGB(18,74,77))})})
+local heroTitle=newText(hero,'STORY AUTOMATION',19,true)
+heroTitle.Position=UDim2.fromOffset(18,14);heroTitle.Size=UDim2.new(1,-36,0,26)
+heroTitle.TextColor3=Color3.fromRGB(239,246,255)
+skinned[heroTitle]=nil
+local heroSub=newText(hero,'Build your route. Choose each fight. Keep moving forward.',12,false)
+heroSub.Position=UDim2.fromOffset(18,44);heroSub.Size=UDim2.new(1,-36,0,20)
+heroSub.TextColor3=Color3.fromRGB(179,203,230);skinned[heroSub]=nil
+local heroCount=newText(hero,'6 WORLDS   /   36 ENCOUNTERS   /   5 DIFFICULTIES',11,true)
+heroCount.Position=UDim2.fromOffset(18,76);heroCount.Size=UDim2.new(1,-36,0,18)
+heroCount.TextColor3=Color3.fromRGB(99,232,217);skinned[heroCount]=nil
 section('Story','Story selection')
 multiDropdown('Maps',mapLabels,function() return displaySet(mapLookup,flags.StoryMaps) end,
     function(value) setFlag('StoryMaps',internalSet(mapLookup,value)) end)
@@ -749,6 +781,22 @@ preview.TextYAlignment=Enum.TextYAlignment.Top
 section('Story','Combat detection')
 addStatus('Story','Combat signal','ShowBattle OR ShowBattle2')
 addAction('Story','Export received battle payloads','COPY CAPTURE',ctx.exportCapture)
+section('Config','Profiles')
+local profileName=profile.currentProfile
+local nameBox=addInput('Config','Profile name','ProfileName','Default')
+flags.ProfileName=profile.currentProfile
+local savedDrop
+savedDrop=addAction('Config','Saved profiles','SELECT  ▾',function()
+    openMenu(savedDrop,profile.storedNames,function(_,name)
+        flags.ProfileName=name;profile.currentProfile=name;repaintControls()
+    end)
+end)
+addAction('Config','Save profile','SAVE',function() ctx.saveProfile(flags.ProfileName) end)
+addAction('Config','Load profile','LOAD',function() ctx.loadProfile(flags.ProfileName) end)
+addAction('Config','Delete profile','DELETE',function() ctx.deleteProfile(flags.ProfileName) end)
+addAction('Config','Load on next execute','SET AUTO LOAD',function() ctx.setAutoProfile(flags.ProfileName) end)
+local configStatus=addStatus('Config','Storage','Ready')
+local configAuto=addStatus('Config','Auto Load','None')
 section('Settings','Origin UI appearance')
 addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose','Light'})
 addDropdown('Settings','Transparency %','AO_UI_Transparency',{0,15,30,45,65})
@@ -980,6 +1028,8 @@ local function refreshOverview()
     pumpToast()
     showStatus(sessionBadge,state.enabled and 'RUNNING' or 'STANDBY')
     showStatus(storyStatus,state.status or 'Ready')
+    showStatus(configStatus,profile.status or 'Ready')
+    showStatus(configAuto,profile.autoProfile~='' and profile.autoProfile or 'None')
     local current=state.current
     showStatus(storyCurrent,current and (current.cardId..' / '..current.difficulty) or '--')
     showStatus(storyCount,tostring(state.index)..' / '..tostring(#state.queue))
@@ -1110,7 +1160,7 @@ local function beginRun()
                 attempt.returned=true;attempt.response=response
                 log('StartResponse',response)
             end)
-            local startDeadline=os.clock()+12
+            local startDeadline=os.clock()+20
             while active() and not attempt.started and os.clock()<startDeadline do task.wait(.1) end
             if not active() then break end
             if not attempt.started then
@@ -1121,9 +1171,7 @@ local function beginRun()
                     stopRun('StartEncounter request failed; stopped.');break
                 end
                 state.awaiting=false;state.attempt=nil
-                local previousIndex=math.max(1,i-1)
-                message('No combat for '..item.cardId..' / '..item.difficulty..'; retrying '..queue[previousIndex].cardId..' / '..queue[previousIndex].difficulty,'warning')
-                i=previousIndex
+                message('Waiting to enter next target: '..item.cardId..' / '..item.difficulty..'; retrying this target only.','warning')
                 if not waitSeconds(3) then break end
             else
                 local endDeadline=os.clock()+900
@@ -1167,8 +1215,91 @@ local function setFlag(key,value)
     flags[key]=value
     if ui then ui.Repaint() end
 end
+local profile={currentProfile='Default',autoProfile='',storedNames={},status='Ready',revision=0}
+local profileDir='OriginStory'
+local canFiles=type(readfile)=='function' and type(writefile)=='function' and type(isfile)=='function' and type(makefolder)=='function'
+local index={names={},auto=''}
+local function validName(name)
+    return type(name)=='string' and #name>0 and #name<=48 and name:match('^[%w _%-]+$')~=nil
+end
+local function path(name) return profileDir..'/'..name..'.json' end
+local function writeIndex() writefile(profileDir..'/index.json',HttpService:JSONEncode(index)) end
+local function profileMessage(text,kind) profile.status=text;message(text,kind) end
+local function loadProfile(name,quiet)
+    if state.enabled or state.pending then profileMessage('Stop Story before loading a profile.','warning');return false end
+    if not canFiles or not validName(name) then profileMessage('File APIs unavailable or invalid profile name.','warning');return false end
+    local ok,data=pcall(function() return HttpService:JSONDecode(readfile(path(name))) end)
+    if not ok or type(data)~='table' or data.version~=1 or type(data.flags)~='table' then
+        profileMessage('Cannot load profile: '..tostring(name),'error');return false
+    end
+    local nextFlags=data.flags
+    local maps,cards,modes={},{},{}
+    for _,world in ipairs(Story.Worlds) do
+        if type(nextFlags.StoryMaps)=='table' and nextFlags.StoryMaps[world.map]==true then maps[world.map]=true end
+        for _,id in ipairs(world.cards) do
+            if type(nextFlags.StoryCards)=='table' and nextFlags.StoryCards[id]==true then cards[id]=true end
+            modes[id]={}
+            local selection=type(nextFlags.StoryModes)=='table' and nextFlags.StoryModes[id]
+            for _,mode in ipairs(Story.Modes) do
+                if type(selection)=='table' and selection[mode]==true then modes[id][mode]=true end
+            end
+        end
+    end
+    flags.StoryMaps=maps;flags.StoryCards=cards;flags.StoryModes=modes
+    flags.StoryRepeat=nextFlags.StoryRepeat==true
+    for key,value in pairs(nextFlags) do
+        if type(key)=='string' and key:match('^AO_UI_') and (type(value)=='string' or type(value)=='number') then flags[key]=value end
+    end
+    profile.currentProfile=name;profile.status='Loaded: '..name
+    if ui then ui.Repaint() end
+    if not quiet then profileMessage(profile.status,'success') end
+    return true
+end
+local function saveProfile(name)
+    if not canFiles then profileMessage('Executor file APIs unavailable.','warning');return end
+    if not validName(name) then profileMessage('Use 1–48 letters, numbers, spaces, _ or -.','warning');return end
+    local ok=pcall(function()
+        writefile(path(name),HttpService:JSONEncode({version=1,flags=flags}))
+        if not table.find(index.names,name) then table.insert(index.names,name);table.sort(index.names) end
+        writeIndex()
+    end)
+    if ok then profile.currentProfile=name;profile.storedNames=index.names;profileMessage('Saved: '..name,'success')
+    else profileMessage('Profile save failed.','error') end
+end
+local function deleteProfile(name)
+    if not canFiles or not validName(name) or type(delfile)~='function' then profileMessage('Delete/file APIs unavailable.','warning');return end
+    local ok=pcall(function()
+        if isfile(path(name)) then delfile(path(name)) end
+        for i=#index.names,1,-1 do if index.names[i]==name then table.remove(index.names,i) end end
+        if index.auto==name then index.auto='';profile.autoProfile='' end
+        writeIndex()
+    end)
+    if ok then profile.storedNames=index.names;profileMessage('Deleted: '..name,'success') else profileMessage('Delete failed.','error') end
+end
+local function setAutoProfile(name)
+    if not canFiles or not validName(name) or not table.find(index.names,name) then profileMessage('Save this profile first.','warning');return end
+    index.auto=name
+    local ok=pcall(writeIndex)
+    if ok then profile.autoProfile=name;profileMessage('Auto Load: '..name,'success') else profileMessage('Auto Load save failed.','error') end
+end
+if canFiles then
+    local ok=pcall(function()
+        if type(isfolder)~='function' or not isfolder(profileDir) then pcall(makefolder,profileDir) end
+        if isfile(profileDir..'/index.json') then
+            local data=HttpService:JSONDecode(readfile(profileDir..'/index.json'))
+            if type(data)=='table' and type(data.names)=='table' then
+                for _,name in ipairs(data.names) do if validName(name) then index.names[#index.names+1]=name end end
+                if validName(data.auto) then index.auto=data.auto end
+            end
+        end
+    end)
+    profile.storedNames=index.names;profile.autoProfile=index.auto
+    if ok and index.auto~='' then loadProfile(index.auto,true) end
+else profile.status='File APIs unavailable; session only' end
+
 ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=flags,
     Workspace=game:GetService('Workspace'),UIS=game:GetService('UserInputService'),env=env,
+    profile=profile,saveProfile=saveProfile,loadProfile=loadProfile,deleteProfile=deleteProfile,setAutoProfile=setAutoProfile,
     setFlag=setFlag,story=Story,start=beginRun,pause=function() stopRun('Stopped; current battle continues in game.') end,
     clearBattle=function()
         if state.pending or state.enabled then message('Stop and wait for pending request first.','warning');return end
