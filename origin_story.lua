@@ -1,7 +1,7 @@
 -- Origin Story - UI adapted from aquapy1075-blip/animecardclashscript/anime_origin_ui.lua
 -- Upstream SHA: 543f7f2b12f690f6b6592dcf10d805807fe2c29b
 -- Standalone: embeds the adapted Origin UI; no remote code download.
--- Combat detection uses user supplied ShowBattle / ShowBattle2 visibility.
+-- Combat tracking uses server BattleEnd events matched to the admitted battleId.
 local Story=(function()
 -- Story queue: map order, then encounter order, then difficulty order.
 local Story = {}
@@ -214,6 +214,25 @@ local function stroke(obj)
     local s=make('UIStroke',obj,{Thickness=1,Transparency=0.15})
     skin(s,'Color','line')
 end
+local textGradients=setmetatable({}, {__mode='k'})
+local function gradientText(label,bright)
+    if skinned[label] then skinned[label].TextColor3=nil end
+    label.TextColor3=Color3.fromRGB(255,255,255)
+    local gradient=label:FindFirstChild('OriginTextGradient')
+    if not gradient then gradient=make('UIGradient',label,{Name='OriginTextGradient',Rotation=0}) end
+    local light=flags.AO_UI_Theme=='Light' and not bright
+    gradient.Color=light and ColorSequence.new({
+        ColorSequenceKeypoint.new(0,Color3.fromRGB(102,48,165)),
+        ColorSequenceKeypoint.new(.5,Color3.fromRGB(25,88,164)),
+        ColorSequenceKeypoint.new(1,Color3.fromRGB(7,112,91)),
+    }) or ColorSequence.new({
+        ColorSequenceKeypoint.new(0,Color3.fromRGB(214,179,255)),
+        ColorSequenceKeypoint.new(.5,Color3.fromRGB(144,217,255)),
+        ColorSequenceKeypoint.new(1,Color3.fromRGB(142,245,205)),
+    })
+    textGradients[label]={bright=bright}
+end
+
 local function newText(parent,label,size,bold)
     local l=make('TextLabel',parent,{
         BackgroundTransparency=1,Text=tostring(label),
@@ -222,6 +241,7 @@ local function newText(parent,label,size,bold)
         TextTruncate=Enum.TextTruncate.AtEnd,BorderSizePixel=0,
     })
     skin(l,'TextColor3',bold and 'text' or 'muted')
+    if bold then gradientText(l) end
     return l
 end
 local function uiButton(parent,caption,size)
@@ -407,9 +427,10 @@ local function section(tab,label)
     orderCounter=orderCounter+1
     local t=newText(tabPages[tab],string.upper(label),12,true)
     t.Size=UDim2.new(1,0,0,30)
+    gradientText(t)
     t.LayoutOrder=orderCounter
     local sectionRoles={'violet','mint','gold','rose'}
-    skin(t,'TextColor3',sectionRoles[(orderCounter-1)%4+1])
+    gradientText(t)
     return t
 end
 local function row(tab,label)
@@ -491,17 +512,6 @@ local function paintOption(option,label,checked)
     option.Text=label
     skin(option,'BackgroundColor3',checked and 'selected' or 'row')
     skin(option,'TextColor3',checked and 'selectedText' or 'text')
-    local mark=option:FindFirstChild('SelectionMark')
-    if not mark then
-        mark=make('TextLabel',option,{Name='SelectionMark',AnchorPoint=Vector2.new(1,.5),Position=UDim2.new(1,-10,.5,0),Size=UDim2.fromOffset(24,24),BorderSizePixel=0,Font=Enum.Font.GothamBold,TextSize=15,ZIndex=153})
-        corner(mark,7)
-        local border=make('UIStroke',mark,{Thickness=1,Transparency=.3})
-        skin(border,'Color','mint')
-    end
-    mark.Text=checked and '✓' or ''
-    mark.BackgroundTransparency=checked and .12 or .8
-    skin(mark,'BackgroundColor3',checked and 'mint' or 'line')
-    skin(mark,'TextColor3','bg')
 end
 local function renderMenuOptions()
     if not menuData then return end
@@ -521,7 +531,7 @@ local function renderMenuOptions()
             local choice=uiButton(menuList,caption,UDim2.new(1,-4,0,38))
             choice.LayoutOrder=index;choice.ZIndex=152;choice:SetAttribute('ChoiceLabel',tostring(label))
             choice.TextXAlignment=Enum.TextXAlignment.Left
-            make('UIPadding',choice,{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,44)})
+            make('UIPadding',choice,{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,12)})
             if menuData.multi then paintOption(choice,tostring(label),selected) end
             local callback=menuData.choose
             local indexValue,labelValue=index,label
@@ -626,6 +636,7 @@ local function paintTheme()
     if theme==paintedTheme then return false end
     paintedTheme=theme
     for role,hex in pairs(themes[theme]) do themeColors[role]=rgb(hex) end
+    for label,entry in pairs(textGradients) do if label.Parent then gradientText(label,entry.bright) end end
     for obj,properties in pairs(skinned) do
         local tween=lifecycle.tweens[obj]
         if tween then tween:Cancel();lifecycle.tweens[obj]=nil end
@@ -804,15 +815,15 @@ corner(hero,12);stroke(hero)
 hero.BackgroundColor3=Color3.fromRGB(255,255,255)
 make('UIGradient',hero,{Rotation=15,Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(71,43,124)),ColorSequenceKeypoint.new(.6,Color3.fromRGB(26,88,124)),ColorSequenceKeypoint.new(1,Color3.fromRGB(20,111,101))})})
 local heroTitle=newText(hero,'STORY AUTOMATION',19,true)
-heroTitle.Position=UDim2.fromOffset(18,14);heroTitle.Size=UDim2.new(1,-36,0,26)
-heroTitle.TextColor3=Color3.fromRGB(239,246,255)
+heroTitle.Position=UDim2.fromOffset(18,14);heroTitle.Size=UDim2.new(0,255,0,26)
+gradientText(heroTitle,true)
 skinned[heroTitle]=nil
 local heroSub=newText(hero,'Build your route. Choose each fight. Keep moving forward.',12,false)
 heroSub.Position=UDim2.fromOffset(18,44);heroSub.Size=UDim2.new(1,-36,0,20)
 heroSub.TextColor3=Color3.fromRGB(179,203,230);skinned[heroSub]=nil
 local heroCount=newText(hero,'6 WORLDS   /   36 ENCOUNTERS   /   5 DIFFICULTIES',11,true)
 heroCount.Position=UDim2.fromOffset(18,76);heroCount.Size=UDim2.new(1,-36,0,18)
-heroCount.TextColor3=Color3.fromRGB(99,232,217);skinned[heroCount]=nil
+gradientText(heroCount,true);skinned[heroCount]=nil
 section('Story','Story selection')
 multiDropdown('Maps',mapLabels,function() return displaySet(mapLookup,flags.StoryMaps) end,
     function(value) setFlag('StoryMaps',internalSet(mapLookup,value)) end)
@@ -884,7 +895,50 @@ local configStatus=addStatus('Config','Storage','Ready')
 local configAuto=addStatus('Config','Auto Load','None')
 section('Settings','Origin UI appearance')
 addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose','Light'})
-addDropdown('Settings','Transparency %','AO_UI_Transparency',{0,15,30,45,65})
+local transparencyRow=row('Settings','Transparency')
+responsiveRows[transparencyRow].kind='transparency'
+local transparencyText=newText(transparencyRow,'15%',12,true)
+transparencyText.Position=UDim2.new(1,-60,0,0)
+transparencyText.Size=UDim2.new(0,46,1,0)
+transparencyText.TextXAlignment=Enum.TextXAlignment.Right
+local slider=make('TextButton',transparencyRow,{
+    Name='TransparencySlider',Text='',AutoButtonColor=false,
+    BackgroundTransparency=1,Position=UDim2.new(1,-245,.5,-16),
+    Size=UDim2.fromOffset(170,32),BorderSizePixel=0,
+})
+local track=make('Frame',slider,{
+    Position=UDim2.new(0,0,.5,-3),Size=UDim2.new(1,0,0,6),BorderSizePixel=0,
+})
+corner(track,3);skin(track,'BackgroundColor3','row')
+local fill=make('Frame',track,{Size=UDim2.new(15/65,0,1,0),BorderSizePixel=0})
+corner(fill,3);fill.BackgroundColor3=Color3.fromRGB(255,255,255)
+make('UIGradient',fill,{Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(177,126,245)),ColorSequenceKeypoint.new(.5,Color3.fromRGB(98,180,252)),ColorSequenceKeypoint.new(1,Color3.fromRGB(77,217,181))})})
+local knob=make('Frame',slider,{
+    AnchorPoint=Vector2.new(.5,.5),Position=UDim2.new(15/65,0,.5,0),
+    Size=UDim2.fromOffset(14,14),BorderSizePixel=0,
+})
+corner(knob,7);skin(knob,'BackgroundColor3','accent')
+updateTransparencyLabel=function(value)
+    local ratio=value/.65
+    transparencyText.Text=tostring(math.floor(value*100+.5))..'%'
+    fill.Size=UDim2.new(ratio,0,1,0)
+    knob.Position=UDim2.new(ratio,0,.5,0)
+end
+local sliderInput=nil
+local function adjustTransparency(x)
+    if slider.AbsoluteSize.X<=0 then return end
+    local ratio=math.clamp((x-slider.AbsolutePosition.X)/slider.AbsoluteSize.X,0,1)
+    local value=math.floor(ratio*65+.5)
+    if value~=flags.AO_UI_Transparency then setFlag('AO_UI_Transparency',value) end
+end
+slider.InputBegan:Connect(function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1
+        or input.UserInputType==Enum.UserInputType.Touch then
+        sliderInput=input
+        adjustTransparency(input.Position.X)
+    end
+end)
+
 addAction('Settings','Unload script and UI','UNLOAD',function() state.stop() end)
 
 -- Responsive window interaction: all coordinates are clamped to the viewport.
