@@ -14,6 +14,17 @@ Story.Worlds = {
     {name='Ninja Village',map='NinjaVillage',cards={'RainGod','CrowGenius','WanderingAvenger','TenTailVessel','ValleyLegend','FoxVessel'}},
     {name='Demon Lord Hall',map='DemonLordHall',cards={'HolyKnightCaptain','FlameGeneral','PrimordialButler','DestroyerPrincess','StormDragon','SlimeSovereign'}},
 }
+function Story.targetOptions(selectedMaps)
+    local options={}
+    for _,world in ipairs(Story.Worlds) do
+        if (selectedMaps or {})[world.map] then
+            for i,id in ipairs(world.cards) do
+                options[#options+1]=world.name..' / '..id..(i==#world.cards and ' [BOSS]' or '')
+            end
+        end
+    end
+    return options
+end
 function Story.buildQueue(flags)
     local queue={}
     for _,world in ipairs(Story.Worlds) do
@@ -148,12 +159,12 @@ local notify=function() end
 local tooltip=function() end
 local responsiveRows={}
 local themes={
-    Light={bg='F2F5FC',side='E7EDF8',panel='FFFFFF',row='EAF0FA',text='14213A',muted='526781',accent='4264D9',line='D1DBED'},
-    Midnight={bg='0B0D13',side='10121B',panel='171B28',row='202638',text='F0F4FF',muted='99A9C8',accent='6D8BFF',line='303B58'},
-    Ocean={bg='080F16',side='0C1822',panel='102635',row='17394B',text='ECFAFF',muted='8EBACD',accent='36DBCE',line='255166'},
-    Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267'},
-    Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454'},
-    Rose={bg='23171C',side='311D27',panel='3E2633',row='503442',text='FFEFF4',muted='D9A9BC',accent='FF8FB2',line='704859'},
+    Light={bg='F2F5FC',side='E7EDF8',panel='FFFFFF',row='EAF0FA',text='14213A',muted='526781',accent='4264D9',line='D1DBED',selected='DDE8FF',selectedText='173C85',mint='087B72',gold='986014',rose='B33764',violet='7045BC'},
+    Midnight={bg='0B0D13',side='10121B',panel='171B28',row='202638',text='F0F4FF',muted='99A9C8',accent='6D8BFF',line='303B58',selected='28476B',selectedText='D9F4FF',mint='62DCC1',gold='F3C276',rose='F28FB4',violet='BAA0FF'},
+    Ocean={bg='080F16',side='0C1822',panel='102635',row='17394B',text='ECFAFF',muted='8EBACD',accent='36DBCE',line='255166',selected='164C56',selectedText='CFFFF6',mint='5CE1C2',gold='F4CC84',rose='FF9EBD',violet='B5A5FF'},
+    Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267',selected='503D78',selectedText='F4E8FF',mint='70E2CC',gold='F2CA83',rose='FFA0C1',violet='C7A8FF'},
+    Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454',selected='235545',selectedText='D2FFEC',mint='79E8BD',gold='F4CE86',rose='FCA3C0',violet='B7ACFF'},
+    Rose={bg='23171C',side='311D27',panel='3E2633',row='503442',text='FFEFF4',muted='D9A9BC',accent='FF8FB2',line='704859',selected='64364E',selectedText='FFE2EE',mint='7AE5CE',gold='F5CF92',rose='FFABCD',violet='C8ADFF'},
 }
 local function rgb(hex)
     return Color3.fromRGB(tonumber(hex:sub(1,2),16),tonumber(hex:sub(3,4),16),tonumber(hex:sub(5,6),16))
@@ -364,6 +375,7 @@ local tabPages={}
 local tabNames={'Story','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
+    make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
     tab.LayoutOrder=i
     tab.TextXAlignment=Enum.TextXAlignment.Left
     make('UIPadding',tab,{PaddingLeft=UDim.new(0,14)})
@@ -400,6 +412,8 @@ local function section(tab,label)
     local t=newText(tabPages[tab],string.upper(label),12,true)
     t.Size=UDim2.new(1,0,0,30)
     t.LayoutOrder=orderCounter
+    local sectionRoles={'violet','mint','gold','rose'}
+    skin(t,'TextColor3',sectionRoles[(orderCounter-1)%4+1])
     return t
 end
 local function row(tab,label)
@@ -477,6 +491,22 @@ local function hideMenu()
         if child:IsA('GuiButton') or child:IsA('TextLabel') then child:Destroy() end
     end
 end
+local function paintOption(option,label,checked)
+    option.Text=label
+    skin(option,'BackgroundColor3',checked and 'selected' or 'row')
+    skin(option,'TextColor3',checked and 'selectedText' or 'text')
+    local mark=option:FindFirstChild('SelectionMark')
+    if not mark then
+        mark=make('TextLabel',option,{Name='SelectionMark',AnchorPoint=Vector2.new(1,.5),Position=UDim2.new(1,-10,.5,0),Size=UDim2.fromOffset(24,24),BorderSizePixel=0,Font=Enum.Font.GothamBold,TextSize=15,ZIndex=153})
+        corner(mark,7)
+        local border=make('UIStroke',mark,{Thickness=1,Transparency=.3})
+        skin(border,'Color','mint')
+    end
+    mark.Text=checked and '✓' or ''
+    mark.BackgroundTransparency=checked and .12 or .8
+    skin(mark,'BackgroundColor3',checked and 'mint' or 'line')
+    skin(mark,'TextColor3','bg')
+end
 local function renderMenuOptions()
     if not menuData then return end
     for _,connection in ipairs(menuConnections) do connection:Disconnect() end
@@ -491,12 +521,12 @@ local function renderMenuOptions()
         if tostring(label):lower():find(query,1,true) then
             count=count+1
             local selected=menuData.multi and menuData.selected and menuData.selected()[label]
-            local caption=menuData.multi and ((selected and '✓   ' or '○   ')..tostring(label)) or tostring(label)
+            local caption=tostring(label)
             local choice=uiButton(menuList,caption,UDim2.new(1,-4,0,38))
             choice.LayoutOrder=index;choice.ZIndex=152;choice:SetAttribute('ChoiceLabel',tostring(label))
             choice.TextXAlignment=Enum.TextXAlignment.Left
-            make('UIPadding',choice,{PaddingLeft=UDim.new(0,12)})
-            if selected then skin(choice,'BackgroundColor3','accent');skin(choice,'TextColor3','bg') end
+            make('UIPadding',choice,{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,44)})
+            if menuData.multi then paintOption(choice,tostring(label),selected) end
             local callback=menuData.choose
             local indexValue,labelValue=index,label
             menuConnections[#menuConnections+1]=choice.MouseButton1Click:Connect(function()
@@ -508,9 +538,7 @@ local function renderMenuOptions()
                             local label=option:GetAttribute('ChoiceLabel')
                             if label then
                                 local checked=data.selected()[label]
-                                option.Text=(checked and '✓   ' or '○   ')..label
-                                skin(option,'BackgroundColor3',checked and 'accent' or 'row')
-                                skin(option,'TextColor3',checked and 'bg' or 'text')
+                                paintOption(option,label,checked)
                             end
                         end
                     end
@@ -585,6 +613,13 @@ local function addAction(tab,label,caption,callback)
     local b=uiButton(r,caption,UDim2.fromOffset(180,31))
     b.Position=UDim2.new(1,-195,.5,-15)
     b.MouseButton1Click:Connect(callback)
+    local actionRole=({START='mint',STOP='rose',SAVE='mint',LOAD='violet',DELETE='rose',PREVIEW='gold',['SET AUTO LOAD']='gold'})[caption]
+    if actionRole then
+        skin(b,'BackgroundColor3','selected')
+        skin(b,'TextColor3',actionRole)
+        local edge=make('UIStroke',b,{Thickness=1,Transparency=.5})
+        skin(edge,'Color',actionRole)
+    end
     return b
 end
 local paintedTheme=nil
@@ -718,10 +753,11 @@ local function suspendOverlays()
 end
 -- Multi-select reuses the Origin UI searchable popup and preserves selections while filtering.
 local function multiDropdown(label,options,getSet,onChange)
+    local function currentOptions() return type(options)=='function' and options() or options end
     local button
     button=addAction('Story',label,'SELECT  ▾',function()
         if menu.Visible then hideMenu();return end
-        openMenu(button,options,function(_,value)
+        openMenu(button,currentOptions(),function(_,value)
             local nextSet={}
             for k,v in pairs(getSet()) do nextSet[k]=v end
             nextSet[value]=not nextSet[value] or nil
@@ -734,8 +770,9 @@ local function multiDropdown(label,options,getSet,onChange)
     end)
     widgets[#widgets+1]=function()
         local count=0
-        for _,value in ipairs(options) do if getSet()[value] then count=count+1 end end
-        button.Text=tostring(count)..' selected  ▾'
+        local available=currentOptions()
+        for _,value in ipairs(available) do if getSet()[value] then count=count+1 end end
+        button.Text=#available==0 and 'Choose maps first' or tostring(count)..' selected  ▾'
     end
     return button
 end
@@ -764,7 +801,7 @@ orderCounter=orderCounter+1
 local hero=make('Frame',tabPages.Story,{Name='StoryHero',Size=UDim2.new(1,-2,0,106),LayoutOrder=orderCounter,BorderSizePixel=0})
 corner(hero,12);stroke(hero)
 hero.BackgroundColor3=Color3.fromRGB(255,255,255)
-make('UIGradient',hero,{Rotation=15,Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(43,39,91)),ColorSequenceKeypoint.new(.6,Color3.fromRGB(26,52,83)),ColorSequenceKeypoint.new(1,Color3.fromRGB(18,74,77))})})
+make('UIGradient',hero,{Rotation=15,Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(71,43,124)),ColorSequenceKeypoint.new(.6,Color3.fromRGB(26,88,124)),ColorSequenceKeypoint.new(1,Color3.fromRGB(20,111,101))})})
 local heroTitle=newText(hero,'STORY AUTOMATION',19,true)
 heroTitle.Position=UDim2.fromOffset(18,14);heroTitle.Size=UDim2.new(1,-36,0,26)
 heroTitle.TextColor3=Color3.fromRGB(239,246,255)
@@ -778,7 +815,7 @@ heroCount.TextColor3=Color3.fromRGB(99,232,217);skinned[heroCount]=nil
 section('Story','Story selection')
 multiDropdown('Maps',mapLabels,function() return displaySet(mapLookup,flags.StoryMaps) end,
     function(value) setFlag('StoryMaps',internalSet(mapLookup,value)) end)
-multiDropdown('Mob / Boss',cardLabels,function() return displaySet(cardLookup,flags.StoryCards) end,
+multiDropdown('Mob / Boss',function() return story.targetOptions(flags.StoryMaps) end,function() return displaySet(cardLookup,flags.StoryCards) end,
     function(value) setFlag('StoryCards',internalSet(cardLookup,value)) end)
 section('Story','Modes per mob / boss')
 -- Each selected target reveals its own difficulty multi-dropdown. Defaults to Easy.
