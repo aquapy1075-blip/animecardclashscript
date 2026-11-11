@@ -1,6 +1,6 @@
 # Origin Story
 
-Standalone Roblox Story UI adapted from anime_origin_ui.lua. Multi-select maps/targets, per-target difficulties, searchable dropdowns preserving scroll, themed selected surfaces/tick badges, multicolor accents and Config profiles.
+Standalone Roblox Story UI adapted from anime_origin_ui.lua. Multi-select maps/targets, per-target difficulties, searchable dropdowns preserving scroll, theme-aware selected surfaces without tick marks, multicolor accents and Config profiles.
 
 ## Run
 
@@ -45,3 +45,11 @@ Per-fight Starting/WIN/LOSS messages update the live Story Status and Last serve
 COPY CAPTURE now includes current status, last result, running state, current item, index and queue size. QueueStarted records selections, QueueCompleted explicitly records successful exhaustion of the selected queue, and QueueStopped records the reason. Routine unrelated Tower completions are no longer logged repeatedly, preserving space for relevant Story records.
 
 The user's later capture shows nine matching server wins through FirstDemon/Hard, but lacks a completion/stop record. It does not establish a loss or explain any later stop. The prior UI retained and replayed notifications when hidden, which can make old WIN messages appear after combat has stopped. This revision fixes that independently of server result handling. Mock tests assert no per-fight WIN/LOSS toast, clearing on Start/Stop, and completion text containing the queue size. Live-game behavior is still to be checked.
+
+## Gradient text and transparency slider
+
+Bold headings and control labels use a violet → blue → mint text gradient. Dark themes use bright colors and Light uses darker colors for readability; the dark Story hero retains the brighter palette. Body copy and live values stay plain. Text gradients update when switching themes.
+
+Dropdown choices use selected background/text colors only, with no tick badge or ASCII checkbox. Selection still updates in place and preserves scroll.
+
+Settings → Transparency is now a mouse/touch slider from 0 to 65%, with a gradient fill, thumb and numeric percentage. It uses AO_UI_Transparency, preserving existing profile compatibility and the upper limit for readable surfaces. The shared input lifecycle cancels dragging when the window hides. Slider endpoint, midpoint, clamping and zero-width guard checks passed, along with script compilation and server controller regression checks. Roblox rendering and physical input still need a live-game check.
