@@ -695,6 +695,8 @@ local toastMessage=newText(toastBox,'',12,false);toastMessage.Position=UDim2.fro
 toastMessage.Size=UDim2.new(1,-30,0,40);toastMessage.TextWrapped=true;toastMessage.ZIndex=211
 local function pumpToast()
     if not lifecycle.alive or toast.active or not root.Enabled or #toast.queue==0 then return end
+    while #toast.queue>0 and os.clock()-(toast.queue[1].createdAt or os.clock())>6 do table.remove(toast.queue,1) end
+    if #toast.queue==0 then return end
     local item=table.remove(toast.queue,1)
     toast.item=item
     toast.active=true;toast.generation=toast.generation+1
@@ -721,7 +723,7 @@ notify=function(message,kind,duration)
     duration=tonumber(duration) or 3
     if duration~=duration then duration=3 end
     if #toast.queue>=8 then table.remove(toast.queue,1) end
-    toast.queue[#toast.queue+1]={message=tostring(message),kind=kind or 'info',
+    toast.queue[#toast.queue+1]={createdAt=os.clock(),message=tostring(message),kind=kind or 'info',
         duration=math.clamp(duration,1,10)}
     pumpToast()
 end
@@ -738,14 +740,17 @@ window.reflowOverlays=function()
 end
 local function suspendOverlays()
     hideMenu();tooltipBox.Visible=false
+    toast.queue={}
     if toast.active then
-        if lifecycle.alive and toast.item then
-            if #toast.queue>=8 then table.remove(toast.queue) end
-            table.insert(toast.queue,1,toast.item)
-        end
         toast.item=nil
         toast.generation=toast.generation+1;toast.active=false;toastBox.Visible=false
     end
+end
+
+local function clearNotifications()
+    toast.generation=toast.generation+1
+    toast.queue={};toast.active=false;toast.item=nil
+    toastBox.Visible=false
 end
 -- Multi-select reuses the Origin UI searchable popup and preserves selections while filtering.
 local function multiDropdown(label,options,getSet,onChange)
@@ -849,6 +854,7 @@ addAction('Story','Start selected story','START',ctx.start)
 addAction('Story','Stop after current request','STOP',ctx.pause)
 local storyStatus=addStatus('Story','Status','Ready')
 local storyCurrent=addStatus('Story','Current target','--')
+local storyResult=addStatus('Story','Last server result','--')
 local storyCount=addStatus('Story','Queue position','0 / 0')
 -- Multi-line preview is a dedicated block, not a fixed-height control row.
 orderCounter=orderCounter+1
@@ -1107,6 +1113,7 @@ local function refreshOverview()
     pumpToast()
     showStatus(sessionBadge,state.enabled and 'RUNNING' or 'STANDBY')
     showStatus(storyStatus,state.status or 'Ready')
+    showStatus(storyResult,state.lastResult or '--')
     showStatus(configStatus,profile.status or 'Ready')
     showStatus(configAuto,profile.autoProfile~='' and profile.autoProfile or 'None')
     local current=state.current
@@ -1115,7 +1122,7 @@ local function refreshOverview()
 end
 repaintControls()
 refreshOverview()
-return {Repaint=repaintControls,Refresh=refreshOverview,Root=root,Notify=notify,Destroy=destroyUI}
+return {Repaint=repaintControls,Refresh=refreshOverview,Root=root,Notify=notify,Destroy=destroyUI,ClearNotifications=clearNotifications}
 end
 return Library
 
@@ -1170,6 +1177,8 @@ local function log(source,args)
 end
 local function stopRun(reason)
     state.enabled=false;state.runId=state.runId+1
+    if ui and ui.ClearNotifications then ui.ClearNotifications() end
+    log('QueueStopped',{reason=reason,index=state.index,total=#state.queue,current=state.current})
     if reason then message(reason,'warning') end
 end
 local battleEvent=net:WaitForChild('BattleEvent',15)
@@ -1178,7 +1187,7 @@ state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(functi
     local attempt=state.attempt
     if not attempt or not state.enabled then return end
     Combat.event(attempt,event)
-    if type(event)=='table' and event.type=='BattleEnd' then
+    if type(event)=='table' and event.type=='BattleEnd' and (not attempt.battleId or event.battleId==attempt.battleId) then
         log('BattleEnd',{battleId=event.battleId,lane=event.lane,difficulty=event.difficulty,won=event.won,matched=Combat.match(attempt,event)})
     end
 end)
@@ -1186,6 +1195,9 @@ local function beginRun()
     if state.enabled or state.pending then message('A run/request is already active.','warning');return end
     local queue=Story.buildQueue(flags)
     if #queue==0 then message('Select maps, targets and at least one mode per target.','warning');return end
+    if ui and ui.ClearNotifications then ui.ClearNotifications() end
+    log('QueueStarted',{total=#queue,repeatQueue=flags.StoryRepeat,entries=queue})
+    state.lastResult='--'
     state.queue=queue;state.index=0;state.enabled=true;state.runId=state.runId+1
     local runId=state.runId
     local function active() return state.alive and state.enabled and state.runId==runId end
@@ -1201,7 +1213,7 @@ local function beginRun()
             local attempt=Combat.new()
             state.index=i;state.current=item;state.attempt=attempt;state.awaiting=true;state.pending=true
             log('StartRequest',{index=i,cardId=item.cardId,difficulty=item.difficulty})
-            message('Starting '..item.cardId..' / '..item.difficulty)
+            state.status='Starting '..item.cardId..' / '..item.difficulty
             task.spawn(function()
                 local response=table.pack(pcall(function()
                     return action:InvokeServer('StartEncounter',{difficulty=item.difficulty,cardId=item.cardId})
@@ -1231,15 +1243,21 @@ local function beginRun()
             log('BattleResult',{battleId=attempt.battleId,lane=attempt.lane,index=i,cardId=item.cardId,difficulty=item.difficulty,won=won})
             state.awaiting=false;state.attempt=nil
             if won then
-                message('WIN: '..item.cardId..' / '..item.difficulty,'success')
+                state.lastResult='WIN: '..item.cardId..' / '..item.difficulty
+                state.status=state.lastResult
                 i=i+1
                 if i>#queue and flags.StoryRepeat then i=1 end
             else
-                message('LOSS: retrying '..item.cardId..' / '..item.difficulty,'warning')
+                state.lastResult='LOSS: '..item.cardId..' / '..item.difficulty
+                state.status=state.lastResult..' — retrying this entry'
             end
             if not waitSeconds(won and 1 or 3) then break end
         end
-        if active() then state.enabled=false;state.attempt=nil;message('Selected story queue won and completed.','success') end
+        if active() then
+            state.enabled=false;state.attempt=nil
+            log('QueueCompleted',{total=#queue,last=queue[#queue]})
+            message('Completed '..#queue..'/'..#queue..' selected fights. Last: '..queue[#queue].cardId..' / '..queue[#queue].difficulty,'success')
+        end
     end)
 end
 state.stop=function()
@@ -1249,7 +1267,7 @@ state.stop=function()
     if ui then ui.Destroy() end
 end
 local function exportCapture()
-    local data=HttpService:JSONEncode({note='Local received battle payloads; no network upload',records=state.logs})
+    local data=HttpService:JSONEncode({note='Local received battle payloads; no network upload',records=state.logs,run={status=state.status,lastResult=state.lastResult,enabled=state.enabled,index=state.index,total=#state.queue,current=state.current}})
     if type(setclipboard)=='function' then setclipboard(data);message('Battle capture copied.','success')
     elseif type(writefile)=='function' then writefile('OriginStory-capture.json',data);message('Saved OriginStory-capture.json','success')
     else print(data);message('Battle capture printed in console.') end
