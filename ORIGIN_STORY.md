@@ -1,36 +1,33 @@
 # Origin Story
 
-Standalone Story UI adapted from anime_origin_ui.lua (upstream blob 543f7f2b12f690f6b6592dcf10d805807fe2c29b), with searchable multi-dropdowns.
+Standalone Roblox Story UI adapted from anime_origin_ui.lua. Uses a dark layered theme, indigo/cyan gradient accents, a Story header card, and searchable multi-select dropdowns. Selected options update in place so selecting after scrolling preserves the popup's position. Search and opening a different dropdown reset scroll intentionally.
 
-## Load
+## Run
 
 ```lua
 loadstring(game:HttpGet("https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/codex/origin-story-ui-draft/origin_story.lua"))()
 ```
 
-Choose Maps and Mob / Boss, then choose independent difficulties for each selected target. Easy is selected initially; deselect it if unwanted. PREVIEW displays the exact queue. START uses the supplied StartEncounter request. Enable the native game's combat AUTO yourself where needed.
+Select Maps, Mob / Boss, and independent difficulties for each selected target. Easy is selected initially. PREVIEW shows the queue. Order is map → encounter → difficulty. START snapshots the selections. One pass is the default; native game combat AUTO should be enabled where needed. Right Shift or the mobile AO button toggles visibility.
 
-Order: story maps, then route encounter order within each map, then Easy / Medium / Hard / Impossible / Cosmic within each target. All selected difficulties of one target run before the next target. Selections are snapshotted at START. Repeat whole queue defaults OFF, so the run stops after one pass.
+## Story progression
 
-## Combat detection and retry
+Combat is ShowBattle.Visible OR ShowBattle2.Visible under LocalPlayer.PlayerGui.BattleEyeGui. Both false continuously for one second ends combat. The next selected difficulty/target is attempted immediately after the transition waits.
 
-Uses the user supplied signal in LocalPlayer.PlayerGui.BattleEyeGui:
-- ShowBattle.Visible OR ShowBattle2.Visible true means combat.
-- Both false continuously for one second means combat ended.
-- Missing either object is unknown, not combat ended; missing UI for 15 seconds stops the run.
-- Existing combat must end before any new request.
-- Observe visibility concurrently with InvokeServer so a yielding call does not hide combat transitions.
-- After requesting an encounter, wait up to 12 seconds for combat.
-- If no combat starts and the request has returned, go back one entry in the selected queue, replay it, then try the following entry again. At the first entry, retry that same entry. Wait three seconds before retrying.
-- Retries continue until admission succeeds or STOP is pressed. Failed admission can also mean a locked target, cooldown or server refusal; it does not prove the previous battle was lost. The rollback behavior follows the user's requested heuristic.
-- Pending requests are never overlapped. Request errors, unresolved start calls, or a battle exceeding 15 minutes stop the run.
-- Final entry: stop when combat ends. Visibility alone cannot determine the final win/loss.
-- STOP invalidates the worker; the native battle continues. Restart waits for any existing combat to end.
+If the next target has not entered combat within 20 seconds, retry **that next target** after three seconds. Completed queue entries are not replayed. This supersedes the earlier rollback heuristic because failed admission can also be caused by cooldowns/locks. STOP ends retries.
 
-Right Shift or mobile AO toggles the UI. Selections and appearance are session-only. COPY CAPTURE exports bounded local response diagnostics to clipboard, local file if supported, or console; no network upload.
+Missing either GUI object means unknown and stops after 15 seconds. Pending InvokeServer calls are not overlapped. Visibility is observed concurrently while the call yields. Existing combat is allowed to finish before requesting a new encounter. Requests/battles time out conservatively. The final battle's win/loss cannot be established solely from visibility; the queue stops when it ends.
 
-This script does not teleport between maps or bypass server progress locks. If the server requires location changes, travel there using the native game. Repeated start failure will otherwise keep retrying per the configured behavior.
+## Config
 
-## Validation
+The Config tab supports profile name, saved-profile dropdown, SAVE, LOAD, DELETE and SET AUTO LOAD. Names allow 1–48 letters/numbers/spaces/underscores/hyphens.
 
-Full script syntax compilation and mocked tests passed for all 180 target/difficulty combinations, selected-map filtering, queue ordering, boss markers, either eye indicating combat, stable hidden completion, failed-next rollback, one-pass stop, missing UI, and STOP/restart waiting for existing combat. Live Roblox UI, executor and server integration remain untested.
+Profiles store selected maps, targets, independent difficulty choices, repeat flag, theme, transparency and window geometry. They use OriginStory/<name>.json and OriginStory/index.json in the executor's file storage. A saved Auto Load profile restores on the next execution, without starting combat automatically. Loading while Story is running or a request is pending is blocked. Config persistence requires executor readfile/writefile/isfile/makefolder APIs; deletion additionally requires delfile. Without them the UI remains usable for the current session.
+
+## Limits and validation
+
+No server unlock bypass or map teleport is added. Use native game travel when required. COPY CAPTURE exports bounded local diagnostics without network upload.
+
+Full file syntax compilation and mock tests passed for queue order/filtering, all 180 target/mode combinations, combat visibility from either eye, advancing to the next selected mode, retrying a blocked next mode without replaying completed modes, missing UI, one-pass stop, stop/restart, profile save/load, restored selections, Auto Load selection, deletion, invalid names and active-run load protection.
+
+Actual Roblox visual appearance, scrolling on the user's device, filesystem APIs and live server integration still need a live-game check.
