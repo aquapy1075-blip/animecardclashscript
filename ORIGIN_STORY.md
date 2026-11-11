@@ -20,9 +20,11 @@ Before each request, sample the exact screen state for 1.5 continuous seconds:
 - Both on: wait for an available slot and then a stable baseline.
 - Changes during baseline sampling restart the stability timer.
 
+Start admission is also confirmed from the captured StartEncounter response tuple: pcall success, server admission true, and a fresh active snapshot with a battleId and matching enemy portrait cardId. This prevents fast fights from being missed by the 1.5-second visual start filter. Admission alone is never treated as victory or completion; occupied UI or a new reward popup must still be observed.
+
 After a confirmed start, combat ends when screen count returns to the baseline or below continuously for 1.5 seconds. Thus a baseline of 0 requires both off, and a baseline of 1 requires at least one off. Brief 0.5–1 second floor-transition flickers reset the timer rather than ending the fight.
 
-Observe BattleRewards for three seconds from the initial end candidate, including the end debounce period. A new enabled transition during that window confirms a win. Existing reward popups from before combat do not count. Rewards shown briefly during the debounce are retained. On win, advance to the following selected mode, boss or map; on no new reward, retry the same target/mode after three seconds. This is the user's UI-based result rule, not a server-result protocol. A shared reward popup cannot distinguish rewards from simultaneous fights without a battle-specific payload.
+Track newly enabled rewards throughout the accepted battle and retain reward evidence that appears just before the eyes hide. After the 1.5-second stable end, wait a full three seconds for BattleRewards. A newly armed enabled reward in or immediately before this end window confirms victory. Existing reward popups from before combat do not count. On win, advance to the next selected mode/boss/map; otherwise retry the same entry. A shared reward popup still cannot attribute rewards to simultaneous fights without a battle-specific result payload.
 
 If combat does not start within 20 seconds, retry the current target without moving backward. Missing combat GUI is unknown and stops after 15 seconds. Missing BattleRewards at result check stops instead of inventing a result. Pending InvokeServer calls are never overlapped; visibility is sampled on Heartbeat while requests yield. STOP invalidates old workers. Final completion requires the last fight's reward confirmation.
 
@@ -37,3 +39,7 @@ Auto Load restores configuration on next execution without starting combat. Load
 No unlock bypass or map teleport is added. Use native map travel where required. COPY CAPTURE exports bounded local diagnostics without uploading them.
 
 Syntax compilation and mocks passed for queue ordering/filtering, all 180 target/mode combinations, profiles, one-screen and zero-screen baselines, 0.8-second Inf transitions, continuous start/end debounce, reward-confirmed advancement, loss retry, stale reward rejection, missing GUI, and final-win completion. Live Roblox visuals, server behavior and executor storage remain untested.
+
+## First-mode repeat fix
+
+The user's capture contains three accepted fresh CompassDemon starts roughly 24.6 seconds apart, with no UI/result records. That interval suggests the start-timeout retry path but does not prove the live UI timing. This revision validates the observed admission tuple, retains early rewards, extends the result check to a full three seconds after stable end, and captures StartRequest / CombatUI / BattleResult transitions for diagnosis. Regression mocks cover fast confirmed fights, rewards before eyes hide, and stale/wrong-target admission rejection. No live-game run has been performed.
