@@ -213,3 +213,17 @@ Mock checks use the actual uploaded refusal and cover two start abilities across
 ## Domain webhook mentions
 
 Automatic Domain alerts now include content @everyone and explicitly allow the everyone mention in the Discord payload, as requested. Manual connection tests remain labelled tests. Existing URL, Domain selection, occurrence deduplication and Config behavior are preserved. Webhook payload validation used mocked HTTP; no real Discord request was sent.
+
+## Autoexec, automatic rejoin and branding
+
+Settings now has one Autoexec toggle, OFF until enabled. It saves immediately to OriginStory/autoexec.json independently of Config profiles, so loading an older gameplay profile does not override the startup switch. Auto Load in Config still controls which saved gameplay modes restart when the script executes.
+
+When Autoexec is ON, OnTeleport Started/InProgress queues the stable branch loader using queue_on_teleport, queueonteleport or syn.queue_on_teleport when available. It queues once per outgoing script session. If the executor exposes an existing writable autoexec folder, the switch also installs autoexec/AnimeCardOnline-aquacodex.lua for future injections. OFF removes only that owned file where deletion is supported; persisted OFF makes previously queued copies no-ops. It does not create an unrecognized executor autoexec directory or modify other startup files. The loader is scoped to this game's universe (or place if universe ID is unavailable), waits for game load and guards duplicate starts in the same server.
+
+Executors differ: queue support enables reload on teleports; an autoexec folder enables automatic execution after a fresh client injection. Neither injects an executor into a new client. Missing capabilities produce a short notification; without file APIs the setting cannot persist across sessions.
+
+Auto rejoin is always enabled while the script is alive, with no UI toggle. It watches GuiService's native error message and visible RobloxPromptGui/promptOverlay/ErrorPrompt, waits two seconds and calls client TeleportService:Teleport for the current place. Retry delays increase to 60 seconds, with at most six attempts per continuous disconnect episode and no overlapping in-flight attempt. TeleportInitFailed releases the in-flight attempt, and an attempt with no completion times out after 20 seconds. No disconnect means no teleport. UNLOAD stops the watcher and disconnects listeners. Rejoin can only work while Roblox/executor code is still running; it cannot fix an unavailable service or restart a terminated client.
+
+The header now reads Anime Card Online and made by aquacodex. The subtitle stays fixed across tab switches. The AO header and mobile toggle monograms are replaced with the current place's game icon, resolved through MarketplaceService GetProductInfo.IconImageAssetId. Icon updates follow the existing UI refresh lifecycle and skip unchanged image writes.
+
+Validation: full generated-script syntax, mocked default rejoin/backoff/cap, native prompt detection, init failures, ON/OFF persistence, owned loader install/removal, one queued loader, later-OFF and cross-game guards, duplicate boot prevention, icon lookup and unload. Existing Story, boss switching, Config, Combat Helper and Monitor UI checks pass. Actual executor startup folders/queue APIs, live disconnect recovery and Roblox icon rendering have not been verified in-game.
