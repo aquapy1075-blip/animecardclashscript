@@ -1,4 +1,4 @@
--- Skeleton Raid: timed-jump assist and server-event-driven auto-start. Deck selection is manual.
+-- Skeleton Raid: timed-jump assist, server-event-driven auto-start and automatic Ready.
 -- Uses native movement; does not change HP, invulnerability, hits, timers or raid results.
 local Dodge=(function()
 local Dodge={}
@@ -142,7 +142,7 @@ assert(type(native)=='table' and type(native._moveHeart)=='function','Unsupporte
 local original=native._moveHeart
 local originalUpdate=native.update
 local updateWrapper
-local state={enabled=true,controlled=setmetatable({}, {__mode='k'}),decisions=0,lastError=nil,phase=nil,round=0,result=nil,autoStart=true,difficulty='Final',raidActive=false,waitingStart=false,startAttempts=0,nextStartAt=os.clock()+2}
+local state={enabled=true,controlled=setmetatable({}, {__mode='k'}),decisions=0,lastError=nil,phase=nil,round=0,result=nil,autoStart=true,difficulty='Final',raidActive=false,waitingStart=false,startAttempts=0,nextStartAt=os.clock()+2,autoReady=true,pickSent=false,pickAttempts=0,readyConfirmed=false,deckOptions=nil}
 env.OriginSkeletonDodge=state
 local wrapper
 wrapper=function(self,dt)
@@ -179,13 +179,44 @@ if type(originalUpdate)=='function' then
     native.update=updateWrapper
 end
 local event=game:GetService('ReplicatedStorage').Shared.Net.RemoteObjects:FindFirstChild('SkeletonRaid')
+local function resetPick()
+    state.deckOptions=nil;state.pickSent=false;state.readyConfirmed=false;state.readyStatus=nil
+end
+local function tryReady()
+    if not state.enabled then return false,'Assist stopped' end
+    if state.phase~='Pick' then return false,'Not in Pick phase' end
+    if state.pickSent then return false,'Ready already sent for this raid' end
+    if type(state.deckOptions)~='table' then return false,'Waiting for Deck options' end
+    local found={}
+    for _,option in pairs(state.deckOptions) do
+        if type(option)=='table' and type(option.index)=='number' then found[option.index]=true end
+    end
+    for index=1,5 do if not found[index] then return false,'Deck does not contain indices 1–5' end end
+    if not event or not event:IsA('RemoteEvent') then return false,'SkeletonRaid RemoteEvent missing' end
+    state.pickSent=true;state.pickAttempts=state.pickAttempts+1
+    local ok,err=pcall(function() event:FireServer('Pick',{1,2,3,4,5}) end)
+    if not ok then state.autoReady=false;state.lastError='Ready send failed: '..tostring(err);return false,state.lastError end
+    return true,'Ready sent; waiting for Take phase'
+end
+state.readyRaid=tryReady
 local connection
 if event and event:IsA('RemoteEvent') then
     connection=event.OnClientEvent:Connect(function(payload)
         if type(payload)~='table' then return end
         if payload.kind=='Phase' then
+            if payload.phase=='Prepare' then
+                local key=tostring(payload.seed)..'|'..tostring(payload.startAt)
+                if key~=state.pickRunKey then state.pickRunKey=key;resetPick() end
+            end
             state.phase=payload.phase;state.round=payload.round or 0
+            if payload.phase=='Take' then state.readyConfirmed=true;state.readyStatus='Pick completed (Take)' end
             state.raidActive=true;state.waitingStart=false
+        end
+        if payload.kind=='Deck' then state.deckOptions=payload.options end
+        if payload.kind=='Take' then state.readyConfirmed=true;state.readyStatus='Pick completed (Take)' end
+        if state.autoReady and (payload.kind=='Deck' or (payload.kind=='Phase' and payload.phase=='Pick')) then
+            local ok,reason=tryReady()
+            state.readyStatus=reason
         end
         if payload.kind=='Closed' then
             state.raidActive=false;state.waitingStart=false;state.phase='Closed'
@@ -195,7 +226,7 @@ if event and event:IsA('RemoteEvent') then
     end)
 end
 state.stop=function()
-    state.enabled=false;state.autoStart=false
+    state.enabled=false;state.autoStart=false;state.autoReady=false
     if native._moveHeart==wrapper then native._moveHeart=original end
     if updateWrapper and native.update==updateWrapper then native.update=originalUpdate end
     for instance in pairs(state.controlled) do
@@ -204,7 +235,7 @@ state.stop=function()
     if connection then connection:Disconnect();connection=nil end
 end
 state.status=function()
-    return {enabled=state.enabled,phase=state.phase,round=state.round,decisions=state.decisions,lastError=state.lastError,result=state.result,autoStart=state.autoStart,difficulty=state.difficulty,raidActive=state.raidActive,waitingStart=state.waitingStart,startAttempts=state.startAttempts}
+    return {enabled=state.enabled,phase=state.phase,round=state.round,decisions=state.decisions,lastError=state.lastError,result=state.result,autoStart=state.autoStart,difficulty=state.difficulty,raidActive=state.raidActive,waitingStart=state.waitingStart,startAttempts=state.startAttempts,autoReady=state.autoReady,pickSent=state.pickSent,pickAttempts=state.pickAttempts,readyConfirmed=state.readyConfirmed,readyStatus=state.readyStatus}
 end
 local function lobbyRemote()
     local shared=game:GetService('ReplicatedStorage'):FindFirstChild('Shared')
@@ -219,6 +250,7 @@ state.startRaid=function()
     if type(config.Difficulties)~='table' or not config.Difficulties[state.difficulty] then return false,'Unknown difficulty' end
     local lobby=lobbyRemote()
     if not lobby then return false,'GuestRaids.Remotes.Lobby missing' end
+    resetPick()
     local ok,err=pcall(function() lobby:FireServer('Start','SkeletonBoss',state.difficulty) end)
     if not ok then return false,tostring(err) end
     state.startAttempts=state.startAttempts+1;state.waitingStart=true;state.startSentAt=os.clock()
@@ -238,4 +270,4 @@ task.spawn(function()
         task.wait(.25)
     end
 end)
-print('Skeleton: timed-jump assist + auto-start Final enabled. Select cards manually. Stop: getgenv().OriginSkeletonDodge.stop()')
+print('Skeleton: timed-jump assist + auto-start Final enabled. Auto Ready selects indices 1–5. Stop: getgenv().OriginSkeletonDodge.stop()')
