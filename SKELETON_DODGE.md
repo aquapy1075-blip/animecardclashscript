@@ -1,6 +1,6 @@
 # Skeleton Raid assist + auto-start (prototype)
 
-Includes native-input auto-dodging and the user's captured Start action for Final difficulty. **Deck selection is still manual**; no selection payload has been captured. This is not yet a complete unattended raid loop.
+Includes native-input auto-dodging, the user's captured Start action for Final difficulty, and automatic Ready. **Automatic Ready is now included** using the user's captured Pick/{1,2,3,4,5} action. It submits the five available indices once per raid after receiving both Deck options and the Pick phase. Dodging remains experimental and can fail.
 
 ## Start
 
@@ -44,3 +44,18 @@ The inbound log contains 99 records without dropped messages/errors, including a
 Syntax and synthetic checks passed for white/blue/orange hazard rules, beam escape, gravity jumps, native timing/forwarding, stop restoration, no idle blue jumps, waiting for an approaching bone row and avoiding it through the complete jump/landing simulation.
 
 Auto-start mocks verify the exact Start/SkeletonBoss/Final payload, no requests during known active phases/results, replay only after Closed, pause on an unconfirmed request and no starts after Stop. No live Roblox survival, timing or server admission test has been performed.
+
+
+## Automatic Ready
+
+When SkeletonRaid sends Deck, cache its options. When the server's Phase becomes Pick, verify that all five provided indices 1–5 exist, then send the exact captured request once:
+```lua
+game:GetService("ReplicatedStorage").Shared.Net.RemoteObjects.SkeletonRaid
+    :FireServer("Pick", {1,2,3,4,5})
+```
+
+Deck-before-Pick and Pick-before-Deck ordering are supported. Repeated messages do not duplicate the request. A new Prepare (seed/startAt) or new Start request resets the per-raid guard. Take indicates selection is complete. Missing indices do not trigger a guessed selection, and Stop prevents further Ready requests.
+
+status() includes autoReady, pickSent, pickAttempts, readyConfirmed and readyStatus. Auto Ready is ON by default.
+
+Tests passed for the exact payload, event ordering, duplicate events, missing slots, new-run reset, Take confirmation and Stop. Replaying the uploaded Judgment → Final phase log produces exactly two Ready requests, one per run. Live server Ready handling remains untested.
