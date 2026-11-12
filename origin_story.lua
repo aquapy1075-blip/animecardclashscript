@@ -2,6 +2,142 @@
 -- Upstream SHA: 543f7f2b12f690f6b6592dcf10d805807fe2c29b
 -- Standalone: embeds the adapted Origin UI; no remote code download.
 -- Combat tracking uses server BattleEnd events matched to the admitted battleId.
+local SessionRuntime=(function()
+local SessionRuntime={}
+function SessionRuntime.start(ctx)
+    local game,player,state,flags,env=ctx.game,ctx.player,ctx.state,ctx.flags,ctx.env
+    local runtime={queued=false,attempts=0,busy=false,nextTry=0}
+    local pref='OriginStory/autoexec.json'
+    local ownedLoader='autoexec/AnimeCardOnline-aquacodex.lua'
+    local source='https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/codex/origin-story-ui-draft/origin_story.lua'
+    local function service(name) local ok,value=pcall(function() return game:GetService(name) end);return ok and value or nil end
+    local http=service('HttpService');local teleport=service('TeleportService');local gui=service('GuiService');local core=service('CoreGui')
+    local function connect(signal,callback)
+        if signal and type(signal.Connect)=='function' then state.connections[#state.connections+1]=signal:Connect(callback) end
+    end
+    local function notice(text,kind) if ctx.notice then ctx.notice(text,kind or 'info') end end
+    local function queueAPI()
+        if type(queue_on_teleport)=='function' then return queue_on_teleport end
+        if type(queueonteleport)=='function' then return queueonteleport end
+        if type(syn)=='table' and type(syn.queue_on_teleport)=='function' then return syn.queue_on_teleport end
+        return nil
+    end
+    -- Queued jobs cannot always be removed. A persisted OFF switch makes this loader a no-op.
+    local boot=([=[
+local ok,allowed=pcall(function()
+    if type(isfile)=='function' and type(readfile)=='function' and isfile('OriginStory/autoexec.json') then
+        return game:GetService('HttpService'):JSONDecode(readfile('OriginStory/autoexec.json')).enabled==true
+    end
+    return true
+end)
+if not ok or not allowed then return end
+if not game:IsLoaded() then game.Loaded:Wait() end
+task.wait(3)
+local session=(getgenv and getgenv()) or _G
+if session.AnimeCardOnlineAutoBooting or (session.OriginStory and session.OriginStory.alive and session.OriginStory.serverId==game.JobId) then return end
+session.AnimeCardOnlineAutoBooting=true
+local success,err=pcall(function() loadstring(game:HttpGet('%s'))() end)
+session.AnimeCardOnlineAutoBooting=false
+if not success then warn('Anime Card Online autoexec failed: '..tostring(err)) end
+]=]):format(source)
+    local universe=tonumber(game.GameId);local place=tonumber(game.PlaceId)
+    if universe and universe>0 then boot=('if game.GameId~=%d then return end\n'):format(universe)..boot
+    elseif place and place>0 then boot=('if game.PlaceId~=%d then return end\n'):format(place)..boot end
+    local function syncOwnedLoader()
+        if flags.AutoExec then
+            if type(isfolder)=='function' and type(writefile)=='function' then
+                local ok,exists=pcall(isfolder,'autoexec')
+                if ok and exists then local saved=pcall(writefile,ownedLoader,boot);return saved end
+            end
+        elseif type(isfile)=='function' and type(delfile)=='function' then
+            pcall(function() if isfile(ownedLoader) then delfile(ownedLoader) end end)
+        end
+        return false
+    end
+    flags.AutoExec=false
+    if http and type(http.JSONDecode)=='function' and type(isfile)=='function' and type(readfile)=='function' then
+        local ok,value=pcall(function() if isfile(pref) then return http:JSONDecode(readfile(pref)) end end)
+        if ok and type(value)=='table' then flags.AutoExec=value.enabled==true end
+    end
+    function runtime.setAutoExec(value)
+        flags.AutoExec=value==true
+        local saved=false
+        if http and type(http.JSONEncode)=='function' and type(writefile)=='function' then
+            saved=pcall(function() if type(makefolder)=='function' then pcall(makefolder,'OriginStory') end;writefile(pref,http:JSONEncode({enabled=flags.AutoExec})) end)
+        end
+        local installed=syncOwnedLoader()
+        if flags.AutoExec then
+            if not queueAPI() and not installed then notice('Autoexec: executor has no teleport queue or writable autoexec folder.','warning')
+            elseif not saved then notice('Autoexec ON for this session; executor cannot persist the switch.','warning') end
+        end
+        return saved
+    end
+    function runtime.queue()
+        if not state.alive or not flags.AutoExec or runtime.queued then return false end
+        local api=queueAPI();if not api then return false end
+        local ok=pcall(api,boot)
+        if ok then runtime.queued=true else notice('Executor could not queue autoexec.','warning') end
+        return ok
+    end
+    local function teleportName(value)
+        local text=tostring(value);return text:match('([%w_]+)$') or text
+    end
+    connect(player.OnTeleport,function(phase)
+        local name=teleportName(phase)
+        if name=='Started' or name=='InProgress' then runtime.queue() end
+    end)
+    connect(teleport and teleport.TeleportInitFailed,function(who)
+        if who==player and runtime.busy then runtime.busy=false end
+    end)
+    local function disconnected()
+        if gui and type(gui.GetErrorMessage)=='function' then
+            local ok,message=pcall(function() return gui:GetErrorMessage() end)
+            if ok and type(message)=='string' and message:match('%S') then return true end
+        end
+        if core and type(core.FindFirstChild)=='function' then
+            local ok,visible=pcall(function()
+                local promptGui=core:FindFirstChild('RobloxPromptGui')
+                local overlay=promptGui and promptGui:FindFirstChild('promptOverlay')
+                local prompt=overlay and overlay:FindFirstChild('ErrorPrompt')
+                return promptGui and promptGui.Enabled~=false and overlay and overlay.Visible~=false and prompt and prompt.Visible==true
+            end)
+            if ok and visible then return true end
+        end
+        return false
+    end
+    local function attemptRejoin()
+        runtime.attempts=runtime.attempts+1;runtime.busy=true;runtime.started=os.clock()
+        runtime.nextTry=os.clock()+math.min(60,2^runtime.attempts)
+        if not teleport or type(teleport.Teleport)~='function' then runtime.busy=false;return end
+        -- OnTeleport queues only when Autoexec is enabled. Rejoin itself is always enabled.
+        local ok=pcall(function() teleport:Teleport(game.PlaceId,player) end)
+        if not ok then runtime.busy=false end
+    end
+    task.spawn(function()
+        while state.alive do
+            if disconnected() then
+                if not runtime.detected then runtime.detected=os.clock();runtime.nextTry=os.clock()+2 end
+                if runtime.busy and os.clock()-(runtime.started or 0)>20 then runtime.busy=false end
+                if not runtime.busy and runtime.attempts<6 and os.clock()>=runtime.nextTry then attemptRejoin() end
+            else
+                runtime.detected=nil;runtime.attempts=0;runtime.busy=false
+            end
+            task.wait(1)
+        end
+    end)
+    task.spawn(function()
+        local market=service('MarketplaceService')
+        if not market or type(market.GetProductInfo)~='function' then return end
+        local ok,info=pcall(function() return market:GetProductInfo(game.PlaceId) end)
+        local id=ok and type(info)=='table' and tonumber(info.IconImageAssetId)
+        if state.alive and id and id>0 then state.gameIcon='rbxassetid://'..tostring(id) end
+    end)
+    syncOwnedLoader()
+    return runtime
+end
+return SessionRuntime
+
+end)()
 local ActiveRules=(function()
 local ActiveRules={}
 ActiveRules.Modes={'Combat start','Low HP','Round'}
@@ -756,14 +892,12 @@ local iconTile=make('Frame',header,{
 })
 corner(iconTile,10)
 skin(iconTile,'BackgroundColor3','accent')
-local monogram=newText(iconTile,'AO',12,true)
-skin(monogram,'TextColor3','bg')
-monogram.TextXAlignment=Enum.TextXAlignment.Center
-monogram.Size=UDim2.fromScale(1,1)
-local bigTitle=newText(header,'ORIGIN  /  STORY',17,true)
+local gameIconImage=make('ImageLabel',iconTile,{Name='GameIcon',BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Image=state.gameIcon or '',ScaleType=Enum.ScaleType.Crop})
+corner(gameIconImage,10)
+local bigTitle=newText(header,'Anime Card Online',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'CONTROL CENTER  /  STORY',11,false)
+local smallTitle=newText(header,'made by aquacodex',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -821,7 +955,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='CONTROL CENTER  /  '..string.upper(name)
+        smallTitle.Text='made by aquacodex'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1484,7 +1618,9 @@ addAction('Config','Delete profile','DELETE',function() ctx.deleteProfile(flags.
 addAction('Config','Load on next execute','SET AUTO LOAD',function() ctx.setAutoProfile(flags.ProfileName) end)
 local configStatus=addStatus('Config','Storage','Ready')
 local configAuto=addStatus('Config','Auto Load','None')
-section('Settings','Origin UI appearance')
+section('Settings','Startup')
+addToggle('Settings','Autoexec','AutoExec')
+section('Settings','Appearance')
 addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose','Light'})
 local transparencyRow=row('Settings','Transparency')
 responsiveRows[transparencyRow].kind='transparency'
@@ -1617,8 +1753,10 @@ local touchRoot=make('ScreenGui',playerGui,{
     Name='OriginStoryToggle',ResetOnSpawn=false,IgnoreGuiInset=true,
     ZIndexBehavior=Enum.ZIndexBehavior.Sibling,DisplayOrder=9901,Enabled=UIS.TouchEnabled==true,
 })
-local touchToggle=uiButton(touchRoot,'AO',UDim2.fromOffset(46,40))
+local touchToggle=uiButton(touchRoot,'',UDim2.fromOffset(46,40))
 touchToggle.Name='TouchWindowToggle'
+local touchGameIcon=make('ImageLabel',touchToggle,{Name='GameIcon',BackgroundTransparency=1,Position=UDim2.fromOffset(4,4),Size=UDim2.new(1,-8,1,-8),Image=state.gameIcon or '',ScaleType=Enum.ScaleType.Crop})
+corner(touchGameIcon,8)
 touchToggle.Position=UDim2.new(1,-54,0,54)
 touchToggle.MouseButton1Click:Connect(function()
     if lifecycle.alive then setWindowVisible(not window.visible) end
@@ -1756,6 +1894,7 @@ end
 local function refreshOverview()
     if not lifecycle.alive or not root.Enabled or window.minimized then return end
     pumpToast()
+    if state.gameIcon and gameIconImage.Image~=state.gameIcon then gameIconImage.Image=state.gameIcon;touchGameIcon.Image=state.gameIcon end
     if selectedTab=='Monitor' then
         local m=ctx.monitorSnapshot()
         showStatus(monitorBone,m.bone);showStatus(monitorWar,m.war)
@@ -1808,7 +1947,7 @@ local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCard
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
-local state={alive=true,enabled=false,connections={},status='Ready',index=0,queue={},pending=false,logs={},awaiting=false,runId=0}
+local state={alive=true,serverId=game.JobId,enabled=false,connections={},status='Ready',index=0,queue={},pending=false,logs={},awaiting=false,runId=0}
 -- Keep a verified Story battle across Stop/Start and script re-execution.
 state.storyInFlight=previous and (previous.storyInFlight or (previous.attempt and previous.attempt.started and previous.attempt)) or nil
 env.OriginStory=state
@@ -2428,6 +2567,7 @@ do
     end)
 end
 
+local sessionRuntime=SessionRuntime.start({game=game,player=player,state=state,flags=flags,env=env,notice=function(text,kind) if ui then ui.Notify(text,kind,5) end end})
 local function syncRunFlags()
     flags.StoryRunning=state.enabled==true
     flags.SkillRunning=state.skillEnabled==true
@@ -2448,6 +2588,7 @@ local function setFlag(key,value)
         if value then startSkills() else stopSkills() end
     elseif key=='HLRunning' then
         if value then startHL() else stopHL() end
+    elseif key=='AutoExec' then sessionRuntime.setAutoExec(value)
     elseif key=='WeatherWebhookDomains' then flags[key]=WeatherWebhook.selection(value)
     elseif activeRules.edit(key,value) then
     else flags[key]=value end
