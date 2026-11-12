@@ -179,3 +179,13 @@ Only condition-specific fields are visible:
 Rule status, Ability card list and Request limit rows are removed. Last request and per-lane HP/round values live under Battle details → SHOW, collapsed by default. Native-auto guidance and discovery information are attached as tooltips rather than permanent status rows. Card changes and profile loads refresh visible fields while retaining each condition's saved values. The HP slider cancels dragging when its mode is hidden.
 
 Mock checks cover the third dropdown option, independent same-card triggers in two simultaneous battles, per-lane HP and completion isolation, union card picker, surviving-lane operation, Config round-trip with Both lanes, and numeric lane compatibility. A separate mocked UI check exercises all three condition layouts, card/profile mode refresh, friendly slot mapping, collapsed/expanded details, selected-lane detail visibility and removal of redundant rows. Full generated-script syntax, existing active rules, Config and Story regression checks pass. Live Roblox visuals/input remain untested.
+
+## Switching boss after stopping Story
+
+The latest user capture shows FirstDemon/Cosmic admitted as battle 11042356355-173920058, then Story scheduling stopped while that native fight continued. SonProdigy/Cosmic requests were rejected explicitly with "you are already in a story battle". This is an admission refusal, not a missing successful battle ID.
+
+A verified in-flight Story tracker now survives OFF/ON and script re-execution. Starting a different selection waits for the matching prior BattleEnd before sending the first new StartEncounter. An unrelated lane/battle result does not release the wait, and the old result never advances the new selection. OFF cancels this wait; after 15 minutes without a matching end, scheduling stops. Stop still leaves native combat running.
+
+If the server rejects a start, the UI now shows its reason. An already-running Story battle that was never tracked by this controller requires waiting for native completion and turning Auto Story ON again; the script does not guess its identity or cancel it. No server restrictions are bypassed.
+
+Checks replay the actual uploaded refusal and mock stop/switch waiting, unrelated/wrong-lane events, old-loss isolation, wait cancellation and verified tracker handoff across re-execution. Story, Config, active rules and compact-UI regression checks pass. Live Roblox verification remains outstanding.
