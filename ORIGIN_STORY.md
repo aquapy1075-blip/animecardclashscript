@@ -119,3 +119,19 @@ To persist a mode ON: configure it, turn it ON, SAVE, then SET AUTO LOAD for tha
 Manual LOAD first reads/validates the profile, stops existing mode scheduling, and waits for pending requests / Higher or Lower cleanup. If the new profile enables Story, it also waits for a currently tracked Story fight to end. After 30 seconds still waiting, the load aborts without applying new selections; load again after outstanding work ends. Tracked results are still received while Story scheduling is OFF. Parallel profile loads and edits during profile transitions are blocked.
 
 Mocks verified all three ON/OFF states, actual-state saves even before the repaint loop runs, loading an OFF profile while workers are active, restoring an ON profile, deferred startup auto-load, and legacy OFF defaults. Story, skills and Higher or Lower regression checks still pass. Live Roblox/executor file behavior remains untested.
+
+
+## Monitor tab: raid currency and server Domain
+
+Monitor shows:
+- Bone Tokens (Skeleton Raid), taken from ProfileSync.currency.boneTokens or the captured SkeletonRaid Result.data.total.
+- Net balance change since the first known balance this script session. Spending is subtracted; this is not gross raid earnings.
+- Net hourly rate after at least 60 seconds, last balance-update age and a session-baseline RESET.
+- War Coins separately, from ProfileSync.currency.warCoins.
+- Current Domain name, countdown, luck bonus and opener. The uploaded place exposes Domain rather than a separate weather system, so this panel is explicitly labelled Server Domain.
+
+Domain reads only ReplicatedStorage DomainId / DomainEndsAt / DomainBy attributes, resolves metadata using Shared.Config.DomainConfig.get and counts down against workspace:GetServerTimeNow, matching the native DomainConfig.active logic. Unknown IDs retain their raw name; expired/missing Domain attributes show no active domain. No weather is inferred from Lighting colors.
+
+Currency starts as Waiting for sync rather than an invented zero. REFRESH sends the native RequestSync event, limited to once per five seconds. Profile/result listeners stay connected while other tabs are selected; visible monitor values refresh roughly twice per second. Unrecognized ProfileSync envelopes produce a small MonitorSyncShape diagnostic for COPY CAPTURE. No gameplay purchase or reward claim is sent.
+
+Tests passed for profile/raid total synchronization, session spending, invalid/unknown balances, Domain countdown/expiry and unknown IDs, reset and sync throttling. Story, skill, Higher or Lower and mode-profile regression checks also passed. Actual server ProfileSync envelope and live rendering remain untested.
