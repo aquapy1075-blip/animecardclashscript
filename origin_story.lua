@@ -23,7 +23,14 @@ function ActiveRules.normalize(value)
     if type(value)=='table' then for id,rule in pairs(value) do if ActiveRules.cardId(id) and type(rule)=='table' then out[id]=ActiveRules.rule(rule) end end end
     return out
 end
-function ActiveRules.lane(value) return integer(value,1,1,2) end
+function ActiveRules.lane(value)
+    if value=='Both lanes' then return value end
+    return integer(value,1,1,2)
+end
+function ActiveRules.lanes(value)
+    value=ActiveRules.lane(value)
+    return value=='Both lanes' and {1,2} or {value}
+end
 local function copyCard(card)
     if type(card)~='table' then return nil end
     local slot=tonumber(card.slot)
@@ -132,6 +139,17 @@ function ActiveRules.candidate(store,lane,rules,now)
         end
     end
     return nil,'Watching conditions / ability availability'
+end
+function ActiveRules.nextCandidate(store,selection,rules,now,preferred)
+    local lanes=ActiveRules.lanes(selection)
+    if #lanes==2 and preferred==2 then lanes={2,1} end
+    local reasons={}
+    for _,lane in ipairs(lanes) do
+        local payload,reason,entry=ActiveRules.candidate(store,lane,rules,now)
+        if payload then return payload,'L'..lane..': '..reason,entry end
+        reasons[#reasons+1]='L'..lane..': '..reason
+    end
+    return nil,table.concat(reasons,' | ')
 end
 return ActiveRules
 
@@ -1071,21 +1089,33 @@ local function clearNotifications()
 end
 local activeRuleUI={}
 do
-    section('Active Rules','Conditional card abilities')
-    addToggle('Active Rules','Enable conditional actives','ActiveRulesEnabled')
-    addDropdown('Active Rules','Battle lane','ActiveRuleLane',{1,2})
-    addStatus('Active Rules','Native active auto','Turn OFF the game active auto first')
-    section('Active Rules','Rule for each ability card')
+    section('Active Rules','Auto abilities')
+    local master=addToggle('Active Rules','Auto active','ActiveRulesEnabled')
+    tooltip(master,'Turn off the game active auto first. Each enabled card uses its own saved condition.')
+    local lanes=addDropdown('Active Rules','Battles','ActiveRuleLane',{1,2,'Both lanes'})
+    tooltip(lanes,'Both lanes applies these card rules to both battles. HP and ability uses stay separate per battle.')
+    section('Active Rules','Card settings')
     local pick
-    pick=addAction('Active Rules','Ability card','SCP3008  ▾',function()
+    pick=addAction('Active Rules','Card','SCP3008  ▾',function()
         if menu.Visible then hideMenu();return end
         openMenu(pick,ctx.activeRules.options(),function(_,id) setFlag('ActiveRuleCard',id) end)
     end)
     widgets[#widgets+1]=function() pick.Text=tostring(flags.ActiveRuleCard)..'  ▾' end
-    addToggle('Active Rules','Enable this card rule','ActiveEditEnabled')
-    addDropdown('Active Rules','Activation condition','ActiveEditMode',{'Combat start','Low HP','Round'})
-    addDropdown('Active Rules','HP target slot (0 = any alive)','ActiveEditSlot',{0,1,2,3,4,5})
-    local hpRow=row('Active Rules','Use when HP is below')
+    tooltip(pick,'Lists ability cards received from the selected battle(s). Start a battle once if your cards are missing.')
+    addToggle('Active Rules','Use this card','ActiveEditEnabled')
+    addDropdown('Active Rules','Use when','ActiveEditMode',{'Combat start','Low HP','Round'})
+    local hpTarget
+    hpTarget=addAction('Active Rules','Watch card','Any living card  ▾',function()
+        if menu.Visible then hideMenu();return end
+        openMenu(hpTarget,{'Any living card','Slot 1','Slot 2','Slot 3','Slot 4','Slot 5'},function(index)
+            setFlag('ActiveEditSlot',index-1)
+        end)
+    end)
+    widgets[#widgets+1]=function()
+        local slot=tonumber(flags.ActiveEditSlot) or 0
+        hpTarget.Text=(slot==0 and 'Any living card' or ('Slot '..slot))..'  ▾'
+    end
+    local hpRow=row('Active Rules','HP below')
     local bar=make('TextButton',hpRow,{Name='ActiveHPSlider',Text='',AutoButtonColor=false,BackgroundTransparency=1,
         Position=UDim2.new(1,-195,.5,-16),Size=UDim2.fromOffset(180,32),BorderSizePixel=0})
     local valueText=newText(bar,'50%',12,true)
@@ -1099,7 +1129,7 @@ do
     corner(knob,7);skin(knob,'BackgroundColor3','accent')
     local drag
     local function canDrag()
-        return lifecycle.alive and root.Enabled and not window.minimized and selectedTab=='Active Rules'
+        return lifecycle.alive and root.Enabled and not window.minimized and selectedTab=='Active Rules' and flags.ActiveEditMode=='Low HP' and hpRow.Visible
     end
     local function adjust(x)
         if not canDrag() or track.AbsoluteSize.X<=0 then drag=nil;return end
@@ -1120,12 +1150,30 @@ do
         local hp=tonumber(flags.ActiveEditHP) or 50;local ratio=(hp-1)/98
         valueText.Text=tostring(hp)..'%';fill.Size=UDim2.new(ratio,0,1,0);knob.Position=UDim2.new(ratio,0,.5,0)
     end
-    addInput('Active Rules','Use at round or later (1–999)','ActiveEditRound','3')
-    activeRuleUI.status=addStatus('Active Rules','Rule status','OFF')
-    activeRuleUI.last=addStatus('Active Rules','Last active request','--')
-    activeRuleUI.hp=addStatus('Active Rules','Live HP / round','Waiting for battle sync')
-    addStatus('Active Rules','Ability card list','Discovered from received battle snapshots')
-    addStatus('Active Rules','Request limit','Once per card per battle; server decides result')
+    local roundInput=addInput('Active Rules','Round','ActiveEditRound','3')
+    tooltip(roundInput,'Round mode: use at this round or later, when the ability becomes available.')
+    local details=false
+    local detailsButton
+    detailsButton=addAction('Active Rules','Battle details','SHOW',function()
+        details=not details;detailsButton.Text=details and 'HIDE' or 'SHOW'
+        activeRuleUI.last.Parent.Visible=details
+        activeRuleUI.hp1.Parent.Visible=details and (flags.ActiveRuleLane==1 or flags.ActiveRuleLane=='Both lanes')
+        activeRuleUI.hp2.Parent.Visible=details and (flags.ActiveRuleLane==2 or flags.ActiveRuleLane=='Both lanes')
+    end)
+    activeRuleUI.last=addStatus('Active Rules','Last request','--')
+    activeRuleUI.hp1=addStatus('Active Rules','Battle 1 HP / round','Waiting for battle sync')
+    activeRuleUI.hp2=addStatus('Active Rules','Battle 2 HP / round','Waiting for battle sync')
+    local editedCard
+    widgets[#widgets+1]=function()
+        local lowHP=flags.ActiveEditMode=='Low HP'
+        hpTarget.Parent.Visible=lowHP;hpRow.Visible=lowHP
+        roundInput.Parent.Visible=flags.ActiveEditMode=='Round'
+        if not lowHP or editedCard~=flags.ActiveRuleCard then drag=nil end
+        editedCard=flags.ActiveRuleCard
+        activeRuleUI.last.Parent.Visible=details
+        activeRuleUI.hp1.Parent.Visible=details and (flags.ActiveRuleLane==1 or flags.ActiveRuleLane=='Both lanes')
+        activeRuleUI.hp2.Parent.Visible=details and (flags.ActiveRuleLane==2 or flags.ActiveRuleLane=='Both lanes')
+    end
     tooltip(hpRow,'Low HP mode only. Slot 0 checks any living allied card, including cards in hand. Dead cards do not trigger. Exactly the threshold does not trigger.')
 end
 
@@ -1628,9 +1676,9 @@ local function refreshOverview()
     showStatus(hlScore,tostring(state.hlStreak or 0)..' / 100')
     showStatus(skillLive,state.skillStatus or 'OFF')
     if selectedTab=='Active Rules' then
-        showStatus(activeRuleUI.status,state.activeRuleStatus or 'OFF')
         showStatus(activeRuleUI.last,state.activeRuleLast or '--')
-        showStatus(activeRuleUI.hp,ctx.activeRules.preview())
+        showStatus(activeRuleUI.hp1,ctx.activeRules.preview(1))
+        showStatus(activeRuleUI.hp2,ctx.activeRules.preview(2))
     end
     showStatus(storyResult,state.lastResult or '--')
     showStatus(configStatus,profile.status or 'Ready')
@@ -2155,6 +2203,7 @@ do
     local store=ActiveRules.new(env.OriginActiveRuleHistory)
     state.activeRuleStatus='OFF';state.activeRuleLast='--';state.activePending=false
     local lastRequest=-math.huge
+    local preferredLane=1
     function activeRules.syncEditor()
         local id=flags.ActiveRuleCard
         if not ActiveRules.cardId(id) then id='SCP3008';flags.ActiveRuleCard=id end
@@ -2179,11 +2228,15 @@ do
         return true
     end
     function activeRules.options()
-        local entry=store.lanes[flags.ActiveRuleLane]
-        local found={}
-        if entry then
-            for id in pairs(entry.abilities) do found[id]=true end
-        else
+        local found={};local received=false
+        for _,lane in ipairs(ActiveRules.lanes(flags.ActiveRuleLane)) do
+            local entry=store.lanes[lane]
+            if entry then
+                received=true
+                for id in pairs(entry.abilities) do found[id]=true end
+            end
+        end
+        if not received then
             found.SCP3008=true
             for id in pairs(store.known) do found[id]=true end
             for id in pairs(flags.ActiveRules) do found[id]=true end
@@ -2191,8 +2244,10 @@ do
         local ids={};for id in pairs(found) do ids[#ids+1]=id end;table.sort(ids)
         return ids
     end
-    function activeRules.preview()
-        local entry=store.lanes[flags.ActiveRuleLane]
+    function activeRules.preview(lane)
+        lane=lane or ActiveRules.lanes(flags.ActiveRuleLane)[1]
+        if flags.ActiveRuleLane~='Both lanes' and flags.ActiveRuleLane~=lane then return 'Not selected' end
+        local entry=store.lanes[lane]
         if not entry then return 'Waiting for battle sync' end
         local parts={}
         for slot=1,5 do local card=entry.cards[slot]
@@ -2220,19 +2275,20 @@ do
     task.spawn(function()
         while state.alive do
             if flags.ActiveRulesEnabled and not state.profileLoading then
-                local payload,reason,entry=ActiveRules.candidate(store,flags.ActiveRuleLane,flags.ActiveRules,os.clock())
+                local payload,reason,entry=ActiveRules.nextCandidate(store,flags.ActiveRuleLane,flags.ActiveRules,os.clock(),preferredLane)
                 state.activeRuleStatus=reason
                 if payload and not state.activePending and not state.pending and os.clock()-lastRequest>=1 then
                     -- Claim before InvokeServer yields. Do not replay an uncertain/rejected request.
                     ActiveRules.mark(store,entry,payload.cardId)
+                    preferredLane=payload.lane==1 and 2 or 1
                     lastRequest=os.clock();state.activePending=true
-                    state.activeRuleLast='Requesting '..payload.cardId..' / '..reason
+                    state.activeRuleLast='Requesting L'..payload.lane..' '..payload.cardId..' / '..reason
                     log('ActiveRuleRequest',{payload=payload,reason=reason})
                     local response=table.pack(pcall(function() return action:InvokeServer('GuestActive',payload) end))
                     state.activePending=false
                     log('ActiveRuleResponse',{payload=payload,response=response})
                     if state.alive then
-                        state.activeRuleLast=response[1] and (response[2]==false and 'Server rejected '..payload.cardId..'; see capture' or 'Request returned: '..payload.cardId..'; see capture') or ('Request failed: '..payload.cardId..'; no retry this battle')
+                        state.activeRuleLast=response[1] and (response[2]==false and 'Server rejected L'..payload.lane..' '..payload.cardId..'; see capture' or 'Request returned L'..payload.lane..': '..payload.cardId..'; see capture') or ('Request failed L'..payload.lane..': '..payload.cardId..'; no retry this battle')
                     end
                 end
             elseif not state.activePending then state.activeRuleStatus='OFF' end
