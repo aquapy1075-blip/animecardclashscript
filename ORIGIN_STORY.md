@@ -199,3 +199,17 @@ The Higher or Lower tab is now Guess Minigame and its How it chooses section has
 Text gradients now derive their colors from the selected theme's accent, text and mint tokens. All six themes update their palettes instead of sharing one fixed dark-theme gradient. Light uses darker readable text on light surfaces; the fixed dark Story header retains a brighter variant for contrast.
 
 Full generated-script syntax and mocked checks passed for compact Monitor, URL replace/clear, multi-select Domain odds and selections, Config migration/empty selections, actual six-theme text repaint, renamed tabs and removed sections. Existing Story switching, conditional actives, Guess Minigame, Skill Tree and Monitor checks passed. No live Roblox visual verification or real HTTP delivery was performed.
+
+## Multiple Combat start abilities: resolving-conflict fix
+
+The latest uploaded capture contains explicit GuestActive refusals for StrongestCurse after SkeletonBoss: pcall succeeded, admission was false, and the message was "the ability is already resolving". The prior controller consumed its local attempt mark on this refusal and never retried.
+
+Combat Helper now arms every enabled Combat start rule when a selected lane's round-1 snapshot is received, before choosing the first ability. These pending start intents survive a round change for at most ten seconds while the same battle remains active. This also covers a round advancing before the worker scans the second lane. Enabling a new Combat start rule after round 1 does not arm it.
+
+Only the exact confirmed transient refusal above releases an attempt mark and schedules bounded backoff (0.5, 1 and 2 seconds, still respecting the existing global one-second request gap), at most three retries. Other refusals, transport errors and unknown replies retain the no-replay policy. Server used/queued states and GuestActive events confirm consumption and prevent releasing an already-consumed mark. Ending/replacing a battle, disabling auto or stale/unavailable/dead-caster data prevents later requests. Both lanes keep their own pending intents and use history.
+
+Mock checks use the actual uploaded refusal and cover two start abilities across a round change, both-lane snapshot latching, retry limits, accepted/queued/native-use suppression, OFF/end cancellation and existing Story/Config behavior. Live Roblox server integration remains untested. A short fight may still end before another active can be accepted; the script does not send against an ended battle.
+
+## Domain webhook mentions
+
+Automatic Domain alerts now include content @everyone and explicitly allow the everyone mention in the Discord payload, as requested. Manual connection tests remain labelled tests. Existing URL, Domain selection, occurrence deduplication and Config behavior are preserved. Webhook payload validation used mocked HTTP; no real Discord request was sent.
