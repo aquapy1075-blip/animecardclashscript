@@ -41,6 +41,7 @@ function ActiveRules.new(history)
     history=type(history)=='table' and history or {}
     history.order=type(history.order)=='table' and history.order or {}
     history.marked=type(history.marked)=='table' and history.marked or {}
+    history.confirmed=type(history.confirmed)=='table' and history.confirmed or {}
     return {lanes={},closed={},closedOrder={},history=history,known={}}
 end
 local function close(store,id)
@@ -53,7 +54,28 @@ function ActiveRules.mark(store,entry,id)
     local k=key(entry,id);local history=store.history
     if history.marked[k] then return end
     history.marked[k]=true;history.order[#history.order+1]=k
-    if #history.order>512 then history.marked[table.remove(history.order,1)]=nil end
+    if #history.order>512 then local old=table.remove(history.order,1);history.marked[old]=nil;history.confirmed[old]=nil end
+end
+function ActiveRules.confirm(store,entry,id)
+    ActiveRules.mark(store,entry,id);store.history.confirmed[key(entry,id)]=true
+end
+function ActiveRules.retryBusy(store,entry,id,response,now)
+    if response[1]~=true or response[2]~=false or type(response[3])~='string'
+        or response[3]:lower()~='the ability is already resolving' then return false end
+    local current=store.lanes[entry.lane]
+    if not current or current.battleId~=entry.battleId or store.closed[entry.battleId] or store.history.confirmed[key(entry,id)] then return false end
+    local ability=current.abilities[id]
+    if not ability or ability.used or ability.queued then return false end
+    local retry=current.retries[id] or {count=0,deadline=now+10}
+    retry.count=retry.count+1;current.retries[id]=retry
+    if retry.count>3 or now>=retry.deadline then return false end
+    retry.nextAt=now+math.min(2,.5*2^(retry.count-1))
+    local k=key(entry,id);store.history.marked[k]=nil
+    for i=#store.history.order,1,-1 do if store.history.order[i]==k then table.remove(store.history.order,i) end end
+    return true
+end
+function ActiveRules.cancelStarts(store)
+    for _,entry in pairs(store.lanes) do entry.startReady={} end
 end
 function ActiveRules.snapshot(store,data,now)
     if type(data)~='table' or not identity(data.battleId) or (data.lane~=1 and data.lane~=2) then return false end
@@ -65,18 +87,17 @@ function ActiveRules.snapshot(store,data,now)
     end
     if data.active~=true or store.closed[data.battleId] or type(data.player)~='table' or type(data.guestActives)~='table' then return false end
     if previous and previous.battleId~=data.battleId then close(store,previous.battleId) end
-    local entry={battleId=data.battleId,lane=lane,round=data.round,updated=now,cards={},abilities={},fresh=data.fresh==true}
+    local entry={battleId=data.battleId,lane=lane,round=data.round,updated=now,cards={},abilities={},fresh=data.fresh==true,startReady=previous and previous.battleId==data.battleId and previous.startReady or {},retries=previous and previous.battleId==data.battleId and previous.retries or {}}
     local function add(card) local copy=copyCard(card);if copy then entry.cards[copy.slot]=copy end end
     if type(data.player.hand)=='table' then for _,card in pairs(data.player.hand) do add(card) end end
     add(data.player.active)
     for id,ability in pairs(data.guestActives) do
         if ActiveRules.cardId(id) and type(ability)=='table' then
-            entry.abilities[id]={available=ability.available==true,name=ability.name,id=ability.id}
+            entry.abilities[id]={available=ability.available==true and not ability.used and not ability.queued,name=ability.name,id=ability.id,used=ability.used==true,queued=ability.queued==true}
+            if ability.used or ability.queued then ActiveRules.confirm(store,entry,id) end
             store.known[id]=ability.name or id
         end
     end
-    -- "Combat start" is allowed only if this controller observed a fresh snapshot or round 1.
-    entry.sawStart=(previous and previous.battleId==data.battleId and previous.sawStart) or entry.fresh or (finite(entry.round) and entry.round<=1)
     store.lanes[lane]=entry
     return true
 end
@@ -94,7 +115,7 @@ function ActiveRules.event(store,event,now)
     if event.side=='player' then
         local card=entry.cards[event.slot]
         if event.type=='GuestActive' and ActiveRules.cardId(event.cardId) then
-            ActiveRules.mark(store,entry,event.cardId)
+            ActiveRules.confirm(store,entry,event.cardId)
             if entry.abilities[event.cardId] then entry.abilities[event.cardId].available=false end
         elseif card then
             if event.type=='Death' then card.currentHP=0
@@ -109,21 +130,38 @@ end
 local function alive(card)
     return card and finite(card.currentHP) and finite(card.maxHP) and card.maxHP>0 and card.currentHP>0
 end
+function ActiveRules.armStarts(entry,rules,now)
+    if not entry then return end
+    -- Latch every enabled start rule before choosing the first request.
+    -- The remaining requests may outlive round 1 while another ability resolves.
+    for id,rule in pairs(rules) do
+        if not rule.enabled or rule.mode~='Combat start' then entry.startReady[id]=nil
+        elseif finite(entry.round) and entry.round<=1 and not entry.startReady[id] then
+            local ability=entry.abilities[id]
+            if ability and ability.available then
+                for _,card in pairs(entry.cards) do
+                    if card.cardId==id and alive(card) and not card.abilityOff then entry.startReady[id]=now+10;break end
+                end
+            end
+        end
+    end
+end
 function ActiveRules.candidate(store,lane,rules,now)
     local entry=store.lanes[lane]
     if not entry then return nil,'Waiting for a battle snapshot' end
     if now-entry.updated>8 then return nil,'Waiting for fresh battle data' end
     local ids={};for id,rule in pairs(rules) do if rule.enabled then ids[#ids+1]=id end end;table.sort(ids)
     if #ids==0 then return nil,'Enable a rule for an ability card' end
+    ActiveRules.armStarts(entry,rules,now)
     for _,id in ipairs(ids) do
         local rule=rules[id];local ability=entry.abilities[id]
-        if ability and ability.available and not store.history.marked[key(entry,id)] then
+        if ability and ability.available and not store.history.marked[key(entry,id)] and (not entry.retries[id] or now>=entry.retries[id].nextAt) then
             local caster=false
             for _,card in pairs(entry.cards) do if card.cardId==id and alive(card) and not card.abilityOff then caster=true;break end end
             if caster then
                 local ready,reason=false,nil
                 if rule.mode=='Combat start' then
-                    ready=entry.sawStart and finite(entry.round) and entry.round<=1
+                    ready=entry.startReady[id]~=nil and now<entry.startReady[id]
                     reason='Combat start'
                 elseif rule.mode=='Round' then
                     ready=finite(entry.round) and entry.round>=rule.round;reason='Round '..tostring(entry.round)
@@ -2223,7 +2261,7 @@ local function sendWeatherWebhook(test,id,endsAt,reason)
     if not test and type(game.PlaceId)=='number' and type(game.JobId)=='string' and game.JobId~='' then
         embed.url='https://www.roblox.com/games/start?placeId='..game.PlaceId..'&gameInstanceId='..game.JobId
     end
-    local encoded,body=pcall(function() return HttpService:JSONEncode({allowed_mentions={parse={}},embeds={embed}}) end)
+    local encoded,body=pcall(function() return HttpService:JSONEncode({content=test and 'ACO webhook test' or '@everyone',allowed_mentions={parse=test and {} or {'everyone'}},embeds={embed}}) end)
     if not encoded then state.webhookPending=false;state.webhookStatus='Webhook payload encoding failed';return false,'not-started' end
     local success=false
     for attempt=1,3 do
@@ -2344,6 +2382,9 @@ do
         state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
             if not state.alive then return end
             if ActiveRules.snapshot(store,data,os.clock()) then
+                if flags.ActiveRulesEnabled and not state.profileLoading and (flags.ActiveRuleLane=='Both lanes' or flags.ActiveRuleLane==data.lane) then
+                    ActiveRules.armStarts(store.lanes[data.lane],flags.ActiveRules,os.clock())
+                end
                 for id in pairs(store.known) do
                     if not flags.ActiveRules[id] then flags.ActiveRules[id]=ActiveRules.rule(nil);flags.ActiveRulesRevision=(flags.ActiveRulesRevision or 0)+1 end
                 end
@@ -2369,10 +2410,19 @@ do
                     state.activePending=false
                     log('ActiveRuleResponse',{payload=payload,response=response})
                     if state.alive then
-                        state.activeRuleLast=response[1] and (response[2]==false and 'Server rejected L'..payload.lane..' '..payload.cardId..'; see capture' or 'Request returned L'..payload.lane..': '..payload.cardId..'; see capture') or ('Request failed L'..payload.lane..': '..payload.cardId..'; no retry this battle')
+                        local retry=ActiveRules.retryBusy(store,entry,payload.cardId,response,os.clock())
+                        if retry then
+                            state.activeRuleLast='L'..payload.lane..': ability busy; waiting to retry '..payload.cardId
+                            log('ActiveRuleRetry',{payload=payload,reason='the ability is already resolving'})
+                        else
+                            state.activeRuleLast=response[1] and (response[2]==false and 'Server rejected L'..payload.lane..' '..payload.cardId..'; see capture' or 'Request returned L'..payload.lane..': '..payload.cardId..'; see capture') or ('Request failed L'..payload.lane..': '..payload.cardId..'; no retry this battle')
+                        end
                     end
                 end
-            elseif not state.activePending then state.activeRuleStatus='OFF' end
+            elseif not state.activePending then
+                state.activeRuleStatus='OFF'
+                if not flags.ActiveRulesEnabled then ActiveRules.cancelStarts(store) end
+            end
             task.wait(.1)
         end
     end)
