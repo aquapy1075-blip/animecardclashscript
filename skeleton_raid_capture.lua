@@ -1,14 +1,13 @@
--- Skeleton Raid inbound recorder v2. No remote interception or gameplay requests.
+-- Skeleton Raid capture v3: incoming only, no UI, no remote hooks.
 local env=(getgenv and getgenv()) or _G
-if env.OriginSkeletonCapture then pcall(env.OriginSkeletonCapture.stop) end
--- Disable recording in the previous capture wrapper, if it was installed.
+local previous=env.OriginSkeletonCapture
+local retained=type(previous)=='table' and previous.records or nil
+local retainedTotal=type(previous)=='table' and previous.total or 0
+local retainedDropped=type(previous)=='table' and previous.dropped or 0
+if type(previous)=='table' and type(previous.stop)=='function' then pcall(previous.stop) end
 if type(env.OriginRaidWireTap)=='table' then env.OriginRaidWireTap.sink=nil end
-local Players=game:GetService('Players')
 local Http=game:GetService('HttpService')
-local player=Players.LocalPlayer
-local shared=game:GetService('ReplicatedStorage'):WaitForChild('Shared')
-local remotes=shared:WaitForChild('Net'):WaitForChild('RemoteObjects')
-local state={alive=true,records={},connections={},dropped=0,total=0}
+local state={alive=true,records=retained or {},connections={},total=retainedTotal or 0,dropped=retainedDropped or 0,errors=0,connected=false}
 env.OriginSkeletonCapture=state
 local function encode(value,depth,seen,budget)
     budget.n=budget.n+1
@@ -31,53 +30,67 @@ local function encode(value,depth,seen,budget)
     end
     seen[value]=nil;return result
 end
-local gui=Instance.new('ScreenGui');gui.Name='SkeletonRaidCapture';gui.ResetOnSpawn=false;gui.DisplayOrder=10000;gui.Parent=player:WaitForChild('PlayerGui')
-local panel=Instance.new('Frame');panel.Size=UDim2.fromOffset(300,225);panel.Position=UDim2.fromOffset(12,70);panel.BackgroundColor3=Color3.fromRGB(19,23,36);panel.BorderSizePixel=0;panel.Parent=gui
-local corner=Instance.new('UICorner');corner.CornerRadius=UDim.new(0,12);corner.Parent=panel
-local function label(text,y,height)
-    local l=Instance.new('TextLabel');l.Size=UDim2.new(1,-24,0,height or 24);l.Position=UDim2.fromOffset(12,y);l.BackgroundTransparency=1;l.Text=text;l.TextColor3=Color3.fromRGB(189,230,255);l.Font=Enum.Font.GothamBold;l.TextSize=12;l.TextWrapped=true;l.Parent=panel;return l
-end
-label('SKELETON RAID · CAPTURE V2',10)
-local status=label('Starting recorder…',38,36)
-local notice=label('Incoming only · play one raid, then COPY LOG.',78,30)
 local function record(direction,remote,args)
     if not state.alive then return end
     state.total=state.total+1
     state.records[#state.records+1]={sequence=state.total,time=os.clock(),direction=direction,remote=remote,args=encode(args,0,{},{n=0})}
     if #state.records>1000 then table.remove(state.records,21);state.dropped=state.dropped+1 end
-    status.Text=state.total..' records · '..direction..' '..remote
 end
-local watched={}
-local function watch(remote)
-    if watched[remote] or not remote:IsA('RemoteEvent') then return end
-    if remote.Name~='SkeletonRaid' then return end
-    watched[remote]=true
+state.stop=function()
+    state.alive=false;state.connected=false
+    for _,connection in ipairs(state.connections) do connection:Disconnect() end
+    state.connections={}
+    -- Keep this object and records available for export after stopping.
+    return #state.records
+end
+local function exportText()
+    return Http:JSONEncode({version=3,outgoingCaptured=false,recording=state.alive,connected=state.connected,total=state.total,droppedRecords=state.dropped,captureErrors=state.errors,records=state.records})
+end
+state.save=function()
+    if type(writefile)~='function' then return false,'Executor has no writefile API' end
+    local ok,err=pcall(function() writefile('SkeletonRaidCapture.json',exportText()) end)
+    return ok,ok and 'Saved SkeletonRaidCapture.json in executor workspace' or tostring(err)
+end
+state.copy=function()
+    local ok,text=pcall(exportText)
+    if not ok then return false,'JSON export failed: '..tostring(text) end
+    if type(setclipboard)=='function' then
+        local copied=pcall(setclipboard,text)
+        if copied then return true,'Copied '..#state.records..' records' end
+    end
+    local saved,reason=state.save()
+    if saved then return true,reason end
+    print(text)
+    return true,'Printed to executor console; clipboard/file APIs unavailable'
+end
+state.clear=function()
+    state.records={};state.total=0;state.dropped=0;state.errors=0
+end
+state.status=function()
+    return {recording=state.alive,connected=state.connected,records=#state.records,total=state.total,dropped=state.dropped,errors=state.errors}
+end
+-- Await remotes in a worker; stop/copy commands exist even if game loading stalls.
+task.spawn(function()
+    local storage=game:GetService('ReplicatedStorage')
+    local shared=storage:WaitForChild('Shared',15)
+    local net=shared and shared:WaitForChild('Net',15)
+    local folder=net and net:WaitForChild('RemoteObjects',15)
+    local remote=folder and folder:WaitForChild('SkeletonRaid',15)
+    if not state.alive then return end
+    if not remote or not remote:IsA('RemoteEvent') then
+        state.alive=false;warn('Skeleton capture: SkeletonRaid RemoteEvent missing')
+        return
+    end
     state.connections[#state.connections+1]=remote.OnClientEvent:Connect(function(...)
         local args=table.pack(...)
-        task.defer(function() if state.alive then pcall(record,'IN',remote.Name,args) end end)
+        task.defer(function()
+            if state.alive then
+                local ok=pcall(record,'IN','SkeletonRaid',args)
+                if not ok then state.errors=state.errors+1 end
+            end
+        end)
     end)
-end
-for _,remote in ipairs(remotes:GetChildren()) do watch(remote) end
-state.connections[#state.connections+1]=remotes.ChildAdded:Connect(watch)
-state.stop=function()
-    if not state.alive then return end
-    state.alive=false
-    for _,connection in ipairs(state.connections) do connection:Disconnect() end
-    gui:Destroy()
-    if env.OriginSkeletonCapture==state then env.OriginSkeletonCapture=nil end
-end
-local function button(text,x,y,callback)
-    local b=Instance.new('TextButton');b.Size=UDim2.fromOffset(132,36);b.Position=UDim2.fromOffset(x,y);b.BackgroundColor3=Color3.fromRGB(60,78,128);b.TextColor3=Color3.fromRGB(240,248,255);b.Font=Enum.Font.GothamBold;b.TextSize=12;b.Text=text;b.BorderSizePixel=0;b.Parent=panel
-    local c=Instance.new('UICorner');c.CornerRadius=UDim.new(0,8);c.Parent=b;b.Activated:Connect(callback)
-end
-button('COPY LOG',12,116,function()
-    local ok,text=pcall(function() return Http:JSONEncode({version=2,outgoingCaptured=false,droppedRecords=state.dropped,total=state.total,records=state.records}) end)
-    if not ok then status.Text='JSON export failed';return end
-    if type(setclipboard)=='function' and pcall(setclipboard,text) then status.Text='Copied! Paste log into chat.'
-    elseif type(writefile)=='function' and pcall(writefile,'SkeletonRaidCapture.json',text) then status.Text='Saved SkeletonRaidCapture.json'
-    else print(text);status.Text='Log printed in console.' end
+    state.connected=true
+    record('MARK','Recorder',{event='started',outgoingCaptured=false,ui=false})
+    print('Skeleton capture connected. Stop: getgenv().OriginSkeletonCapture.stop(); copy: getgenv().OriginSkeletonCapture.copy()')
 end)
-button('CLEAR LOG',156,116,function() state.records={};state.total=0;state.dropped=0;record('MARK','Recorder',{event='cleared'}) end)
-button('MARK WIN',12,164,function() record('MARK','Manual',{result='WIN'}) end)
-button('STOP',156,164,state.stop)
-record('MARK','Recorder',{event='started',outgoingCaptured=false})
