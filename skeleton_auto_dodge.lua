@@ -1,4 +1,4 @@
--- Skeleton Raid input assist prototype. Manual start/deck selection still required.
+-- Skeleton Raid: timed-jump assist and server-event-driven auto-start. Deck selection is manual.
 -- Uses native movement; does not change HP, invulnerability, hits, timers or raid results.
 local Dodge=(function()
 local Dodge={}
@@ -86,21 +86,44 @@ function Dodge.predict(heart,cur,box,dx,dy,jump,dt)
     return heart
 end
 function Dodge.choose(instance,box,time)
+    local blue=instance.heart.mode=='blue'
+    local d=directions[instance.heart.dir] or directions.D
+    local tx,ty=-d[2],d[1]
+    -- Blue movement stays tangent to gravity. An upward direction must not
+    -- silently become a jump before the explicit jump policy says so.
+    local moves=blue and {{0,0},{tx,ty},{-tx,-ty}} or {{0,0},{-1,0},{1,0},{0,-1},{0,1},{-.7071,-.7071},{.7071,-.7071},{-.7071,.7071},{.7071,.7071}}
+    local policies={{delay=math.huge,hold=0}}
+    if blue then
+        for _,delay in ipairs({0,.1,.2,.3,.4,.5}) do
+            for _,hold in ipairs({.18,.42}) do policies[#policies+1]={delay=delay,hold=hold} end
+        end
+    end
     local best,bestCost=nil,math.huge
-    for _,direction in ipairs({{0,0},{-1,0},{1,0},{0,-1},{0,1},{-.7071,-.7071},{.7071,-.7071},{-.7071,.7071},{.7071,.7071}}) do
-        for option=1,(instance.heart.mode=='blue' and 2 or 1) do
+    local steps=blue and 20 or 8
+    for _,direction in ipairs(moves) do
+        for _,policy in ipairs(policies) do
             local dx,dy=direction[1],direction[2]
-            local jump=option==2
             local heart={}
             for key,value in pairs(instance.heart) do heart[key]=value end
-            local cost=0
-            for step=1,8 do
-                Dodge.predict(heart,instance.cur,box,dx,dy,jump,.05)
-                cost=cost+Dodge.risk(instance.objs,heart.x,heart.y,heart.moved>0,time+step*.05,box.hitRadius)*(1-step*.035)
+            if blue and instance.input then
+                heart.jumpWas=instance.input.jumpWas==true
+                heart.jumpBuf=tonumber(instance.input.jumpBuf) or 0
             end
-            cost=cost+((heart.x-instance.cur.x)^2+(heart.y-instance.cur.y)^2)*.00004
-            cost=cost+(dx*dx+dy*dy)*.03+(jump and .02 or 0)
-            if cost<bestCost then bestCost=cost;best={x=dx,y=dy,jump=jump} end
+            local cost=0
+            for step=1,steps do
+                local elapsed=(step-1)*.05
+                local jump=elapsed>=policy.delay and elapsed<policy.delay+policy.hold
+                Dodge.predict(heart,instance.cur,box,dx,dy,jump,.05)
+                cost=cost+Dodge.risk(instance.objs,heart.x,heart.y,heart.moved>0,time+step*.05,box.hitRadius)*(1-step*.025)
+            end
+            local centerX,centerY=heart.x-instance.cur.x,heart.y-instance.cur.y
+            -- Do not reward a blue heart for jumping toward the box center.
+            -- That previous vertical-centering cost caused idle/early jumps.
+            local centerCost=blue and (centerX*tx+centerY*ty)^2 or centerX^2+centerY^2
+            cost=cost+centerCost*.00004+(dx*dx+dy*dy)*.03
+            if policy.hold>0 then cost=cost+.12+policy.hold*.04 end
+            local jumpNow=policy.delay==0
+            if cost<bestCost then bestCost=cost;best={x=dx,y=dy,jump=jumpNow,jumpDelay=policy.delay,jumpHold=policy.hold} end
         end
     end
     return best,bestCost
@@ -119,7 +142,7 @@ assert(type(native)=='table' and type(native._moveHeart)=='function','Unsupporte
 local original=native._moveHeart
 local originalUpdate=native.update
 local updateWrapper
-local state={enabled=true,controlled=setmetatable({}, {__mode='k'}),decisions=0,lastError=nil,phase=nil,round=0,result=nil}
+local state={enabled=true,controlled=setmetatable({}, {__mode='k'}),decisions=0,lastError=nil,phase=nil,round=0,result=nil,autoStart=true,difficulty='Final',raidActive=false,waitingStart=false,startAttempts=0,nextStartAt=os.clock()+2}
 env.OriginSkeletonDodge=state
 local wrapper
 wrapper=function(self,dt)
@@ -150,6 +173,7 @@ if type(originalUpdate)=='function' then
         local entry=state.controlled[self] or {nextAt=0}
         state.controlled[self]=entry
         if type(time)=='number' and type(self.t0)=='number' then entry.frameTime=time-self.t0 end
+        if self.running then state.raidActive=true;state.waitingStart=false end
         return originalUpdate(self,dt,time)
     end
     native.update=updateWrapper
@@ -159,12 +183,19 @@ local connection
 if event and event:IsA('RemoteEvent') then
     connection=event.OnClientEvent:Connect(function(payload)
         if type(payload)~='table' then return end
-        if payload.kind=='Phase' then state.phase=payload.phase;state.round=payload.round or 0 end
+        if payload.kind=='Phase' then
+            state.phase=payload.phase;state.round=payload.round or 0
+            state.raidActive=true;state.waitingStart=false
+        end
+        if payload.kind=='Closed' then
+            state.raidActive=false;state.waitingStart=false;state.phase='Closed'
+            state.nextStartAt=os.clock()+2
+        end
         if payload.kind=='Result' then state.result=payload.data end
     end)
 end
 state.stop=function()
-    state.enabled=false
+    state.enabled=false;state.autoStart=false
     if native._moveHeart==wrapper then native._moveHeart=original end
     if updateWrapper and native.update==updateWrapper then native.update=originalUpdate end
     for instance in pairs(state.controlled) do
@@ -173,6 +204,38 @@ state.stop=function()
     if connection then connection:Disconnect();connection=nil end
 end
 state.status=function()
-    return {enabled=state.enabled,phase=state.phase,round=state.round,decisions=state.decisions,lastError=state.lastError,result=state.result}
+    return {enabled=state.enabled,phase=state.phase,round=state.round,decisions=state.decisions,lastError=state.lastError,result=state.result,autoStart=state.autoStart,difficulty=state.difficulty,raidActive=state.raidActive,waitingStart=state.waitingStart,startAttempts=state.startAttempts}
 end
-print('Skeleton auto-dodge enabled. Enter/select raid manually. Stop: getgenv().OriginSkeletonDodge.stop()')
+local function lobbyRemote()
+    local shared=game:GetService('ReplicatedStorage'):FindFirstChild('Shared')
+    local raids=shared and shared:FindFirstChild('GuestRaids')
+    local folder=raids and raids:FindFirstChild('Remotes')
+    local remote=folder and folder:FindFirstChild('Lobby')
+    return remote and remote:IsA('RemoteEvent') and remote or nil
+end
+state.startRaid=function()
+    if not state.enabled then return false,'Assist stopped' end
+    if state.raidActive or state.waitingStart then return false,'Raid active or start pending' end
+    if type(config.Difficulties)~='table' or not config.Difficulties[state.difficulty] then return false,'Unknown difficulty' end
+    local lobby=lobbyRemote()
+    if not lobby then return false,'GuestRaids.Remotes.Lobby missing' end
+    local ok,err=pcall(function() lobby:FireServer('Start','SkeletonBoss',state.difficulty) end)
+    if not ok then return false,tostring(err) end
+    state.startAttempts=state.startAttempts+1;state.waitingStart=true;state.startSentAt=os.clock()
+    state.nextStartAt=nil;state.phase='StartRequested'
+    return true,'Start requested; waiting for server Phase'
+end
+task.spawn(function()
+    while state.enabled do
+        if state.waitingStart and os.clock()-(state.startSentAt or os.clock())>15 then
+            state.waitingStart=false;state.autoStart=false;state.nextStartAt=nil
+            state.lastError='Start not confirmed by server; auto-start paused. Check proximity/unlocks, then call startRaid() to retry.'
+            warn(state.lastError)
+        elseif state.autoStart and not state.raidActive and not state.waitingStart and state.nextStartAt and os.clock()>=state.nextStartAt then
+            local ok,err=state.startRaid()
+            if not ok then state.autoStart=false;state.nextStartAt=nil;state.lastError=tostring(err);warn('Skeleton auto-start paused: '..state.lastError) end
+        end
+        task.wait(.25)
+    end
+end)
+print('Skeleton: timed-jump assist + auto-start Final enabled. Select cards manually. Stop: getgenv().OriginSkeletonDodge.stop()')
