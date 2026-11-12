@@ -1,42 +1,46 @@
-# Skeleton Raid movement assist (prototype)
+# Skeleton Raid assist + auto-start (prototype)
 
-This is an experimental **auto-dodge assist**, not a complete auto-raid loop. Enter the raid and choose cards manually. Full start/deck-selection commands have not been captured. The inbound capture does not reveal their argument schema, so no guessed remote commands are sent.
+Includes native-input auto-dodging and the user's captured Start action for Final difficulty. **Deck selection is still manual**; no selection payload has been captured. This is not yet a complete unattended raid loop.
 
-## Evidence from uploaded log
+## Start
 
-99 records, zero dropped records and zero capture errors. One complete Judgment win is recorded:
-- Phase Prepare → Intro → Pick → Take.
-- Attack / Turn through rounds 1–5, with FakeDeath after round 4.
-- Sleep → Victory.
-- Result with data.won=true, diff Judgment, first=true, tokens=150.
-- Closed with reason Victory.
+Run skeleton_auto_dodge.lua outside a raid, near the native raid entrance. After two seconds it requests:
+```lua
+game:GetService("ReplicatedStorage").Shared.GuestRaids.Remotes.Lobby
+    :FireServer("Start", "SkeletonBoss", "Final")
+```
 
-The next Final run ends in the uploaded capture at Pick. Its outcome is not present. The Judgment start-to-Victory interval is approximately 218.5 seconds, so this does not establish a faster clear than the configured 180-second AFK route.
+A received Phase confirms raid activity. Auto-start does not request again during known active phases or after Result until the server sends Closed. After Closed, it waits two seconds and requests the next Final run. Native minigame updates also mark an existing running dodge round active.
 
-## How the assist works
+If no Phase confirms the request within 15 seconds, auto-start pauses instead of repeatedly sending requests. Check proximity/unlock conditions and retry explicitly:
+```lua
+print(getgenv().OriginSkeletonDodge.startRaid())
+```
 
-Loads the native Shared.SkeletonRaid Config and DodgeBox module. Replaces the module's movement method with a wrapper that chooses the native input.stick and input.btnJump values, then calls the original movement method. Existing DodgeBox instances share the same module methods. The native update time is captured to evaluate the hazard timeline in the same clock domain.
-
-A short lookahead scores white/blue/orange bones, rotating arms and beam segments; gravity/jump prediction follows the native Box settings. Only controls are changed. The script does not modify actual heart position directly, invulnerability, HP, hit counters, timers or rewards. It does not hook namecall or send remote requests.
-
-It is a heuristic: future unspawned hazards, changing boxes and phone-specific transformations are not fully predicted. Damage and failed runs remain possible, particularly in Final. Keep the raid screen active and avoid simultaneous manual movement while testing.
-
-## Use
-
-Run skeleton_auto_dodge.lua before or during the native raid minigame. Start and deck selection remain manual.
-
-Stop and restore native movement/update methods:
+Stopping restores native movement/update methods and stops further start requests; it does not cancel a native raid already running:
 ```lua
 getgenv().OriginSkeletonDodge.stop()
 ```
 
-Inspect:
+Inspect state, result, waitingStart and attempt count:
 ```lua
 print(getgenv().OriginSkeletonDodge.status())
 ```
 
-Re-running stops the old assist before installing the new wrapper. Restoration only replaces methods still owned by this assist.
+## Early-jump correction
+
+Blue-heart planning now evaluates wait/no-jump and jump delays of 0–0.5 seconds, with short/long holds, over a one-second horizon. Its movement candidates are tangent to gravity, so a direction cannot inadvertently trigger a jump. Blue vertical centering was removed because it rewarded unnecessary early jumps. Native input jump-buffer state is included in prediction. Red-heart movement retains its shorter horizon.
+
+This remains heuristic dodging: damage is possible. The planner does not fully model future unspawned hazards, moving boxes or all mobile transformations. Keep the raid screen active and avoid simultaneous manual movement while testing.
+
+## How it works
+
+Loads Shared.SkeletonRaid.Config and DodgeBox. Movement is chosen through native input.stick/input.btnJump and the original method still processes physics/collisions. Native update time is used for hazard prediction. HP, invulnerability, hit counters, timers and reward/result messages are not modified. No namecall/remote interception is used.
+
+The inbound log contains 99 records without dropped messages/errors, including a full Judgment win (Phase rounds 1–5 → Victory → Result.data.won=true → Closed). The following Final run is captured only up to Pick. Judgment took about 218.5 seconds, so this does not establish faster-than-AFK clears.
 
 ## Validation
 
-Script syntax compilation and synthetic tests passed for white/blue/orange danger rules, horizontal beam escape, gravity jump, keeping real heart state unchanged during planning, using native update time, forwarding native calls and restoring methods/input on Stop. These are not live-game survival or performance tests. No promise of perfect dodging or faster-than-AFK clears is made.
+Syntax and synthetic checks passed for white/blue/orange hazard rules, beam escape, gravity jumps, native timing/forwarding, stop restoration, no idle blue jumps, waiting for an approaching bone row and avoiding it through the complete jump/landing simulation.
+
+Auto-start mocks verify the exact Start/SkeletonBoss/Final payload, no requests during known active phases/results, replay only after Closed, pause on an unconfirmed request and no starts after Stop. No live Roblox survival, timing or server admission test has been performed.
