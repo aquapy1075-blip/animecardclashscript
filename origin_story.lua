@@ -1716,6 +1716,8 @@ for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
 local state={alive=true,enabled=false,connections={},status='Ready',index=0,queue={},pending=false,logs={},awaiting=false,runId=0}
+-- Keep a verified Story battle across Stop/Start and script re-execution.
+state.storyInFlight=previous and (previous.storyInFlight or (previous.attempt and previous.attempt.started and previous.attempt)) or nil
 env.OriginStory=state
 local ui
 local function message(text,kind)
@@ -1751,8 +1753,11 @@ end
 local battleEvent=net:WaitForChild('BattleEvent',15)
 assert(battleEvent and battleEvent:IsA('RemoteEvent'),'BattleEvent RemoteEvent missing')
 state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
+    if not state.alive then return end
     local attempt=state.attempt
-    if not attempt or not state.alive then return end
+    local inFlight=state.storyInFlight
+    if inFlight and inFlight~=attempt then Combat.event(inFlight,event) end
+    if not attempt then return end
     Combat.event(attempt,event)
     if type(event)=='table' and event.type=='BattleEnd' and (not attempt.battleId or event.battleId==attempt.battleId) then
         log('BattleEnd',{battleId=event.battleId,lane=event.lane,difficulty=event.difficulty,won=event.won,matched=Combat.match(attempt,event)})
@@ -1776,6 +1781,15 @@ local function beginRun()
     task.spawn(function()
         local i=1
         while active() and i<=#queue do
+            local prior=state.storyInFlight
+            if prior and not prior.ended then
+                state.status='Waiting for previous Story battle to end before switching target'
+                log('StorySwitchWaiting',{battleId=prior.battleId,lane=prior.lane,nextCardId=queue[i].cardId})
+                local priorDeadline=os.clock()+900
+                while active() and not prior.ended and os.clock()<priorDeadline do task.wait(.1) end
+                if not active() then break end
+                if not prior.ended then stopRun('Previous Story battle has not ended; stopped waiting.');break end
+            end
             local activeDeadline=os.clock()+30
             while active() and state.activePending and os.clock()<activeDeadline do task.wait(.1) end
             if not active() then break end
@@ -1791,7 +1805,9 @@ local function beginRun()
                 end))
                 state.pending=false;attempt.returned=true;attempt.response=response
                 log('StartResponse',response)
-                if state.alive and state.attempt==attempt then Combat.accept(attempt,response,item) end
+                if state.alive and state.attempt==attempt then
+                    if Combat.accept(attempt,response,item) then state.storyInFlight=attempt end
+                end
             end)
             local startDeadline=os.clock()+30
             while active() and state.pending and os.clock()<startDeadline do task.wait(.1) end
@@ -1800,7 +1816,14 @@ local function beginRun()
             if not attempt.started then
                 -- Unknown admission is not a loss. Do not repeatedly start an untracked fight.
                 state.attempt=nil;state.awaiting=false
-                stopRun('Server did not return a verified Story battle ID; see COPY CAPTURE.');break
+                local response=attempt.response
+                if response and response[1]==true and response[2]==false and type(response[3])=='string' then
+                    local reason=response[3]:sub(1,240)
+                    if reason:lower():find('already in a story battle',1,true) then
+                        stopRun('Another Story battle is still running. Wait for it to finish, then turn Auto Story ON again.')
+                    else stopRun('Server refused Story start: '..reason) end
+                else stopRun('Server did not return a verified Story battle ID; see COPY CAPTURE.') end
+                break
             end
             log('StoryAdmitted',{battleId=attempt.battleId,lane=attempt.lane,cardId=item.cardId,difficulty=item.difficulty})
             state.status='Waiting for BattleEnd: '..item.cardId..' / '..item.difficulty
