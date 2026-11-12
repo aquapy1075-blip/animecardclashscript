@@ -45,6 +45,52 @@ end
 return Story
 
 end)()
+local WeatherWebhook=(function()
+local WeatherWebhook={}
+function WeatherWebhook.url(value)
+    if type(value)~='string' then return nil end
+    value=value:match('^%s*(.-)%s*$')
+    for _,host in ipairs({'discord.com','discordapp.com','canary.discord.com','ptb.discord.com'}) do
+        local prefix='https://'..host..'/api/'
+        if value:sub(1,#prefix)==prefix then
+            local path=value:sub(#prefix+1)
+            if path:match('^webhooks/%d+/[%w_%-]+$') or path:match('^v%d+/webhooks/%d+/[%w_%-]+$') then return value end
+        end
+    end
+    return nil
+end
+function WeatherWebhook.rarest(config)
+    local result={};local lowest=math.huge;local total=0
+    if type(config)~='table' or type(config.Order)~='table' or type(config.Data)~='table' then return result,0 end
+    for _,id in ipairs(config.Order) do
+        local def=config.Data[id];local weight=def and def.weight
+        if type(weight)=='number' and weight>0 then
+            total=total+weight
+            if weight<lowest then lowest=weight;result={[id]=true}
+            elseif weight==lowest then result[id]=true end
+        end
+    end
+    return result,total>0 and lowest/total or 0
+end
+function WeatherWebhook.episode(store,server,id,endsAt,now)
+    if type(id)~='string' or id=='' or type(endsAt)~='number' or endsAt~=endsAt or endsAt==math.huge or endsAt<=now then
+        store[server]=nil;return nil
+    end
+    local episode=store[server]
+    if not episode or episode.id~=id or episode.endsAt<=now then episode={id=id};store[server]=episode end
+    -- Extending a running domain is the same occurrence.
+    episode.endsAt=endsAt
+    return episode
+end
+function WeatherWebhook.target(id,config,includeClash)
+    local rarest,chance=WeatherWebhook.rarest(config)
+    if rarest[id] then return true,('%.2f%% random chance'):format(chance*100) end
+    if includeClash and id=='DomainClash' then return true,'Special scheduled event' end
+    return false
+end
+return WeatherWebhook
+
+end)()
 local Monitor=(function()
 local Monitor={}
 local function valid(value)
@@ -905,6 +951,33 @@ local monitorBoost=addStatus('Monitor','Luck boost','--')
 local monitorBy=addStatus('Monitor','Opened by','--')
 tooltip(monitorDelta,'Current balance minus the first synced balance. Spending reduces this value; it is not gross raid earnings.')
 
+local weatherWebhookUI={}
+do
+section('Monitor','Rare Domain webhook')
+local webhookRow=row('Monitor','Discord webhook URL')
+local weatherInput=make('TextBox',webhookRow,{
+    Size=UDim2.fromOffset(180,31),Position=UDim2.new(1,-195,.5,-15),
+    BackgroundTransparency=0,BorderSizePixel=0,TextSize=12,Font=Enum.Font.Gotham,
+    Text='',PlaceholderText='Paste webhook URL',ClearTextOnFocus=false,
+})
+corner(weatherInput,10);skin(weatherInput,'BackgroundColor3','row');skin(weatherInput,'TextColor3','text');skin(weatherInput,'PlaceholderColor3','muted')
+weatherInput.FocusLost:Connect(function()
+    local value=weatherInput.Text
+    if value~='' then ctx.setWeatherURL(value);weatherInput.Text='' end
+end)
+widgets[#widgets+1]=function()
+    weatherInput.PlaceholderText=flags.WeatherWebhookURL~='' and 'URL saved · paste to replace' or 'Paste webhook URL'
+end
+addToggle('Monitor','Rare Domain alerts','WeatherWebhookEnabled')
+addToggle('Monitor','Also notify Domain Clash','WeatherWebhookClash')
+addAction('Monitor','Check webhook delivery','SEND TEST',ctx.testWeatherWebhook)
+addAction('Monitor','Remove webhook URL','CLEAR URL',function() ctx.setWeatherURL('');weatherInput.Text='' end)
+weatherWebhookUI.status=addStatus('Monitor','Webhook status','OFF')
+weatherWebhookUI.counts=addStatus('Monitor','Sent / Failed','0 / 0')
+addStatus('Monitor','Rarest random Domain','Infinite Void · 0.1% in uploaded config')
+
+end
+
 -- Multi-select reuses the Origin UI searchable popup and preserves selections while filtering.
 local function multiDropdown(label,options,getSet,onChange,tab)
     local function currentOptions() return type(options)=='function' and options() or options end
@@ -1346,6 +1419,8 @@ local function refreshOverview()
     pumpToast()
     if selectedTab=='Monitor' then
         local m=ctx.monitorSnapshot()
+        showStatus(weatherWebhookUI.status,state.webhookStatus or 'OFF')
+        showStatus(weatherWebhookUI.counts,tostring(state.webhookSent or 0)..' / '..tostring(state.webhookFailed or 0))
         showStatus(monitorBone,m.bone);showStatus(monitorWar,m.war)
         showStatus(monitorDelta,m.delta);showStatus(monitorRate,m.rate)
         showStatus(monitorUpdated,m.updated)
@@ -1389,7 +1464,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookClash=true}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -1694,6 +1769,17 @@ end
 local tracking=Monitor.new()
 local monitorStorage=game:GetService('ReplicatedStorage')
 local domainConfig
+local lastDomainConfigAttempt=-math.huge
+local function getMonitorDomainConfig()
+    if domainConfig then return domainConfig end
+    if os.clock()-lastDomainConfigAttempt<5 then return nil end
+    lastDomainConfigAttempt=os.clock()
+    local shared=monitorStorage:FindFirstChild('Shared')
+    local folder=shared and shared:FindFirstChild('Config')
+    local module=folder and folder:FindFirstChild('DomainConfig')
+    if module then local ok,data=pcall(require,module);if ok and type(data)=='table' and type(data.get)=='function' then domainConfig=data end end
+    return domainConfig
+end
 local function monitorProfile(data)
     if not Monitor.profile(tracking,data,os.clock()) then
         local keys={}
@@ -1736,12 +1822,7 @@ local function monitorSnapshot()
     local function timeLeft(seconds)
         return ('%d:%02d'):format(math.floor(seconds/60),seconds%60)
     end
-    if not domainConfig then
-        local shared=monitorStorage:FindFirstChild('Shared')
-        local folder=shared and shared:FindFirstChild('Config')
-        local module=folder and folder:FindFirstChild('DomainConfig')
-        if module then local ok,data=pcall(require,module);if ok and type(data)=='table' and type(data.get)=='function' then domainConfig=data end end
-    end
+    getMonitorDomainConfig()
     local id=monitorStorage:GetAttribute('DomainId')
     local endsAt=monitorStorage:GetAttribute('DomainEndsAt')
     local by=monitorStorage:GetAttribute('DomainBy')
@@ -1760,6 +1841,110 @@ local function monitorSnapshot()
     monitorCachedAt=now
     return monitorCached
 end
+
+state.webhookStatus='OFF';state.webhookSent=0;state.webhookFailed=0;state.webhookPending=false
+if type(env.OriginWeatherAlertEpisodes)~='table' then env.OriginWeatherAlertEpisodes={} end
+local weatherEpisodes=env.OriginWeatherAlertEpisodes
+local weatherServer=tostring(game.JobId or '')..':'..tostring(game.PlaceId or '')
+local lastWebhookSend=-math.huge
+local function weatherURL(value)
+    return WeatherWebhook.url(value)
+end
+local function setWeatherURL(value)
+    if not state.alive or state.profileLoading then return false end
+    local url=weatherURL(value)
+    if value=='' then flags.WeatherWebhookURL='';state.webhookStatus='URL cleared';return true end
+    if not url then state.webhookStatus='Enter a valid Discord webhook URL';return false end
+    flags.WeatherWebhookURL=url;state.webhookStatus='URL saved in session; SAVE profile to persist'
+    return true
+end
+local function weatherTransport()
+    if type(request)=='function' then return request end
+    if type(http_request)=='function' then return http_request end
+    if type(syn)=='table' and type(syn.request)=='function' then return syn.request end
+    return nil
+end
+local function sendWeatherWebhook(test,id,endsAt,reason)
+    if state.webhookPending then return false,'A webhook request is pending' end
+    local url=weatherURL(flags.WeatherWebhookURL)
+    if not url then state.webhookStatus='Webhook URL missing/invalid';return false,'not-started' end
+    local transport=weatherTransport()
+    if not transport then state.webhookStatus='Executor HTTP request API unavailable';return false,'not-started' end
+    if os.clock()-lastWebhookSend<5 then return false,'not-started' end
+    lastWebhookSend=os.clock();state.webhookPending=true;state.webhookStatus=test and 'Sending test…' or 'Sending rare Domain alert…'
+    local function activeSend()
+        return state.alive and not state.profileLoading and flags.WeatherWebhookURL==url and (test or flags.WeatherWebhookEnabled==true)
+    end
+    local def
+    local config=getMonitorDomainConfig()
+    if config and type(config.get)=='function' and id then local ok,value=pcall(config.get,id);if ok then def=value end end
+    def=type(def)=='table' and def or {}
+    local remaining=type(endsAt)=='number' and math.max(0,math.ceil(endsAt-workspace:GetServerTimeNow())) or 0
+    local fields={}
+    if not test then
+        fields[#fields+1]={name='Rarity',value=tostring(reason or 'Rare domain'),inline=true}
+        fields[#fields+1]={name='Remaining',value=('%d:%02d'):format(math.floor(remaining/60),remaining%60),inline=true}
+        if type(def.base)=='number' and type(def.pct)=='number' then fields[#fields+1]={name='Luck boost',value=('+%d / +%d%%'):format(def.base,math.floor(def.pct*100+.5)),inline=true} end
+        fields[#fields+1]={name='Server',value=tostring(game.JobId or 'unknown'):sub(1,120),inline=false}
+    end
+    local embed={title=test and 'ACO webhook test' or ('Rare Domain: '..tostring(def.name or id):sub(1,120)),description=test and 'Your weather/Domain webhook is connected.' or 'A rare Domain is active on this server.',color=10188031,fields=fields}
+    if not test and type(game.PlaceId)=='number' and type(game.JobId)=='string' and game.JobId~='' then
+        embed.url='https://www.roblox.com/games/start?placeId='..game.PlaceId..'&gameInstanceId='..game.JobId
+    end
+    local encoded,body=pcall(function() return HttpService:JSONEncode({allowed_mentions={parse={}},embeds={embed}}) end)
+    if not encoded then state.webhookPending=false;state.webhookStatus='Webhook payload encoding failed';return false,'not-started' end
+    local success=false
+    for attempt=1,3 do
+        if not activeSend() then state.webhookStatus='Cancelled';break end
+        local ok,response=pcall(transport,{Url=url,Method='POST',Headers={['Content-Type']='application/json'},Body=body})
+        local code=ok and type(response)=='table' and tonumber(response.StatusCode or response.Status)
+        if code and code>=200 and code<300 then
+            success=true;state.webhookSent=state.webhookSent+1;state.webhookStatus=test and 'Test delivered' or 'Rare Domain alert delivered';break
+        end
+        if code==429 and attempt<3 then
+            local retry=5
+            if type(response.Body)=='string' then
+                local decoded,data=pcall(function() return HttpService:JSONDecode(response.Body) end)
+                if decoded and type(data)=='table' then retry=tonumber(data.retry_after) or retry end
+            end
+            retry=math.clamp(retry,1,30)
+            state.webhookStatus='Rate limited; retry '..attempt..'/2'
+            local deadline=os.clock()+retry
+            while activeSend() and os.clock()<deadline do task.wait(.1) end
+        else
+            state.webhookFailed=state.webhookFailed+1
+            state.webhookStatus=code and ('Delivery failed: HTTP '..code) or 'Transport failed; no automatic retry'
+            break
+        end
+    end
+    state.webhookPending=false
+    return success,'attempted'
+end
+local function testWeatherWebhook()
+    if state.webhookPending then return end
+    task.spawn(function() sendWeatherWebhook(true) end)
+end
+task.spawn(function()
+    while state.alive do
+        if flags.WeatherWebhookEnabled and not state.profileLoading then
+            local config=getMonitorDomainConfig()
+            local id=monitorStorage:GetAttribute('DomainId')
+            local endsAt=monitorStorage:GetAttribute('DomainEndsAt')
+            local episode=WeatherWebhook.episode(weatherEpisodes,weatherServer,id,endsAt,workspace:GetServerTimeNow())
+            if not config then state.webhookStatus='Waiting for DomainConfig'
+            elseif not weatherURL(flags.WeatherWebhookURL) then state.webhookStatus='Webhook URL missing/invalid'
+            elseif episode then
+                local target,reason=WeatherWebhook.target(id,config,flags.WeatherWebhookClash)
+                if target and episode.attemptedURL~=flags.WeatherWebhookURL and not state.webhookPending and os.clock()-lastWebhookSend>=5 then
+                    episode.attemptedURL=flags.WeatherWebhookURL
+                    local _,outcome=sendWeatherWebhook(false,id,endsAt,reason)
+                    if outcome=='not-started' then episode.attemptedURL=nil end
+                elseif not target and not state.webhookPending then state.webhookStatus='Watching for rare Domain' end
+            elseif not state.webhookPending then state.webhookStatus='Watching for rare Domain' end
+        elseif not state.webhookPending then state.webhookStatus='OFF' end
+        task.wait(.5)
+    end
+end)
 
 local function syncRunFlags()
     flags.StoryRunning=state.enabled==true
@@ -1833,6 +2018,9 @@ local function loadProfile(name,quiet)
     flags.StoryMaps=maps;flags.StoryCards=cards;flags.StoryModes=modes
     flags.StoryRepeat=nextFlags.StoryRepeat==true
     flags.HLRepeat=nextFlags.HLRepeat==true
+    flags.WeatherWebhookURL=weatherURL(nextFlags.WeatherWebhookURL) or ''
+    flags.WeatherWebhookEnabled=nextFlags.WeatherWebhookEnabled==true
+    flags.WeatherWebhookClash=nextFlags.WeatherWebhookClash~=false
     flags.StoryRunning=nextFlags.StoryRunning==true
     flags.SkillRunning=nextFlags.SkillRunning==true
     flags.HLRunning=nextFlags.HLRunning==true
@@ -1896,6 +2084,7 @@ else profile.status='File APIs unavailable; session only' end
 
 ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=flags,
     Workspace=game:GetService('Workspace'),UIS=game:GetService('UserInputService'),env=env,
+    setWeatherURL=setWeatherURL,testWeatherWebhook=testWeatherWebhook,
     monitorSnapshot=monitorSnapshot,requestMonitorSync=requestMonitorSync,resetMonitorSession=resetMonitorSession,
     startSkills=startSkills,stopSkills=stopSkills,
     profile=profile,saveProfile=saveProfile,loadProfile=loadProfile,deleteProfile=deleteProfile,setAutoProfile=setAutoProfile,
