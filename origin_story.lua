@@ -234,10 +234,54 @@ function WeatherWebhook.episode(store,server,id,endsAt,now)
     episode.endsAt=endsAt
     return episode
 end
-function WeatherWebhook.target(id,config,includeClash)
-    local rarest,chance=WeatherWebhook.rarest(config)
-    if rarest[id] then return true,('%.2f%% random chance'):format(chance*100) end
-    if includeClash and id=='DomainClash' then return true,'Special scheduled event' end
+local defaultConfig={
+    Order={'CaptivatingBeach','CoffinOfDeath','UnyieldingLove','Courtroom','ShrineOfSorrow','InfiniteVoid'},
+    Data={
+        CaptivatingBeach={name='Horizon of the Captivating Beach',weight=58.4},
+        CoffinOfDeath={name='Coffin of Death',weight=30},
+        UnyieldingLove={name='Unyielding Love',weight=10},
+        Courtroom={name='Judge Courtroom',weight=1},
+        ShrineOfSorrow={name='Shrine of Sorrow',weight=.5},
+        InfiniteVoid={name='Infinite Void',weight=.1},
+        DomainClash={name='Domain Clash',weight=0},
+    },
+}
+function WeatherWebhook.selection(value,legacyClash)
+    if type(value)~='table' then return {InfiniteVoid=true,DomainClash=legacyClash~=false or nil} end
+    local selected={}
+    for id,on in pairs(value) do
+        if on==true and type(id)=='string' and #id<=80 and id:match('^[%w_%-]+$') then selected[id]=true end
+    end
+    return selected
+end
+function WeatherWebhook.options(config)
+    if type(config)~='table' or type(config.Order)~='table' or type(config.Data)~='table' then config=defaultConfig end
+    local total=0;local seen={};local order={}
+    for _,id in ipairs(config.Order) do
+        if type(id)=='string' and type(config.Data[id])=='table' and not seen[id] then
+            seen[id]=true;order[#order+1]=id
+            local w=config.Data[id].weight
+            if type(w)=='number' and w==w and w>0 and w<math.huge then total=total+w end
+        end
+    end
+    local extras={}
+    for id,def in pairs(config.Data) do if type(id)=='string' and type(def)=='table' and not seen[id] then extras[#extras+1]=id end end
+    table.sort(extras);for _,id in ipairs(extras) do order[#order+1]=id end
+    local result={}
+    for _,id in ipairs(order) do
+        local def=config.Data[id];local w=def.weight
+        local chance=seen[id] and type(w)=='number' and w==w and w>0 and w<math.huge and total>0 and w/total*100 or 0
+        local text=('%.2f'):format(chance):gsub('0+$',''):gsub('%.$','')..'%'
+        local rarity=chance>0 and (text..' random chance') or (text..' random / special event')
+        result[#result+1]={id=id,name=def.name or id,chance=chance,reason=rarity,label=(def.name or id)..' · '..text..(chance==0 and ' · special event' or '')}
+    end
+    return result
+end
+function WeatherWebhook.target(id,config,selection)
+    if type(selection)~='table' or selection[id]~=true then return false end
+    for _,option in ipairs(WeatherWebhook.options(config)) do
+        if option.id==id then return true,option.reason end
+    end
     return false
 end
 return WeatherWebhook
@@ -544,15 +588,17 @@ local function gradientText(label,bright)
     label.TextColor3=Color3.fromRGB(255,255,255)
     local gradient=label:FindFirstChild('OriginTextGradient')
     if not gradient then gradient=make('UIGradient',label,{Name='OriginTextGradient',Rotation=0}) end
-    local light=flags.AO_UI_Theme=='Light' and not bright
-    gradient.Color=light and ColorSequence.new({
-        ColorSequenceKeypoint.new(0,Color3.fromRGB(102,48,165)),
-        ColorSequenceKeypoint.new(.5,Color3.fromRGB(25,88,164)),
-        ColorSequenceKeypoint.new(1,Color3.fromRGB(7,112,91)),
-    }) or ColorSequence.new({
-        ColorSequenceKeypoint.new(0,Color3.fromRGB(214,179,255)),
-        ColorSequenceKeypoint.new(.5,Color3.fromRGB(144,217,255)),
-        ColorSequenceKeypoint.new(1,Color3.fromRGB(142,245,205)),
+    local palette=themes[flags.AO_UI_Theme] or themes.Midnight
+    local accent=rgb(palette.accent);local ink=rgb(palette.text);local mint=rgb(palette.mint)
+    local light=flags.AO_UI_Theme=='Light'
+    if bright and light then
+        local white=Color3.fromRGB(255,255,255)
+        accent=accent:Lerp(white,.5);ink=white;mint=mint:Lerp(white,.55)
+    end
+    gradient.Color=ColorSequence.new({
+        ColorSequenceKeypoint.new(0,accent:Lerp(ink,light and not bright and .15 or .3)),
+        ColorSequenceKeypoint.new(.5,accent:Lerp(ink,.55)),
+        ColorSequenceKeypoint.new(1,mint),
     })
     textGradients[label]={bright=bright}
 end
@@ -712,7 +758,7 @@ local body=make('Frame',main,{
 local selectedTab='Story'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Story','Higher or Lower','Skill Tree','Active Rules','Config','Settings'}
+local tabNames={'Monitor','Story','Guess Minigame','Skill Tree','Combat Helper','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
@@ -1089,23 +1135,23 @@ local function clearNotifications()
 end
 local activeRuleUI={}
 do
-    section('Active Rules','Auto abilities')
-    local master=addToggle('Active Rules','Auto active','ActiveRulesEnabled')
+    section('Combat Helper','Auto abilities')
+    local master=addToggle('Combat Helper','Auto active','ActiveRulesEnabled')
     tooltip(master,'Turn off the game active auto first. Each enabled card uses its own saved condition.')
-    local lanes=addDropdown('Active Rules','Battles','ActiveRuleLane',{1,2,'Both lanes'})
+    local lanes=addDropdown('Combat Helper','Battles','ActiveRuleLane',{1,2,'Both lanes'})
     tooltip(lanes,'Both lanes applies these card rules to both battles. HP and ability uses stay separate per battle.')
-    section('Active Rules','Card settings')
+    section('Combat Helper','Card settings')
     local pick
-    pick=addAction('Active Rules','Card','SCP3008  ▾',function()
+    pick=addAction('Combat Helper','Card','SCP3008  ▾',function()
         if menu.Visible then hideMenu();return end
         openMenu(pick,ctx.activeRules.options(),function(_,id) setFlag('ActiveRuleCard',id) end)
     end)
     widgets[#widgets+1]=function() pick.Text=tostring(flags.ActiveRuleCard)..'  ▾' end
     tooltip(pick,'Lists ability cards received from the selected battle(s). Start a battle once if your cards are missing.')
-    addToggle('Active Rules','Use this card','ActiveEditEnabled')
-    addDropdown('Active Rules','Use when','ActiveEditMode',{'Combat start','Low HP','Round'})
+    addToggle('Combat Helper','Use this card','ActiveEditEnabled')
+    addDropdown('Combat Helper','Use when','ActiveEditMode',{'Combat start','Low HP','Round'})
     local hpTarget
-    hpTarget=addAction('Active Rules','Watch card','Any living card  ▾',function()
+    hpTarget=addAction('Combat Helper','Watch card','Any living card  ▾',function()
         if menu.Visible then hideMenu();return end
         openMenu(hpTarget,{'Any living card','Slot 1','Slot 2','Slot 3','Slot 4','Slot 5'},function(index)
             setFlag('ActiveEditSlot',index-1)
@@ -1115,7 +1161,7 @@ do
         local slot=tonumber(flags.ActiveEditSlot) or 0
         hpTarget.Text=(slot==0 and 'Any living card' or ('Slot '..slot))..'  ▾'
     end
-    local hpRow=row('Active Rules','HP below')
+    local hpRow=row('Combat Helper','HP below')
     local bar=make('TextButton',hpRow,{Name='ActiveHPSlider',Text='',AutoButtonColor=false,BackgroundTransparency=1,
         Position=UDim2.new(1,-195,.5,-16),Size=UDim2.fromOffset(180,32),BorderSizePixel=0})
     local valueText=newText(bar,'50%',12,true)
@@ -1129,7 +1175,7 @@ do
     corner(knob,7);skin(knob,'BackgroundColor3','accent')
     local drag
     local function canDrag()
-        return lifecycle.alive and root.Enabled and not window.minimized and selectedTab=='Active Rules' and flags.ActiveEditMode=='Low HP' and hpRow.Visible
+        return lifecycle.alive and root.Enabled and not window.minimized and selectedTab=='Combat Helper' and flags.ActiveEditMode=='Low HP' and hpRow.Visible
     end
     local function adjust(x)
         if not canDrag() or track.AbsoluteSize.X<=0 then drag=nil;return end
@@ -1150,19 +1196,19 @@ do
         local hp=tonumber(flags.ActiveEditHP) or 50;local ratio=(hp-1)/98
         valueText.Text=tostring(hp)..'%';fill.Size=UDim2.new(ratio,0,1,0);knob.Position=UDim2.new(ratio,0,.5,0)
     end
-    local roundInput=addInput('Active Rules','Round','ActiveEditRound','3')
+    local roundInput=addInput('Combat Helper','Round','ActiveEditRound','3')
     tooltip(roundInput,'Round mode: use at this round or later, when the ability becomes available.')
     local details=false
     local detailsButton
-    detailsButton=addAction('Active Rules','Battle details','SHOW',function()
+    detailsButton=addAction('Combat Helper','Battle details','SHOW',function()
         details=not details;detailsButton.Text=details and 'HIDE' or 'SHOW'
         activeRuleUI.last.Parent.Visible=details
         activeRuleUI.hp1.Parent.Visible=details and (flags.ActiveRuleLane==1 or flags.ActiveRuleLane=='Both lanes')
         activeRuleUI.hp2.Parent.Visible=details and (flags.ActiveRuleLane==2 or flags.ActiveRuleLane=='Both lanes')
     end)
-    activeRuleUI.last=addStatus('Active Rules','Last request','--')
-    activeRuleUI.hp1=addStatus('Active Rules','Battle 1 HP / round','Waiting for battle sync')
-    activeRuleUI.hp2=addStatus('Active Rules','Battle 2 HP / round','Waiting for battle sync')
+    activeRuleUI.last=addStatus('Combat Helper','Last request','--')
+    activeRuleUI.hp1=addStatus('Combat Helper','Battle 1 HP / round','Waiting for battle sync')
+    activeRuleUI.hp2=addStatus('Combat Helper','Battle 2 HP / round','Waiting for battle sync')
     local editedCard
     widgets[#widgets+1]=function()
         local lowHP=flags.ActiveEditMode=='Low HP'
@@ -1178,12 +1224,7 @@ do
 end
 
 section('Monitor','Raid currency')
-local monitorBone=addStatus('Monitor','Bone Tokens / Skeleton Raid','Waiting for sync')
-local monitorDelta=addStatus('Monitor','Balance change this session','--')
-local monitorRate=addStatus('Monitor','Net balance change per hour','Available after 60s')
-local monitorUpdated=addStatus('Monitor','Last balance update','Waiting for sync')
-addAction('Monitor','Refresh profile','REFRESH',ctx.requestMonitorSync)
-addAction('Monitor','Reset session baseline','RESET',ctx.resetMonitorSession)
+local monitorBone=addStatus('Monitor','Bone Tokens','Waiting for sync')
 section('Monitor','Other currency')
 local monitorWar=addStatus('Monitor','War Coins','Waiting for sync')
 section('Monitor','Server Domain')
@@ -1191,33 +1232,56 @@ local monitorDomain=addStatus('Monitor','Current Domain','--')
 local monitorDomainTime=addStatus('Monitor','Time remaining','--')
 local monitorBoost=addStatus('Monitor','Luck boost','--')
 local monitorBy=addStatus('Monitor','Opened by','--')
-tooltip(monitorDelta,'Current balance minus the first synced balance. Spending reduces this value; it is not gross raid earnings.')
 
-local weatherWebhookUI={}
 do
-section('Monitor','Rare Domain webhook')
+section('Monitor','Webhook')
 local webhookRow=row('Monitor','Discord webhook URL')
 local weatherInput=make('TextBox',webhookRow,{
     Size=UDim2.fromOffset(180,31),Position=UDim2.new(1,-195,.5,-15),
     BackgroundTransparency=0,BorderSizePixel=0,TextSize=12,Font=Enum.Font.Gotham,
-    Text='',PlaceholderText='Paste webhook URL',ClearTextOnFocus=false,
+    Text=flags.WeatherWebhookURL or '',PlaceholderText='Paste webhook URL',ClearTextOnFocus=false,
 })
 corner(weatherInput,10);skin(weatherInput,'BackgroundColor3','row');skin(weatherInput,'TextColor3','text');skin(weatherInput,'PlaceholderColor3','muted')
 weatherInput.FocusLost:Connect(function()
+    if not lifecycle.alive then return end
     local value=weatherInput.Text
-    if value~='' then ctx.setWeatherURL(value);weatherInput.Text='' end
+    local accepted=ctx.setWeatherURL(value)
+    weatherInput.Text=flags.WeatherWebhookURL or ''
+    if not accepted then notify('Enter a valid Discord webhook URL.','warning') end
 end)
 widgets[#widgets+1]=function()
-    weatherInput.PlaceholderText=flags.WeatherWebhookURL~='' and 'URL saved · paste to replace' or 'Paste webhook URL'
+    if not weatherInput:IsFocused() then weatherInput.Text=flags.WeatherWebhookURL or '' end
 end
-addToggle('Monitor','Rare Domain alerts','WeatherWebhookEnabled')
-addToggle('Monitor','Also notify Domain Clash','WeatherWebhookClash')
-addAction('Monitor','Check webhook delivery','SEND TEST',ctx.testWeatherWebhook)
-addAction('Monitor','Remove webhook URL','CLEAR URL',function() ctx.setWeatherURL('');weatherInput.Text='' end)
-weatherWebhookUI.status=addStatus('Monitor','Webhook status','OFF')
-weatherWebhookUI.counts=addStatus('Monitor','Sent / Failed','0 / 0')
-addStatus('Monitor','Rarest random Domain','Infinite Void · 0.1% in uploaded config')
-
+tooltip(weatherInput,'Replace the URL to change destination. Clear the field to remove it. SAVE your Config profile to keep changes.')
+addToggle('Monitor','Domain alerts','WeatherWebhookEnabled')
+local domainPick
+local function domainChoices()
+    local labels,ids={},{}
+    for _,option in ipairs(ctx.weatherDomainOptions()) do labels[#labels+1]=option.label;ids[option.label]=option.id end
+    return labels,ids
+end
+domainPick=addAction('Monitor','Notify for Domains','SELECT  ▾',function()
+    if menu.Visible then hideMenu();return end
+    local labels,ids=domainChoices()
+    local function selection()
+        local selected={}
+        for label,id in pairs(ids) do if flags.WeatherWebhookDomains[id] then selected[label]=true end end
+        return selected
+    end
+    openMenu(domainPick,labels,function(_,label)
+        local id=ids[label];if not id then return end
+        local nextSet={};for key,on in pairs(flags.WeatherWebhookDomains) do if on then nextSet[key]=true end end
+        nextSet[id]=not nextSet[id] or nil
+        setFlag('WeatherWebhookDomains',nextSet);repaintControls()
+    end)
+    menuData.multi=true;menuData.selected=selection;renderMenuOptions()
+end)
+widgets[#widgets+1]=function()
+    local count=0
+    for _,option in ipairs(ctx.weatherDomainOptions()) do if flags.WeatherWebhookDomains[option.id] then count=count+1 end end
+    domainPick.Text=tostring(count)..' selected  ▾'
+end
+addAction('Monitor','Test webhook','SEND TEST',ctx.testWeatherWebhook)
 end
 
 -- Multi-select reuses the Origin UI searchable popup and preserves selections while filtering.
@@ -1333,17 +1397,12 @@ section('Story','Combat detection')
 addStatus('Story','Combat signal','Server battleId / lane')
 addStatus('Story','Victory signal','BattleEnd.won (matching battleId)')
 addAction('Story','Export received battle payloads','COPY CAPTURE',ctx.exportCapture)
-section('Higher or Lower','Automatic stat comparison')
-addToggle('Higher or Lower','Auto Higher or Lower','HLRunning')
-addToggle('Higher or Lower','Restart after game ends','HLRepeat')
-local hlLive=addStatus('Higher or Lower','Status','OFF')
-local hlPool=addStatus('Higher or Lower','Live stat entries','Loaded on start')
-local hlScore=addStatus('Higher or Lower','Streak','0 / 100')
-section('Higher or Lower','How it chooses')
-addStatus('Higher or Lower','Compared stat','DMG + HP at level 0')
-addStatus('Higher or Lower','Card identity','Exact cardId | variant key')
-addStatus('Higher or Lower','Round tracking','Uses server nextRound')
-addStatus('Higher or Lower','Unknown / equal stats','Stops; no random guess')
+section('Guess Minigame','Automatic stat comparison')
+addToggle('Guess Minigame','Auto Guess Minigame','HLRunning')
+addToggle('Guess Minigame','Restart after game ends','HLRepeat')
+local hlLive=addStatus('Guess Minigame','Status','OFF')
+local hlPool=addStatus('Guess Minigame','Live stat entries','Loaded on start')
+local hlScore=addStatus('Guess Minigame','Streak','0 / 100')
 
 section('Skill Tree','Auto skill upgrades')
 local skillLabels,skillIds={},{}
@@ -1661,11 +1720,7 @@ local function refreshOverview()
     pumpToast()
     if selectedTab=='Monitor' then
         local m=ctx.monitorSnapshot()
-        showStatus(weatherWebhookUI.status,state.webhookStatus or 'OFF')
-        showStatus(weatherWebhookUI.counts,tostring(state.webhookSent or 0)..' / '..tostring(state.webhookFailed or 0))
         showStatus(monitorBone,m.bone);showStatus(monitorWar,m.war)
-        showStatus(monitorDelta,m.delta);showStatus(monitorRate,m.rate)
-        showStatus(monitorUpdated,m.updated)
         showStatus(monitorDomain,m.domain);showStatus(monitorDomainTime,m.domainTime)
         showStatus(monitorBoost,m.boost);showStatus(monitorBy,m.openedBy)
     end
@@ -1675,7 +1730,7 @@ local function refreshOverview()
     showStatus(hlPool,state.hlPoolCount and tostring(state.hlPoolCount) or 'Loaded on start')
     showStatus(hlScore,tostring(state.hlStreak or 0)..' / 100')
     showStatus(skillLive,state.skillStatus or 'OFF')
-    if selectedTab=='Active Rules' then
+    if selectedTab=='Combat Helper' then
         showStatus(activeRuleUI.last,state.activeRuleLast or '--')
         showStatus(activeRuleUI.hp1,ctx.activeRules.preview(1))
         showStatus(activeRuleUI.hp2,ctx.activeRules.preview(2))
@@ -1711,7 +1766,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookClash=true,ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={}}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -1953,7 +2008,7 @@ local function stopHL()
     state.hlStatus=state.hlPending and 'Stopping after pending request' or 'OFF'
 end
 local function startHL()
-    if state.hlEnabled or state.hlPending or state.hlBusy then message('Higher or Lower is already active/pending.','warning');return end
+    if state.hlEnabled or state.hlPending or state.hlBusy then message('Guess Minigame is already active/pending.','warning');return end
     state.hlBusy=true;state.hlEnabled=true;state.hlRunId=state.hlRunId+1;state.hlStatus='Loading live card stat pool'
     local token=state.hlRunId
     local function activeHL() return state.alive and state.hlEnabled and state.hlRunId==token end
@@ -2127,10 +2182,13 @@ end
 local function setWeatherURL(value)
     if not state.alive or state.profileLoading then return false end
     local url=weatherURL(value)
-    if value=='' then flags.WeatherWebhookURL='';state.webhookStatus='URL cleared';return true end
+    if type(value)=='string' and value:match('^%s*$') then flags.WeatherWebhookURL='';state.webhookStatus='URL cleared';return true end
     if not url then state.webhookStatus='Enter a valid Discord webhook URL';return false end
     flags.WeatherWebhookURL=url;state.webhookStatus='URL saved in session; SAVE profile to persist'
     return true
+end
+local function weatherDomainOptions()
+    return WeatherWebhook.options(getMonitorDomainConfig())
 end
 local function weatherTransport()
     if type(request)=='function' then return request end
@@ -2145,9 +2203,9 @@ local function sendWeatherWebhook(test,id,endsAt,reason)
     local transport=weatherTransport()
     if not transport then state.webhookStatus='Executor HTTP request API unavailable';return false,'not-started' end
     if os.clock()-lastWebhookSend<5 then return false,'not-started' end
-    lastWebhookSend=os.clock();state.webhookPending=true;state.webhookStatus=test and 'Sending test…' or 'Sending rare Domain alert…'
+    lastWebhookSend=os.clock();state.webhookPending=true;state.webhookStatus=test and 'Sending test…' or 'Sending Domain alert…'
     local function activeSend()
-        return state.alive and not state.profileLoading and flags.WeatherWebhookURL==url and (test or flags.WeatherWebhookEnabled==true)
+        return state.alive and not state.profileLoading and flags.WeatherWebhookURL==url and (test or (flags.WeatherWebhookEnabled==true and WeatherWebhook.target(id,getMonitorDomainConfig(),flags.WeatherWebhookDomains)))
     end
     local def
     local config=getMonitorDomainConfig()
@@ -2161,7 +2219,7 @@ local function sendWeatherWebhook(test,id,endsAt,reason)
         if type(def.base)=='number' and type(def.pct)=='number' then fields[#fields+1]={name='Luck boost',value=('+%d / +%d%%'):format(def.base,math.floor(def.pct*100+.5)),inline=true} end
         fields[#fields+1]={name='Server',value=tostring(game.JobId or 'unknown'):sub(1,120),inline=false}
     end
-    local embed={title=test and 'ACO webhook test' or ('Rare Domain: '..tostring(def.name or id):sub(1,120)),description=test and 'Your weather/Domain webhook is connected.' or 'A rare Domain is active on this server.',color=10188031,fields=fields}
+    local embed={title=test and 'ACO webhook test' or ('Domain: '..tostring(def.name or id):sub(1,120)),description=test and 'Your weather/Domain webhook is connected.' or 'A selected Domain is active on this server.',color=10188031,fields=fields}
     if not test and type(game.PlaceId)=='number' and type(game.JobId)=='string' and game.JobId~='' then
         embed.url='https://www.roblox.com/games/start?placeId='..game.PlaceId..'&gameInstanceId='..game.JobId
     end
@@ -2173,7 +2231,7 @@ local function sendWeatherWebhook(test,id,endsAt,reason)
         local ok,response=pcall(transport,{Url=url,Method='POST',Headers={['Content-Type']='application/json'},Body=body})
         local code=ok and type(response)=='table' and tonumber(response.StatusCode or response.Status)
         if code and code>=200 and code<300 then
-            success=true;state.webhookSent=state.webhookSent+1;state.webhookStatus=test and 'Test delivered' or 'Rare Domain alert delivered';break
+            success=true;state.webhookSent=state.webhookSent+1;state.webhookStatus=test and 'Test delivered' or 'Domain alert delivered';break
         end
         if code==429 and attempt<3 then
             local retry=5
@@ -2208,13 +2266,13 @@ task.spawn(function()
             if not config then state.webhookStatus='Waiting for DomainConfig'
             elseif not weatherURL(flags.WeatherWebhookURL) then state.webhookStatus='Webhook URL missing/invalid'
             elseif episode then
-                local target,reason=WeatherWebhook.target(id,config,flags.WeatherWebhookClash)
+                local target,reason=WeatherWebhook.target(id,config,flags.WeatherWebhookDomains)
                 if target and episode.attemptedURL~=flags.WeatherWebhookURL and not state.webhookPending and os.clock()-lastWebhookSend>=5 then
                     episode.attemptedURL=flags.WeatherWebhookURL
                     local _,outcome=sendWeatherWebhook(false,id,endsAt,reason)
                     if outcome=='not-started' then episode.attemptedURL=nil end
-                elseif not target and not state.webhookPending then state.webhookStatus='Watching for rare Domain' end
-            elseif not state.webhookPending then state.webhookStatus='Watching for rare Domain' end
+                elseif not target and not state.webhookPending then state.webhookStatus='Watching selected Domains' end
+            elseif not state.webhookPending then state.webhookStatus='Watching selected Domains' end
         elseif not state.webhookPending then state.webhookStatus='OFF' end
         task.wait(.5)
     end
@@ -2340,6 +2398,7 @@ local function setFlag(key,value)
         if value then startSkills() else stopSkills() end
     elseif key=='HLRunning' then
         if value then startHL() else stopHL() end
+    elseif key=='WeatherWebhookDomains' then flags[key]=WeatherWebhook.selection(value)
     elseif activeRules.edit(key,value) then
     else flags[key]=value end
     syncRunFlags()
@@ -2400,7 +2459,7 @@ local function loadProfile(name,quiet)
     activeRules.syncEditor()
     flags.WeatherWebhookURL=weatherURL(nextFlags.WeatherWebhookURL) or ''
     flags.WeatherWebhookEnabled=nextFlags.WeatherWebhookEnabled==true
-    flags.WeatherWebhookClash=nextFlags.WeatherWebhookClash~=false
+    flags.WeatherWebhookDomains=WeatherWebhook.selection(nextFlags.WeatherWebhookDomains,nextFlags.WeatherWebhookClash)
     flags.StoryRunning=nextFlags.StoryRunning==true
     flags.SkillRunning=nextFlags.SkillRunning==true
     flags.HLRunning=nextFlags.HLRunning==true
@@ -2464,7 +2523,7 @@ else profile.status='File APIs unavailable; session only' end
 
 ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=flags,
     Workspace=game:GetService('Workspace'),UIS=game:GetService('UserInputService'),env=env,
-    activeRules=activeRules,
+    activeRules=activeRules,weatherDomainOptions=weatherDomainOptions,
     setWeatherURL=setWeatherURL,testWeatherWebhook=testWeatherWebhook,
     monitorSnapshot=monitorSnapshot,requestMonitorSync=requestMonitorSync,resetMonitorSession=resetMonitorSession,
     startSkills=startSkills,stopSkills=stopSkills,
