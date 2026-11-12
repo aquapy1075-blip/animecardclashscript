@@ -2,6 +2,140 @@
 -- Upstream SHA: 543f7f2b12f690f6b6592dcf10d805807fe2c29b
 -- Standalone: embeds the adapted Origin UI; no remote code download.
 -- Combat tracking uses server BattleEnd events matched to the admitted battleId.
+local ActiveRules=(function()
+local ActiveRules={}
+ActiveRules.Modes={'Combat start','Low HP','Round'}
+local function finite(v) return type(v)=='number' and v==v and v~=math.huge and v~=-math.huge end
+local function integer(v,default,min,max)
+    v=tonumber(v);if not finite(v) then return default end
+    return math.max(min,math.min(max,math.floor(v)))
+end
+local function identity(v) return type(v)=='string' and #v>0 and #v<=160 end
+function ActiveRules.cardId(v) return identity(v) and v:match('^[%w_%-]+$')~=nil end
+function ActiveRules.rule(value)
+    value=type(value)=='table' and value or {}
+    local mode=value.mode
+    if mode~='Combat start' and mode~='Low HP' and mode~='Round' then mode='Low HP' end
+    return {enabled=value.enabled==true,mode=mode,slot=integer(value.slot,0,0,5),hp=integer(value.hp,50,1,99),round=integer(value.round,3,1,999)}
+end
+function ActiveRules.normalize(value)
+    local out={}
+    if type(value)=='table' then for id,rule in pairs(value) do if ActiveRules.cardId(id) and type(rule)=='table' then out[id]=ActiveRules.rule(rule) end end end
+    return out
+end
+function ActiveRules.lane(value) return integer(value,1,1,2) end
+local function copyCard(card)
+    if type(card)~='table' then return nil end
+    local slot=tonumber(card.slot)
+    if not finite(slot) or slot%1~=0 or slot<1 or slot>5 then return nil end
+    return {slot=slot,cardId=card.cardId,name=card.name,currentHP=card.currentHP,maxHP=card.maxHP,abilityOff=card.abilityOff}
+end
+function ActiveRules.new(history)
+    history=type(history)=='table' and history or {}
+    history.order=type(history.order)=='table' and history.order or {}
+    history.marked=type(history.marked)=='table' and history.marked or {}
+    return {lanes={},closed={},closedOrder={},history=history,known={}}
+end
+local function close(store,id)
+    if store.closed[id] then return end
+    store.closed[id]=true;store.closedOrder[#store.closedOrder+1]=id
+    if #store.closedOrder>128 then store.closed[table.remove(store.closedOrder,1)]=nil end
+end
+local function key(entry,id) return entry.lane..':'..#entry.battleId..':'..entry.battleId..':'..id end
+function ActiveRules.mark(store,entry,id)
+    local k=key(entry,id);local history=store.history
+    if history.marked[k] then return end
+    history.marked[k]=true;history.order[#history.order+1]=k
+    if #history.order>512 then history.marked[table.remove(history.order,1)]=nil end
+end
+function ActiveRules.snapshot(store,data,now)
+    if type(data)~='table' or not identity(data.battleId) or (data.lane~=1 and data.lane~=2) then return false end
+    local lane=data.lane;local previous=store.lanes[lane]
+    if data.active==false then
+        close(store,data.battleId)
+        if previous and previous.battleId==data.battleId then store.lanes[lane]=nil end
+        return true
+    end
+    if data.active~=true or store.closed[data.battleId] or type(data.player)~='table' or type(data.guestActives)~='table' then return false end
+    if previous and previous.battleId~=data.battleId then close(store,previous.battleId) end
+    local entry={battleId=data.battleId,lane=lane,round=data.round,updated=now,cards={},abilities={},fresh=data.fresh==true}
+    local function add(card) local copy=copyCard(card);if copy then entry.cards[copy.slot]=copy end end
+    if type(data.player.hand)=='table' then for _,card in pairs(data.player.hand) do add(card) end end
+    add(data.player.active)
+    for id,ability in pairs(data.guestActives) do
+        if ActiveRules.cardId(id) and type(ability)=='table' then
+            entry.abilities[id]={available=ability.available==true,name=ability.name,id=ability.id}
+            store.known[id]=ability.name or id
+        end
+    end
+    -- "Combat start" is allowed only if this controller observed a fresh snapshot or round 1.
+    entry.sawStart=(previous and previous.battleId==data.battleId and previous.sawStart) or entry.fresh or (finite(entry.round) and entry.round<=1)
+    store.lanes[lane]=entry
+    return true
+end
+function ActiveRules.event(store,event,now)
+    if type(event)~='table' or not identity(event.battleId) or (event.lane~=1 and event.lane~=2) then return false end
+    local entry=store.lanes[event.lane]
+    if event.type=='BattleEnd' then
+        close(store,event.battleId)
+        if entry and entry.battleId==event.battleId then store.lanes[event.lane]=nil end
+        return true
+    end
+    if not entry or entry.battleId~=event.battleId then return false end
+    entry.updated=now
+    if event.type=='RoundStart' and finite(event.round) then entry.round=event.round end
+    if event.side=='player' then
+        local card=entry.cards[event.slot]
+        if event.type=='GuestActive' and ActiveRules.cardId(event.cardId) then
+            ActiveRules.mark(store,entry,event.cardId)
+            if entry.abilities[event.cardId] then entry.abilities[event.cardId].available=false end
+        elseif card then
+            if event.type=='Death' then card.currentHP=0
+            elseif event.type=='Damage' or event.type=='Heal' or event.type=='Stat' or event.type=='Revive' then
+                if finite(event.hp) then card.currentHP=event.hp end
+                if finite(event.maxHP) then card.maxHP=event.maxHP end
+            end
+        end
+    end
+    return true
+end
+local function alive(card)
+    return card and finite(card.currentHP) and finite(card.maxHP) and card.maxHP>0 and card.currentHP>0
+end
+function ActiveRules.candidate(store,lane,rules,now)
+    local entry=store.lanes[lane]
+    if not entry then return nil,'Waiting for a battle snapshot' end
+    if now-entry.updated>8 then return nil,'Waiting for fresh battle data' end
+    local ids={};for id,rule in pairs(rules) do if rule.enabled then ids[#ids+1]=id end end;table.sort(ids)
+    if #ids==0 then return nil,'Enable a rule for an ability card' end
+    for _,id in ipairs(ids) do
+        local rule=rules[id];local ability=entry.abilities[id]
+        if ability and ability.available and not store.history.marked[key(entry,id)] then
+            local caster=false
+            for _,card in pairs(entry.cards) do if card.cardId==id and alive(card) and not card.abilityOff then caster=true;break end end
+            if caster then
+                local ready,reason=false,nil
+                if rule.mode=='Combat start' then
+                    ready=entry.sawStart and finite(entry.round) and entry.round<=1
+                    reason='Combat start'
+                elseif rule.mode=='Round' then
+                    ready=finite(entry.round) and entry.round>=rule.round;reason='Round '..tostring(entry.round)
+                elseif rule.mode=='Low HP' then
+                    for slot,card in pairs(entry.cards) do
+                        if (rule.slot==0 or rule.slot==slot) and alive(card) and card.currentHP/card.maxHP*100<rule.hp then
+                            ready=true;reason=('Slot %d: %.1f%% HP'):format(slot,card.currentHP/card.maxHP*100);break
+                        end
+                    end
+                end
+                if ready then return {cardId=id,battleId=entry.battleId,lane=lane},reason,entry end
+            end
+        end
+    end
+    return nil,'Watching conditions / ability availability'
+end
+return ActiveRules
+
+end)()
 local Story=(function()
 -- Story queue: map order, then encounter order, then difficulty order.
 local Story = {}
@@ -560,7 +694,7 @@ local body=make('Frame',main,{
 local selectedTab='Story'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Story','Higher or Lower','Skill Tree','Config','Settings'}
+local tabNames={'Monitor','Story','Higher or Lower','Skill Tree','Active Rules','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
@@ -935,6 +1069,66 @@ local function clearNotifications()
     toast.queue={};toast.active=false;toast.item=nil
     toastBox.Visible=false
 end
+local activeRuleUI={}
+do
+    section('Active Rules','Conditional card abilities')
+    addToggle('Active Rules','Enable conditional actives','ActiveRulesEnabled')
+    addDropdown('Active Rules','Battle lane','ActiveRuleLane',{1,2})
+    addStatus('Active Rules','Native active auto','Turn OFF the game active auto first')
+    section('Active Rules','Rule for each ability card')
+    local pick
+    pick=addAction('Active Rules','Ability card','SCP3008  ▾',function()
+        if menu.Visible then hideMenu();return end
+        openMenu(pick,ctx.activeRules.options(),function(_,id) setFlag('ActiveRuleCard',id) end)
+    end)
+    widgets[#widgets+1]=function() pick.Text=tostring(flags.ActiveRuleCard)..'  ▾' end
+    addToggle('Active Rules','Enable this card rule','ActiveEditEnabled')
+    addDropdown('Active Rules','Activation condition','ActiveEditMode',{'Combat start','Low HP','Round'})
+    addDropdown('Active Rules','HP target slot (0 = any alive)','ActiveEditSlot',{0,1,2,3,4,5})
+    local hpRow=row('Active Rules','Use when HP is below')
+    local bar=make('TextButton',hpRow,{Name='ActiveHPSlider',Text='',AutoButtonColor=false,BackgroundTransparency=1,
+        Position=UDim2.new(1,-195,.5,-16),Size=UDim2.fromOffset(180,32),BorderSizePixel=0})
+    local valueText=newText(bar,'50%',12,true)
+    valueText.Position=UDim2.new(1,-38,0,0);valueText.Size=UDim2.new(0,38,1,0)
+    local track=make('Frame',bar,{Position=UDim2.new(0,0,.5,-3),Size=UDim2.new(1,-45,0,6),BorderSizePixel=0})
+    corner(track,3);skin(track,'BackgroundColor3','row')
+    local fill=make('Frame',track,{Size=UDim2.new(.5,0,1,0),BorderSizePixel=0,BackgroundColor3=Color3.fromRGB(255,255,255)})
+    corner(fill,3)
+    make('UIGradient',fill,{Color=ColorSequence.new(Color3.fromRGB(171,120,245),Color3.fromRGB(75,220,183))})
+    local knob=make('Frame',track,{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.new(.5,0,.5,0),Size=UDim2.fromOffset(14,14),BorderSizePixel=0})
+    corner(knob,7);skin(knob,'BackgroundColor3','accent')
+    local drag
+    local function canDrag()
+        return lifecycle.alive and root.Enabled and not window.minimized and selectedTab=='Active Rules'
+    end
+    local function adjust(x)
+        if not canDrag() or track.AbsoluteSize.X<=0 then drag=nil;return end
+        local ratio=math.clamp((x-track.AbsolutePosition.X)/track.AbsoluteSize.X,0,1)
+        setFlag('ActiveEditHP',math.floor(1+ratio*98+.5))
+    end
+    bar.InputBegan:Connect(function(input)
+        if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+            if canDrag() then drag=input;adjust(input.Position.X) end
+        end
+    end)
+    trackUI(UIS.InputChanged:Connect(function(input)
+        if drag and (input==drag or input.UserInputType==Enum.UserInputType.MouseMovement) then adjust(input.Position.X) end
+    end))
+    trackUI(UIS.InputEnded:Connect(function(input) if input==drag then drag=nil end end))
+    trackUI(root:GetPropertyChangedSignal('Enabled'):Connect(function() if not root.Enabled then drag=nil end end))
+    widgets[#widgets+1]=function()
+        local hp=tonumber(flags.ActiveEditHP) or 50;local ratio=(hp-1)/98
+        valueText.Text=tostring(hp)..'%';fill.Size=UDim2.new(ratio,0,1,0);knob.Position=UDim2.new(ratio,0,.5,0)
+    end
+    addInput('Active Rules','Use at round or later (1–999)','ActiveEditRound','3')
+    activeRuleUI.status=addStatus('Active Rules','Rule status','OFF')
+    activeRuleUI.last=addStatus('Active Rules','Last active request','--')
+    activeRuleUI.hp=addStatus('Active Rules','Live HP / round','Waiting for battle sync')
+    addStatus('Active Rules','Ability card list','Discovered from received battle snapshots')
+    addStatus('Active Rules','Request limit','Once per card per battle; server decides result')
+    tooltip(hpRow,'Low HP mode only. Slot 0 checks any living allied card, including cards in hand. Dead cards do not trigger. Exactly the threshold does not trigger.')
+end
+
 section('Monitor','Raid currency')
 local monitorBone=addStatus('Monitor','Bone Tokens / Skeleton Raid','Waiting for sync')
 local monitorDelta=addStatus('Monitor','Balance change this session','--')
@@ -1433,6 +1627,11 @@ local function refreshOverview()
     showStatus(hlPool,state.hlPoolCount and tostring(state.hlPoolCount) or 'Loaded on start')
     showStatus(hlScore,tostring(state.hlStreak or 0)..' / 100')
     showStatus(skillLive,state.skillStatus or 'OFF')
+    if selectedTab=='Active Rules' then
+        showStatus(activeRuleUI.status,state.activeRuleStatus or 'OFF')
+        showStatus(activeRuleUI.last,state.activeRuleLast or '--')
+        showStatus(activeRuleUI.hp,ctx.activeRules.preview())
+    end
     showStatus(storyResult,state.lastResult or '--')
     showStatus(configStatus,profile.status or 'Ready')
     showStatus(configAuto,profile.autoProfile~='' and profile.autoProfile or 'None')
@@ -1450,7 +1649,7 @@ end)()
 local env=(getgenv and getgenv()) or _G
 local previous=env.OriginStory
 -- An InvokeServer cannot be cancelled. Do not create a second controller while one is pending.
-if previous and (previous.pending or previous.skillPending or previous.hlPending or previous.hlBusy) then error('Origin Story: previous request still pending; wait for it to return.') end
+if previous and (previous.pending or previous.skillPending or previous.hlPending or previous.hlBusy or previous.activePending) then error('Origin Story: previous request still pending; wait for it to return.') end
 if previous and previous.stop then previous.stop() end
 local Players=game:GetService('Players')
 local HttpService=game:GetService('HttpService')
@@ -1464,7 +1663,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookClash=true}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookClash=true,ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -1512,7 +1711,7 @@ state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(functi
     end
 end)
 local function beginRun()
-    if state.enabled or state.pending then message('A run/request is already active.','warning');return end
+    if state.enabled or state.pending or state.activePending then message('A run/request is already active.','warning');return end
     local queue=Story.buildQueue(flags)
     if #queue==0 then message('Select maps, targets and at least one mode per target.','warning');return end
     if ui and ui.ClearNotifications then ui.ClearNotifications() end
@@ -1529,6 +1728,10 @@ local function beginRun()
     task.spawn(function()
         local i=1
         while active() and i<=#queue do
+            local activeDeadline=os.clock()+30
+            while active() and state.activePending and os.clock()<activeDeadline do task.wait(.1) end
+            if not active() then break end
+            if state.activePending then stopRun('Ability request still pending; stopped scheduling.');break end
             local item=queue[i]
             local attempt=Combat.new()
             state.index=i;state.current=item;state.attempt=attempt;state.awaiting=true;state.pending=true
@@ -1946,6 +2149,98 @@ task.spawn(function()
     end
 end)
 
+local activeRules={}
+do
+    env.OriginActiveRuleHistory=type(env.OriginActiveRuleHistory)=='table' and env.OriginActiveRuleHistory or {}
+    local store=ActiveRules.new(env.OriginActiveRuleHistory)
+    state.activeRuleStatus='OFF';state.activeRuleLast='--';state.activePending=false
+    local lastRequest=-math.huge
+    function activeRules.syncEditor()
+        local id=flags.ActiveRuleCard
+        if not ActiveRules.cardId(id) then id='SCP3008';flags.ActiveRuleCard=id end
+        flags.ActiveRules=ActiveRules.normalize(flags.ActiveRules)
+        local rule=flags.ActiveRules[id] or ActiveRules.rule(nil)
+        flags.ActiveEditEnabled=rule.enabled;flags.ActiveEditMode=rule.mode
+        flags.ActiveEditSlot=rule.slot;flags.ActiveEditHP=rule.hp;flags.ActiveEditRound=rule.round
+    end
+    function activeRules.edit(key,value)
+        if key=='ActiveRuleCard' then
+            if ActiveRules.cardId(value) then flags.ActiveRuleCard=value;activeRules.syncEditor() end
+        elseif key=='ActiveRuleLane' then flags.ActiveRuleLane=ActiveRules.lane(value)
+        elseif key=='ActiveRulesEnabled' then flags.ActiveRulesEnabled=value==true
+        else
+            local fields={ActiveEditEnabled='enabled',ActiveEditMode='mode',ActiveEditSlot='slot',ActiveEditHP='hp',ActiveEditRound='round'}
+            local field=fields[key]
+            if not field then return false end
+            local rule=ActiveRules.rule(flags.ActiveRules[flags.ActiveRuleCard]);rule[field]=value
+            flags.ActiveRules[flags.ActiveRuleCard]=ActiveRules.rule(rule);activeRules.syncEditor()
+        end
+        flags.ActiveRulesRevision=(flags.ActiveRulesRevision or 0)+1
+        return true
+    end
+    function activeRules.options()
+        local entry=store.lanes[flags.ActiveRuleLane]
+        local found={}
+        if entry then
+            for id in pairs(entry.abilities) do found[id]=true end
+        else
+            found.SCP3008=true
+            for id in pairs(store.known) do found[id]=true end
+            for id in pairs(flags.ActiveRules) do found[id]=true end
+        end
+        local ids={};for id in pairs(found) do ids[#ids+1]=id end;table.sort(ids)
+        return ids
+    end
+    function activeRules.preview()
+        local entry=store.lanes[flags.ActiveRuleLane]
+        if not entry then return 'Waiting for battle sync' end
+        local parts={}
+        for slot=1,5 do local card=entry.cards[slot]
+            if card and type(card.currentHP)=='number' and type(card.maxHP)=='number' and card.maxHP>0 then
+                parts[#parts+1]=('S%d %.0f%%'):format(slot,card.currentHP/card.maxHP*100)
+            end
+        end
+        return 'R'..tostring(entry.round or '?')..' | '..table.concat(parts,' / ')
+    end
+    activeRules.syncEditor()
+    local sync=net:FindFirstChild('BattleState')
+    if sync and sync:IsA('RemoteEvent') then
+        state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
+            if not state.alive then return end
+            if ActiveRules.snapshot(store,data,os.clock()) then
+                for id in pairs(store.known) do
+                    if not flags.ActiveRules[id] then flags.ActiveRules[id]=ActiveRules.rule(nil);flags.ActiveRulesRevision=(flags.ActiveRulesRevision or 0)+1 end
+                end
+            end
+        end)
+    else state.activeRuleLast='BattleState remote unavailable' end
+    state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
+        if state.alive then ActiveRules.event(store,event,os.clock()) end
+    end)
+    task.spawn(function()
+        while state.alive do
+            if flags.ActiveRulesEnabled and not state.profileLoading then
+                local payload,reason,entry=ActiveRules.candidate(store,flags.ActiveRuleLane,flags.ActiveRules,os.clock())
+                state.activeRuleStatus=reason
+                if payload and not state.activePending and not state.pending and os.clock()-lastRequest>=1 then
+                    -- Claim before InvokeServer yields. Do not replay an uncertain/rejected request.
+                    ActiveRules.mark(store,entry,payload.cardId)
+                    lastRequest=os.clock();state.activePending=true
+                    state.activeRuleLast='Requesting '..payload.cardId..' / '..reason
+                    log('ActiveRuleRequest',{payload=payload,reason=reason})
+                    local response=table.pack(pcall(function() return action:InvokeServer('GuestActive',payload) end))
+                    state.activePending=false
+                    log('ActiveRuleResponse',{payload=payload,response=response})
+                    if state.alive then
+                        state.activeRuleLast=response[1] and (response[2]==false and 'Server rejected '..payload.cardId..'; see capture' or 'Request returned: '..payload.cardId..'; see capture') or ('Request failed: '..payload.cardId..'; no retry this battle')
+                    end
+                end
+            elseif not state.activePending then state.activeRuleStatus='OFF' end
+            task.wait(.1)
+        end
+    end)
+end
+
 local function syncRunFlags()
     flags.StoryRunning=state.enabled==true
     flags.SkillRunning=state.skillEnabled==true
@@ -1966,6 +2261,7 @@ local function setFlag(key,value)
         if value then startSkills() else stopSkills() end
     elseif key=='HLRunning' then
         if value then startHL() else stopHL() end
+    elseif activeRules.edit(key,value) then
     else flags[key]=value end
     syncRunFlags()
     if ui then ui.Repaint() end
@@ -1993,7 +2289,7 @@ local function loadProfile(name,quiet)
     if state.skillEnabled then stopSkills() end
     if state.hlEnabled then stopHL() end
     local deadline=os.clock()+30
-    while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy
+    while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy or state.activePending
         or (nextFlags.StoryRunning==true and state.attempt and state.attempt.started and not state.attempt.ended)) do
         profile.status='Waiting for current request / battle before loading'
         if os.clock()>deadline then
@@ -2018,6 +2314,11 @@ local function loadProfile(name,quiet)
     flags.StoryMaps=maps;flags.StoryCards=cards;flags.StoryModes=modes
     flags.StoryRepeat=nextFlags.StoryRepeat==true
     flags.HLRepeat=nextFlags.HLRepeat==true
+    flags.ActiveRules=ActiveRules.normalize(nextFlags.ActiveRules)
+    flags.ActiveRulesEnabled=nextFlags.ActiveRulesEnabled==true
+    flags.ActiveRuleLane=ActiveRules.lane(nextFlags.ActiveRuleLane)
+    flags.ActiveRuleCard=ActiveRules.cardId(nextFlags.ActiveRuleCard) and nextFlags.ActiveRuleCard or 'SCP3008'
+    activeRules.syncEditor()
     flags.WeatherWebhookURL=weatherURL(nextFlags.WeatherWebhookURL) or ''
     flags.WeatherWebhookEnabled=nextFlags.WeatherWebhookEnabled==true
     flags.WeatherWebhookClash=nextFlags.WeatherWebhookClash~=false
@@ -2084,6 +2385,7 @@ else profile.status='File APIs unavailable; session only' end
 
 ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=flags,
     Workspace=game:GetService('Workspace'),UIS=game:GetService('UserInputService'),env=env,
+    activeRules=activeRules,
     setWeatherURL=setWeatherURL,testWeatherWebhook=testWeatherWebhook,
     monitorSnapshot=monitorSnapshot,requestMonitorSync=requestMonitorSync,resetMonitorSession=resetMonitorSession,
     startSkills=startSkills,stopSkills=stopSkills,
