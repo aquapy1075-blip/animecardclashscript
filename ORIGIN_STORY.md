@@ -227,3 +227,16 @@ Auto rejoin is always enabled while the script is alive, with no UI toggle. It w
 The header now reads Anime Card Online and made by aquacodex. The subtitle stays fixed across tab switches. The AO header and mobile toggle monograms are replaced with the current place's game icon, resolved through MarketplaceService GetProductInfo.IconImageAssetId. Icon updates follow the existing UI refresh lifecycle and skip unchanged image writes.
 
 Validation: full generated-script syntax, mocked default rejoin/backoff/cap, native prompt detection, init failures, ON/OFF persistence, owned loader install/removal, one queued loader, later-OFF and cross-game guards, duplicate boot prevention, icon lookup and unload. Existing Story, boss switching, Config, Combat Helper and Monitor UI checks pass. Actual executor startup folders/queue APIs, live disconnect recovery and Roblox icon rendering have not been verified in-game.
+
+## AFK settings and startup load guard
+
+The standalone entry now begins with repeat task.wait() until game:IsLoaded() before any modules/controllers initialize. It also waits for Players.LocalPlayer before reading client state. Existing queued autoexec loaders retain their game-load guard.
+
+Settings → AFK adds:
+- Anti-AFK, default ON: listens to LocalPlayer.Idled and invokes VirtualUser CaptureController/ClickButton2 only when that native idle signal fires, limited to once per 60 seconds. OFF stops future synthetic input. No game remotes, anti-cheat hooks, signal disabling or stealth mechanism are used. An executor may reject VirtualUser input; no detection-resistance or guaranteed idle protection is claimed.
+- Save CPU (15 FPS), default OFF: uses setfpscap when available and reduces this script's UI refresh to once a second. It restores the previous cap from getfpscap on OFF/UNLOAD, or 60 FPS when a readable cap is unavailable. Without an FPS API only the reduced UI refresh is applied. Gameplay automation workers retain their own scheduling.
+- White Screen, default OFF: places a white overlay above normal game UI and requests Set3dRenderingEnabled(false). The script UI remains above the overlay, and Show game disables White Screen without needing the main window. OFF and UNLOAD restore rendering to its prior readable value (otherwise enabled) and remove/hide the owned overlay. Rendering API denial leaves the visual overlay available and reports the limit. White Screen alone does not claim to stop all CPU/game logic.
+
+These three settings persist through Config SAVE/LOAD/SET AUTO LOAD. Legacy profiles use Anti-AFK ON, Save CPU OFF and White Screen OFF. Re-execution/UNLOAD cleans up the old runtime, restores graphics settings and disconnects the idle listener.
+
+Tests: real entry guard in a coroutine, throttled Idled-only input, independent FPS/white controls, prior FPS and prior-enabled/disabled rendering restoration, accessible Show game button, unload, unsupported APIs and profile round-trips/legacy defaults. Generated Lua syntax and existing Story switching, autoexec/rejoin, Combat Helper and compact Monitor checks pass. Actual executor permission, idle prevention, visual rendering and resource savings require in-game verification.
