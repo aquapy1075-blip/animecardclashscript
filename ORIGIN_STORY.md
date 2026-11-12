@@ -150,19 +150,32 @@ All HTTP calls in validation were mocked; no real webhook was contacted. Checks 
 
 ## Active Rules: per-card conditional GuestActive
 
-The Active Rules tab discovers ability-bearing cards from BattleState.guestActives. During an active battle the card picker lists only that selected lane's ability cards. Before a snapshot is available, it offers previously discovered/saved cards and SCP3008. Each discovered card starts with its rule OFF; this avoids spending abilities before a condition is configured. First receive a combat snapshot to populate the deck's ability list.
+The Active Rules tab discovers ability-bearing cards from BattleState.guestActives. During active battles the card picker lists ability cards from the selected lane(s); Both lanes combines their ability cards. Before a snapshot is available, it offers previously discovered/saved cards and SCP3008. Each discovered card starts with its rule OFF; this avoids spending abilities before a condition is configured. First receive a combat snapshot to populate the deck's ability list.
 
-Choose battle lane 1 or 2 and enable conditional actives globally. Pick each card, enable its rule, and choose one condition:
+Choose Battles 1, 2 or Both lanes and turn Auto active ON. Pick a Card, turn Use this card ON, and choose Use when. Both lanes applies the same per-card rules to both battles; HP, rounds, battle IDs and ability-use history remain separate. Choose one condition:
 - Combat start: requires an observed fresh/round-1 battle and fires only while round is at most 1. Enabling it midway does not count as combat start.
-- Low HP: use the 1–99% mouse/touch slider. HP target slot 0 means any living allied card, including cards in hand; slots 1–5 select the deck slot. HP must be strictly below the threshold; dead or unknown-HP cards do not trigger.
+- Low HP: use the 1–99% mouse/touch slider. Watch card offers Any living card (stored as slot 0), including cards in hand, or Slot 1–5 for a specific deck slot. HP must be strictly below the threshold; dead or unknown-HP cards do not trigger.
 - Round: use at the chosen round or later, once the ability becomes available. The round input is clamped to 1–999.
 
 Example: pick SCP3008 → enable this card rule → Low HP → target slot 2 → 50%. Then enable conditional actives. The SCP3008 No Exit implementation heals all living allies to full; it also retains its native location/status effects. Other ability cards can independently use Combat start or Round rules. The game’s own automatic active-use feature must be turned OFF manually so it does not consume an ability ahead of these rules.
 
-The controller reads full BattleState snapshots and updates HP/rounds using matching Damage, Heal, Stat, Revive, Death and RoundStart events. Conditions use server HP rather than GUI visibility. Each request is exactly BattleAction:InvokeServer("GuestActive", {cardId=..., battleId=currentBattleId, lane=selectedLane}), matching the user's supplied payload. An available ability and living, unsuppressed caster are required. Ended/superseded IDs and mismatched lane events are ignored; stale battle data waits for a fresh update.
+The controller reads full BattleState snapshots and updates HP/rounds using matching Damage, Heal, Stat, Revive, Death and RoundStart events. Conditions use server HP rather than GUI visibility. Both lanes scans each selected battle independently. Ready requests alternate lane priority, remain sequential and at least one second apart, so one lane cannot consume the other's per-battle use. Ending one lane does not stop the other. Each request is exactly BattleAction:InvokeServer("GuestActive", {cardId=..., battleId=currentBattleId, lane=selectedLane}), matching the user's supplied payload. An available ability and living, unsuppressed caster are required. Ended/superseded IDs and mismatched lane events are ignored; stale battle data waits for a fresh update.
 
 This version attempts each card at most once per battle, including abilities that might have a native cooldown. Attempts are recorded before yielding and retained across re-execution, with bounded history. Native/manual GuestActive events also suppress duplicate requests. Rejected/uncertain calls are logged without automatic retries. Requests are at least one second apart and do not overlap Story admission; Story waits for an outstanding active request before another admission. Disabling the global toggle stops future requests; an already-sent InvokeServer cannot be cancelled.
 
 Config SAVE/LOAD/Auto Load preserve the global toggle, selected lane/card and independent per-card rule settings. Legacy profiles default conditional actives OFF. Profile loading waits for outstanding active requests. UNLOAD disconnects the listeners and stops the watcher. COPY CAPTURE includes ActiveRuleRequest and ActiveRuleResponse; the UI reports returned/rejected requests without assuming ability success.
 
 Validation: compiled the complete generated script, replayed the actual uploaded string-keyed BattleState shape, and mocked all three conditions, multiple independent card rules, exact payload, event-driven HP updates, strict thresholds, dead/suppressed/unavailable casters, lane isolation, ended/stale snapshots, re-execution history, native-use suppression, request spacing, uncertain errors and profile/pending/stop guards. Config tests verify multiple card rules plus enabled/lane settings round-trip and legacy OFF defaults. Existing Story, Skill Tree, Higher or Lower, Monitor and webhook checks pass. Live Roblox UI and actual GuestActive server acceptance remain untested.
+
+## Simpler Active Rules controls and Both lanes
+
+The Active Rules tab now shows a compact setup: Auto active, Battles, Card, Use this card and Use when. Both lanes is the third Battles option and is saved/restored by Config; existing numeric lane selections and legacy defaults remain compatible.
+
+Only condition-specific fields are visible:
+- Low HP shows Watch card and the HP slider.
+- Round shows only its round input.
+- Combat start needs no extra fields.
+
+Rule status, Ability card list and Request limit rows are removed. Last request and per-lane HP/round values live under Battle details → SHOW, collapsed by default. Native-auto guidance and discovery information are attached as tooltips rather than permanent status rows. Card changes and profile loads refresh visible fields while retaining each condition's saved values. The HP slider cancels dragging when its mode is hidden.
+
+Mock checks cover the third dropdown option, independent same-card triggers in two simultaneous battles, per-lane HP and completion isolation, union card picker, surviving-lane operation, Config round-trip with Both lanes, and numeric lane compatibility. A separate mocked UI check exercises all three condition layouts, card/profile mode refresh, friendly slot mapping, collapsed/expanded details, selected-lane detail visibility and removal of redundant rows. Full generated-script syntax, existing active rules, Config and Story regression checks pass. Live Roblox visuals/input remain untested.
