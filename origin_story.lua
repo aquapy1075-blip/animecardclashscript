@@ -45,6 +45,43 @@ end
 return Story
 
 end)()
+local Monitor=(function()
+local Monitor={}
+local function valid(value)
+    return type(value)=='number' and value==value and value>=0 and value~=math.huge
+end
+function Monitor.new()
+    return {bone=nil,war=nil,base=nil,since=nil,updated=nil,source='Waiting for server profile'}
+end
+function Monitor.bone(model,value,now,source)
+    if not valid(value) then return false end
+    value=math.floor(value)
+    model.bone=value;model.updated=now;model.source=source
+    if model.base==nil then model.base=value;model.since=now end
+    return true
+end
+function Monitor.profile(model,data,now)
+    if type(data)~='table' or type(data.currency)~='table' then return false end
+    local updated=Monitor.bone(model,data.currency.boneTokens,now,'ProfileSync.currency.boneTokens')
+    if valid(data.currency.warCoins) then model.war=math.floor(data.currency.warCoins);updated=true end
+    return updated
+end
+function Monitor.raid(model,payload,now)
+    if type(payload)=='table' and payload.kind=='Result' and type(payload.data)=='table' then
+        return Monitor.bone(model,payload.data.total,now,'SkeletonRaid.Result.data.total')
+    end
+    return false
+end
+function Monitor.domain(id,endsAt,by,now,definition)
+    if type(id)~='string' or id=='' or not valid(endsAt) or endsAt<=now then return {name='No active domain',remaining=0,boost='--',by='--'} end
+    local def=type(definition)=='table' and definition or {}
+    local boost='--'
+    if type(def.base)=='number' and type(def.pct)=='number' then boost=('+%d luck / +%d%%'):format(def.base,math.floor(def.pct*100+.5)) end
+    return {name=def.name or id,id=id,remaining=math.max(0,math.ceil(endsAt-now)),boost=boost,by=type(by)=='string' and by~='' and by or '--'}
+end
+return Monitor
+
+end)()
 local HigherLower=(function()
 local HigherLower={}
 function HigherLower.choose(run,config)
@@ -477,7 +514,7 @@ local body=make('Frame',main,{
 local selectedTab='Story'
 local navButtons={}
 local tabPages={}
-local tabNames={'Story','Higher or Lower','Skill Tree','Config','Settings'}
+local tabNames={'Monitor','Story','Higher or Lower','Skill Tree','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
@@ -852,6 +889,22 @@ local function clearNotifications()
     toast.queue={};toast.active=false;toast.item=nil
     toastBox.Visible=false
 end
+section('Monitor','Raid currency')
+local monitorBone=addStatus('Monitor','Bone Tokens / Skeleton Raid','Waiting for sync')
+local monitorDelta=addStatus('Monitor','Balance change this session','--')
+local monitorRate=addStatus('Monitor','Net balance change per hour','Available after 60s')
+local monitorUpdated=addStatus('Monitor','Last balance update','Waiting for sync')
+addAction('Monitor','Refresh profile','REFRESH',ctx.requestMonitorSync)
+addAction('Monitor','Reset session baseline','RESET',ctx.resetMonitorSession)
+section('Monitor','Other currency')
+local monitorWar=addStatus('Monitor','War Coins','Waiting for sync')
+section('Monitor','Server Domain')
+local monitorDomain=addStatus('Monitor','Current Domain','--')
+local monitorDomainTime=addStatus('Monitor','Time remaining','--')
+local monitorBoost=addStatus('Monitor','Luck boost','--')
+local monitorBy=addStatus('Monitor','Opened by','--')
+tooltip(monitorDelta,'Current balance minus the first synced balance. Spending reduces this value; it is not gross raid earnings.')
+
 -- Multi-select reuses the Origin UI searchable popup and preserves selections while filtering.
 local function multiDropdown(label,options,getSet,onChange,tab)
     local function currentOptions() return type(options)=='function' and options() or options end
@@ -1291,6 +1344,14 @@ end
 local function refreshOverview()
     if not lifecycle.alive or not root.Enabled or window.minimized then return end
     pumpToast()
+    if selectedTab=='Monitor' then
+        local m=ctx.monitorSnapshot()
+        showStatus(monitorBone,m.bone);showStatus(monitorWar,m.war)
+        showStatus(monitorDelta,m.delta);showStatus(monitorRate,m.rate)
+        showStatus(monitorUpdated,m.updated)
+        showStatus(monitorDomain,m.domain);showStatus(monitorDomainTime,m.domainTime)
+        showStatus(monitorBoost,m.boost);showStatus(monitorBy,m.openedBy)
+    end
     showStatus(sessionBadge,state.enabled and 'RUNNING' or 'STANDBY')
     showStatus(storyStatus,state.status or 'Ready')
     showStatus(hlLive,state.hlStatus or 'OFF')
@@ -1630,6 +1691,76 @@ local function startHL()
     end)
 end
 
+local tracking=Monitor.new()
+local monitorStorage=game:GetService('ReplicatedStorage')
+local domainConfig
+local function monitorProfile(data)
+    if not Monitor.profile(tracking,data,os.clock()) then
+        local keys={}
+        if type(data)=='table' then
+            for key in pairs(data) do if #keys>=20 then break end;keys[#keys+1]=tostring(key) end
+        end
+        if log then log('MonitorSyncShape',{dataType=type(data),keys=keys,currencyType=type(data)=='table' and type(data.currency) or 'missing'}) end
+    end
+end
+local monitorSync=net:FindFirstChild('ProfileSync')
+if monitorSync and monitorSync:IsA('RemoteEvent') then
+    state.connections[#state.connections+1]=monitorSync.OnClientEvent:Connect(monitorProfile)
+end
+local monitorRaid=net:FindFirstChild('SkeletonRaid')
+if monitorRaid and monitorRaid:IsA('RemoteEvent') then
+    state.connections[#state.connections+1]=monitorRaid.OnClientEvent:Connect(function(payload)
+        Monitor.raid(tracking,payload,os.clock())
+    end)
+end
+local lastMonitorRequest=-math.huge
+local function requestMonitorSync()
+    if os.clock()-lastMonitorRequest<5 then return end
+    lastMonitorRequest=os.clock()
+    local remote=net:FindFirstChild('RequestSync')
+    if remote and remote:IsA('RemoteEvent') then remote:FireServer() end
+end
+local function resetMonitorSession()
+    if tracking.bone~=nil then tracking.base=tracking.bone;tracking.since=os.clock() end
+end
+local monitorCached,monitorCachedAt=nil,-math.huge
+local function monitorSnapshot()
+    local now=os.clock()
+    if monitorCached and now-monitorCachedAt<.5 then return monitorCached end
+    local function number(value)
+        if value==nil then return 'Waiting for sync' end
+        local text=tostring(math.floor(value))
+        while true do local result,n=text:gsub('^(-?%d+)(%d%d%d)','%1,%2');text=result;if n==0 then break end end
+        return text
+    end
+    local function timeLeft(seconds)
+        return ('%d:%02d'):format(math.floor(seconds/60),seconds%60)
+    end
+    if not domainConfig then
+        local shared=monitorStorage:FindFirstChild('Shared')
+        local folder=shared and shared:FindFirstChild('Config')
+        local module=folder and folder:FindFirstChild('DomainConfig')
+        if module then local ok,data=pcall(require,module);if ok and type(data)=='table' and type(data.get)=='function' then domainConfig=data end end
+    end
+    local id=monitorStorage:GetAttribute('DomainId')
+    local endsAt=monitorStorage:GetAttribute('DomainEndsAt')
+    local by=monitorStorage:GetAttribute('DomainBy')
+    local definition
+    if domainConfig and type(id)=='string' then local ok,data=pcall(domainConfig.get,id);if ok then definition=data end end
+    local domain=Monitor.domain(id,endsAt,by,workspace:GetServerTimeNow(),definition)
+    local elapsed=tracking.since and math.max(0,now-tracking.since) or 0
+    local delta=tracking.bone and tracking.base and tracking.bone-tracking.base or nil
+    monitorCached={
+        bone=number(tracking.bone),war=number(tracking.war),
+        delta=delta and ((delta>=0 and '+' or '')..number(delta)) or '--',
+        rate=delta and elapsed>=60 and ((delta>=0 and '+' or '')..number(delta*3600/elapsed)..' / hour') or 'Available after 60s',
+        updated=tracking.updated and math.floor(now-tracking.updated)..'s ago' or 'Waiting for sync',
+        domain=domain.name,domainTime=domain.remaining>0 and timeLeft(domain.remaining) or '--',boost=domain.boost,openedBy=domain.by,
+    }
+    monitorCachedAt=now
+    return monitorCached
+end
+
 local function syncRunFlags()
     flags.StoryRunning=state.enabled==true
     flags.SkillRunning=state.skillEnabled==true
@@ -1765,6 +1896,7 @@ else profile.status='File APIs unavailable; session only' end
 
 ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=flags,
     Workspace=game:GetService('Workspace'),UIS=game:GetService('UserInputService'),env=env,
+    monitorSnapshot=monitorSnapshot,requestMonitorSync=requestMonitorSync,resetMonitorSession=resetMonitorSession,
     startSkills=startSkills,stopSkills=stopSkills,
     profile=profile,saveProfile=saveProfile,loadProfile=loadProfile,deleteProfile=deleteProfile,setAutoProfile=setAutoProfile,
     setFlag=setFlag,story=Story,start=beginRun,pause=function() stopRun('Stopped; current battle continues in game.') end,
@@ -1777,5 +1909,6 @@ ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=
 task.spawn(function()
     while state.alive do if not state.profileLoading and not state.restoreModes then syncRunFlags() end;ui.Repaint();ui.Refresh();task.wait(.3) end
 end)
+requestMonitorSync()
 message('Ready: server BattleEnd results matched by battleId.')
 if state.restoreModes then state.restoreModes=false;applyRunFlags();ui.Repaint() end
