@@ -6,6 +6,15 @@ arbiter=main[main.index("local combat={"):main.index('-- RIFT GATE |')]
 siege_check=main[main.index('    local function riftMustGoFirst()'):main.index('    local function randomSiegeEnemyId()')]
 controller=main[main.index('local function createRiftGateController()'):main.index('local rift=createRiftGateController()')]
 mock=r'''
+-- Baseline controller tests use synchronous remotes. Yielding/cancellation is tested separately.
+local function awaitRemote(remote,current,...)
+ if not current() then return false,'cancelled' end
+ local result=table.pack(pcall(remote.InvokeServer,remote,...))
+ if not current() then return false,'cancelled' end
+ return table.unpack(result,1,result.n)
+end
+local function acquireQueue(queue,current) if current() then return queue.acquire() end end
+
 local now=1000000
 local os={clock=function() return now end,time=function() return now end}
 local env={}
@@ -93,3 +102,4 @@ binary=os.environ.get('LUAU_BIN') or shutil.which('luau')
 if not binary:raise SystemExit('Set LUAU_BIN or add luau to PATH')
 with tempfile.TemporaryDirectory(prefix='rift-remote-test-') as d:
  p=Path(d)/'rift.luau';p.write_text(mock+controller+checks);subprocess.run([binary,str(p)],check=True)
+

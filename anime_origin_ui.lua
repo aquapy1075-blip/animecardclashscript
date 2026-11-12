@@ -1,5 +1,5 @@
 -- Anime Origin UI library. Rendering only; gameplay stays in cardorrigin.lua.
-local Library={Version=1}
+local Library={Version=1,Build='11.0'}
 function Library.Create(ctx)
 local profile=ctx.profile
 local repaintControls=function() end
@@ -67,7 +67,7 @@ local tooltip=function() end
 local responsiveRows={}
 local themes={
     Light={bg='F2F5FC',side='E7EDF8',panel='FFFFFF',row='EAF0FA',text='14213A',muted='526781',accent='4264D9',line='D1DBED'},
-    Midnight={bg='0D1320',side='101A2B',panel='172338',row='22334D',text='EFF5FF',muted='96ABC8',accent='8BAFFF',line='2B405D'},
+    Midnight={bg='0B0C14',side='10111D',panel='151725',row='202338',text='F3F2FF',muted='969AB6',accent='AD9BFF',line='2A2D45'},
     Ocean={bg='0D1922',side='112635',panel='173247',row='204159',text='ECFAFF',muted='9BBCCC',accent='53C8E6',line='325267'},
     Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267'},
     Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454'},
@@ -122,7 +122,7 @@ local function corner(obj,size)
     make('UICorner',obj,{CornerRadius=UDim.new(0,size or 9)})
 end
 local function stroke(obj)
-    local s=make('UIStroke',obj,{Thickness=1,Transparency=0.15})
+    local s=make('UIStroke',obj,{Thickness=1,Transparency=0.48})
     skin(s,'Color','line')
 end
 local function newText(parent,label,size,bold)
@@ -168,7 +168,7 @@ local shadow=make('Frame',root,{Name='WindowShadow',BorderSizePixel=0,Active=fal
     BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=.78,ZIndex=1})
 corner(shadow,20)
 main.ZIndex=2
-corner(main,16)
+corner(main,18)
 skin(main,'BackgroundColor3','bg')
 stroke(main)
 local accentLine=make('Frame',main,{
@@ -245,7 +245,7 @@ monogram.Size=UDim2.fromScale(1,1)
 local bigTitle=newText(header,'ANIME ORIGIN',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'CONTROL CENTER  /  REMOTE EDITION',11,false)
+local smallTitle=newText(header,'CONTROL PANEL  ·  V11.0',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -277,10 +277,15 @@ local body=make('Frame',main,{
 })
 local selectedTab='Colosseum'
 local navButtons={}
+local navMarks={}
 local tabPages={}
+local metricValues={}
 local tabNames={'Colosseum','Rift Gate','Multi-Boss','Raid','Siege','Settings','Config'}
 for i,name in ipairs(tabNames) do
-    local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
+    local tab=uiButton(sidebar,name,UDim2.new(1,-20,0,39))
+    local mark=make('Frame',tab,{Name='ActiveMark',Position=UDim2.fromOffset(0,10),
+        Size=UDim2.new(0,3,1,-20),BorderSizePixel=0,Visible=name==selectedTab})
+    corner(mark,2);skin(mark,'BackgroundColor3','accent');navMarks[name]=mark
     tab.LayoutOrder=i
     tab.TextXAlignment=Enum.TextXAlignment.Left
     make('UIPadding',tab,{PaddingLeft=UDim.new(0,14)})
@@ -300,9 +305,24 @@ for i,name in ipairs(tabNames) do
         Padding=UDim.new(0,9),SortOrder=Enum.SortOrder.LayoutOrder,
     })
     tabPages[name]=page
+    -- Compact session counters; no per-mode hero or repeated page title.
+    local strip=make('Frame',page,{Name='SessionMetrics',Size=UDim2.new(1,-2,0,69),
+        LayoutOrder=-99,BackgroundTransparency=1})
+    metricValues[name]={}
+    for metric,label in ipairs({'SESSION','FLOOR','RUNS'}) do
+        local tile=make('Frame',strip,{Name='Metric'..metric,Position=UDim2.new((metric-1)/3,metric==1 and 0 or 3,0,0),
+            Size=UDim2.new(1/3,-5,1,0),BorderSizePixel=0})
+        corner(tile,11);skin(tile,'BackgroundColor3','panel');stroke(tile)
+        local labelText=newText(tile,label,9,true)
+        labelText.Position=UDim2.fromOffset(12,10);labelText.Size=UDim2.new(1,-24,0,15)
+        skin(labelText,'TextColor3','muted')
+        local value=newText(tile,'--',19,true)
+        value.Position=UDim2.fromOffset(12,30);value.Size=UDim2.new(1,-24,0,26)
+        metricValues[name][metric]={label=labelText,value=value}
+    end
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='CONTROL CENTER  /  '..string.upper(name)
+        smallTitle.Text='CONTROL PANEL  ·  V11.0'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -314,9 +334,11 @@ local statusLabels={}
 local orderCounter=0
 local function section(tab,label)
     orderCounter=orderCounter+1
-    local t=newText(tabPages[tab],string.upper(label),12,true)
+    local t=newText(tabPages[tab],'  '..string.upper(label),11,true)
     t.Size=UDim2.new(1,0,0,30)
     t.LayoutOrder=orderCounter
+    local dash=make('Frame',t,{Size=UDim2.fromOffset(3,12),Position=UDim2.fromOffset(0,9),BorderSizePixel=0})
+    corner(dash,2);skin(dash,'BackgroundColor3','accent')
     return t
 end
 local function row(tab,label)
@@ -347,12 +369,19 @@ local function addStatus(tab,label,initial)
 end
 local function addToggle(tab,label,key)
     local r=row(tab,label)
+    responsiveRows[r].kind='toggle'
     local b=uiButton(r,'OFF',UDim2.fromOffset(94,31))
     b.Position=UDim2.new(1,-109,.5,-15)
+    b.TextXAlignment=Enum.TextXAlignment.Left
+    make('UIPadding',b,{PaddingLeft=UDim.new(0,12)})
+    local knob=make('Frame',b,{Name='SwitchKnob',Position=UDim2.new(1,-25,.5,-7),
+        Size=UDim2.fromOffset(14,14),BorderSizePixel=0})
+    corner(knob,7);skin(knob,'BackgroundColor3','muted')
     b.MouseButton1Click:Connect(function() setFlag(key,not flags[key]) end)
     widgets[#widgets+1]=function()
         local on=flags[key]==true
-        b.Text=on and 'ON  ●' or 'OFF  ○'
+        b.Text=on and 'ON' or 'OFF'
+        animate(knob,{BackgroundColor3=on and color('bg') or color('muted')},.16)
         animate(b,{BackgroundColor3=on and color('accent') or color('row'),
             TextColor3=on and color('bg') or color('muted')},.16)
     end
@@ -610,7 +639,6 @@ local function suspendOverlays()
         toast.generation=toast.generation+1;toast.active=false;toastBox.Visible=false
     end
 end
-section('Colosseum','Colosseum')
 addToggle('Colosseum','Auto Colosseum','AO_AutoColosseum')
 addToggle('Colosseum','Hell Mode','AO_Colo_Hell')
 addToggle('Colosseum','Endless Mode','AO_Colo_Endless')
@@ -710,7 +738,6 @@ local function worldBuffText()
     return 'Total: '..(#totals>0 and table.concat(totals,'  /  ') or '--')..'\n'..recent
 end
 
-section('Rift Gate','Rift Gate')
 addToggle('Rift Gate','Auto Rift','AO_AutoRift')
 addToggle('Rift Gate','Auto Leave','AO_Rift_Leave')
 section('Rift Gate','Live Status')
@@ -718,7 +745,6 @@ local riftStatus=addStatus('Rift Gate','Rift status','OFF')
 local riftTimer=addStatus('Rift Gate','Next Rift','READY')
 local riftClears=addStatus('Rift Gate','Clears','0')
 
-section('Multi-Boss','Multi-Boss')
 addToggle('Multi-Boss','Auto Boss','AO_AutoBoss')
 local bossStatus=addStatus('Multi-Boss','Boss status','OFF')
 local miniSectionAdded=false
@@ -917,10 +943,20 @@ if ctx.pullWebhook then
 end
 section('Settings','Connection')
 addToggle('Settings','Auto Reconnect','AO_Reconnect')
+addToggle('Settings','Auto Execute after teleport','AO_AutoExecute')
+local autoExecuteStatus=addStatus('Settings','Auto Execute','OFF')
+local reconnectReason=addStatus('Settings','Last reconnect reason','--')
+local connectionNote=row('Settings','')
+responsiveRows[connectionNote]=nil
+connectionNote.Size=UDim2.new(1,-2,0,72)
+local connectionCopy=newText(connectionNote,'Auto Execute needs executor teleport-queue + file APIs. Rejoin retries kicks and account-session errors. Each attempt uses your saved webhook.',11,false)
+connectionCopy.TextWrapped=true;connectionCopy.TextTruncate=Enum.TextTruncate.None
+connectionCopy.Position=UDim2.fromOffset(14,10);connectionCopy.Size=UDim2.new(1,-28,1,-20)
 local reconnectStatus=addStatus('Settings','Reconnect','Monitoring')
 addAction('Settings','Reconnect Now','REJOIN',function()
     reconnect.attempts=0
-    reconnect.lastTry=-math.huge
+    reconnect.lastTry=-math.huge;reconnect.nextAt=0
+    reconnect.lastReason='Manual rejoin'
     requestReconnect(true)
 end)
 section('Settings','Session')
@@ -1195,10 +1231,15 @@ applyResponsiveLayout=function()
             end
         else
             local contentWidth=width-40
-            r.Size=UDim2.new(1,-2,0,entry.kind=='boss' and 104 or entry.kind=='transparency' and 90 or 80)
+            r.Size=UDim2.new(1,-2,0,entry.kind=='toggle' and 54 or entry.kind=='boss' and 104 or entry.kind=='transparency' and 90 or 80)
             entry.label.Position=UDim2.fromOffset(12,8)
             entry.label.Size=UDim2.new(1,-24,0,22)
-            if entry.kind=='boss' then
+            if entry.kind=='toggle' then
+                entry.label.Position=UDim2.fromOffset(12,0);entry.label.Size=UDim2.new(1,-125,1,0)
+                for obj in pairs(entry.children) do
+                    if obj:IsA('GuiButton') then obj.Position=UDim2.new(1,-106,.5,-17);obj.Size=UDim2.fromOffset(94,34) end
+                end
+            elseif entry.kind=='boss' then
                 entry.label.Size=UDim2.new(1,-130,0,28)
                 entry.timer.Position=UDim2.new(1,-112,0,8);entry.timer.Size=UDim2.fromOffset(100,28)
                 entry.toggle.Position=UDim2.fromOffset(12,51);entry.toggle.Size=UDim2.fromOffset(84,38)
@@ -1236,6 +1277,19 @@ local function refreshOverview()
     pumpToast()
     local running=state.enabled or rift.state.on or boss.state.running or raid.state.on or siege.state.on
     showStatus(sessionBadge,running and '● RUNNING' or '○ STANDBY')
+    for name,mark in pairs(navMarks) do mark.Visible=name==selectedTab end
+    local metrics=metricValues[selectedTab]
+    local mode=selectedTab=='Rift Gate' and rift.state or selectedTab=='Multi-Boss' and boss.state
+        or selectedTab=='Raid' and raid.state or selectedTab=='Siege' and siege.state
+    local labels=mode and {'SESSION','WINS','LOSSES'} or {'SESSION','FLOOR','RUNS'}
+    local active=mode and (mode.on or mode.running) or (not mode and state.enabled)
+    local values={active and 'ACTIVE' or 'STANDBY',mode and tostring(mode.wins or mode.clears or 0) or tostring(state.lastSeenWave or 0),
+        mode and tostring(mode.losses or 0) or tostring(state.runCount or 0)}
+    for index,metric in ipairs(metrics) do
+        showStatus(metric.label,labels[index]);showStatus(metric.value,values[index])
+        local tint=index==1 and active and color('support') or color('text')
+        if metric.value.TextColor3~=tint then metric.value.TextColor3=tint end
+    end
     local badgeColor=running and color('accent') or color('muted')
     if sessionBadge.TextColor3~=badgeColor then sessionBadge.TextColor3=badgeColor end
     local colLabel=state.blocked and ('PAUSED: '..tostring(state.blockedReason or 'Unknown'))
@@ -1282,6 +1336,8 @@ local function refreshOverview()
         showStatus(webhookCounts,tostring(status.matched)..' / '..tostring(status.sent)..' / '..tostring(status.failed))
         showStatus(webhookLast,status.lastCard)
     end
+    showStatus(autoExecuteStatus,ctx.autoExecute and ctx.autoExecute.status or 'Requires updated main script')
+    showStatus(reconnectReason,tostring(reconnect.lastReason or '')~='' and tostring(reconnect.lastReason) or '--')
     showStatus(reconnectStatus,tostring(state.reconnectStatus or reconnect.status or '--'))
     showStatus(configCurrent,tostring(profile.autoProfile))
     showStatus(configResult,profile.configStatus)
@@ -1291,3 +1347,4 @@ refreshOverview()
 return {Repaint=repaintControls,Refresh=refreshOverview,Root=root,Notify=notify,Destroy=destroyUI}
 end
 return Library
+
