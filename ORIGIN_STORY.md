@@ -87,9 +87,9 @@ Coin Affinity example: Awakening 1, Luck Boost 50, Swift Hands 200, then Coin Af
 
 Checks passed for all 16 definitions, prerequisite thresholds/chains, confirmed caps, unknown-rank spending guard, single-rank prerequisite purchases versus selected PurchaseMax, and Stop/restart worker invalidation. Existing Story server-protocol regression checks still pass. Live SkillAction/SkillResult/ProfileSync integration remains untested; COPY CAPTURE contains skill request/response diagnostics.
 
-## Higher or Lower
+## Guess Minigame
 
-The new Higher or Lower tab uses an ON/OFF toggle, live status, streak and loaded stat-entry count. Restart after game ends defaults OFF and is stored in Config. Stand near the native Higher or Lower activity where the server requires it; the script does not teleport or bypass proximity checks. Avoid manually submitting guesses while Auto Higher or Lower is running.
+The new Guess Minigame tab uses an ON/OFF toggle, live status, streak and loaded stat-entry count. Restart after game ends defaults OFF and is stored in Config. Stand near the native Guess Minigame activity where the server requires it; the script does not teleport or bypass proximity checks. Avoid manually submitting guesses while Auto Guess Minigame is running.
 
 From HigherLowerConfig and HubHigherLower in the uploaded place:
 - Compare total DMG + HP at level 0.
@@ -103,54 +103,56 @@ From HigherLowerConfig and HubHigherLower in the uploaded place:
 
 The automation loads/prewarms the live config pool before starting. It compares exact entry totals, waits at least 1.1 seconds between guesses and advances only using server nextRound. Unknown keys, equal totals, visible-stat mismatches, malformed/stale rounds, rejected requests or lookup errors stop instead of guessing. It never sends a guessed victory/reward claim. Native server results and milestone rewards remain authoritative.
 
-Turning OFF stops future guesses and uses the native quit action for its active session after any pending request returns. Start is blocked until cleanup completes, preventing an old worker from quitting a new session. Reloading is blocked while a Higher or Lower worker is still active; turn it off and wait for cleanup first.
+Turning OFF stops future guesses and uses the native quit action for its active session after any pending request returns. Start is blocked until cleanup completes, preventing an old worker from quitting a new session. Reloading is blocked while a Guess Minigame worker is still active; turn it off and wait for cleanup first.
 
 Tests passed for variant-aware totals, higher/lower/higher rounds, equal/unknown/mismatched stats, server round advancement, request spacing, completed sessions, server-ended events, and Stop/restart cleanup. Story and skill regression tests passed. Live-game requests and actual pool contents still require verification in Roblox. COPY CAPTURE includes HigherLowerGuess, HigherLowerResponse and HigherLowerEnded records.
 
 
 ## Unified mode toggles and persisted execution state
 
-Story, Auto Skill Tree and Higher or Lower each use one ON/OFF toggle. Separate Skill Tree START/STOP buttons are removed.
+Story, Auto Skill Tree and Guess Minigame each use one ON/OFF toggle. Separate Skill Tree START/STOP buttons are removed.
 
 SAVE synchronizes actual current worker states into StoryRunning, SkillRunning and HLRunning, then writes those booleans with settings. LOAD restores both ON and OFF and applies them to actual workers. SET AUTO LOAD causes the next execution to restore selections/settings, build the UI/controllers, then start each mode saved ON. This includes selected skill purchases when Auto Skill Tree was saved ON. Older profiles missing a toggle key default that mode OFF.
 
 To persist a mode ON: configure it, turn it ON, SAVE, then SET AUTO LOAD for that profile. To change the saved state to OFF, turn it OFF and SAVE again. Finishing a queue turns its live toggle OFF but does not silently overwrite the saved profile.
 
-Manual LOAD first reads/validates the profile, stops existing mode scheduling, and waits for pending requests / Higher or Lower cleanup. If the new profile enables Story, it also waits for a currently tracked Story fight to end. After 30 seconds still waiting, the load aborts without applying new selections; load again after outstanding work ends. Tracked results are still received while Story scheduling is OFF. Parallel profile loads and edits during profile transitions are blocked.
+Manual LOAD first reads/validates the profile, stops existing mode scheduling, and waits for pending requests / Guess Minigame cleanup. If the new profile enables Story, it also waits for a currently tracked Story fight to end. After 30 seconds still waiting, the load aborts without applying new selections; load again after outstanding work ends. Tracked results are still received while Story scheduling is OFF. Parallel profile loads and edits during profile transitions are blocked.
 
-Mocks verified all three ON/OFF states, actual-state saves even before the repaint loop runs, loading an OFF profile while workers are active, restoring an ON profile, deferred startup auto-load, and legacy OFF defaults. Story, skills and Higher or Lower regression checks still pass. Live Roblox/executor file behavior remains untested.
+Mocks verified all three ON/OFF states, actual-state saves even before the repaint loop runs, loading an OFF profile while workers are active, restoring an ON profile, deferred startup auto-load, and legacy OFF defaults. Story, skills and Guess Minigame regression checks still pass. Live Roblox/executor file behavior remains untested.
 
 
 ## Monitor tab: raid currency and server Domain
 
-Monitor shows:
-- Bone Tokens (Skeleton Raid), taken from ProfileSync.currency.boneTokens or the captured SkeletonRaid Result.data.total.
-- Net balance change since the first known balance this script session. Spending is subtracted; this is not gross raid earnings.
-- Net hourly rate after at least 60 seconds, last balance-update age and a session-baseline RESET.
-- War Coins separately, from ProfileSync.currency.warCoins.
-- Current Domain name, countdown, luck bonus and opener. The uploaded place exposes Domain rather than a separate weather system, so this panel is explicitly labelled Server Domain.
+Raid currency now contains only Bone Tokens, from ProfileSync.currency.boneTokens or SkeletonRaid Result.data.total. Balance delta, rate, update age, refresh and reset controls have been removed. Other currency still shows War Coins separately. Unknown balances remain Waiting for sync rather than an invented zero.
 
-Domain reads only ReplicatedStorage DomainId / DomainEndsAt / DomainBy attributes, resolves metadata using Shared.Config.DomainConfig.get and counts down against workspace:GetServerTimeNow, matching the native DomainConfig.active logic. Unknown IDs retain their raw name; expired/missing Domain attributes show no active domain. No weather is inferred from Lighting colors.
+Server Domain shows its current name, countdown, luck boost and opener using ReplicatedStorage DomainId / DomainEndsAt / DomainBy, live DomainConfig and the server clock. Currency/result listeners continue while the tab is hidden.
 
-Currency starts as Waiting for sync rather than an invented zero. REFRESH sends the native RequestSync event, limited to once per five seconds. Profile/result listeners stay connected while other tabs are selected; visible monitor values refresh roughly twice per second. Unrecognized ProfileSync envelopes produce a small MonitorSyncShape diagnostic for COPY CAPTURE. No gameplay purchase or reward claim is sent.
 
-Tests passed for profile/raid total synchronization, session spending, invalid/unknown balances, Domain countdown/expiry and unknown IDs, reset and sync throttling. Story, skill, Higher or Lower and mode-profile regression checks also passed. Actual server ProfileSync envelope and live rendering remain untested.
+## Webhook
 
-## Rare Domain webhook
+Monitor → Webhook contains a Discord webhook URL field, Domain alerts toggle, a searchable multi-select Notify for Domains dropdown and SEND TEST. Removed: Remove webhook URL, delivery status/counters, Rarest random Domain and the separate Clash toggle.
 
-Monitor → Rare Domain webhook accepts a Discord webhook URL, an alerts toggle, an optional Domain Clash toggle, SEND TEST, CLEAR URL and delivery status/counters. Paste the URL and leave the field to validate it; the field clears and displays a saved placeholder. SAVE stores WeatherWebhookURL, WeatherWebhookEnabled and WeatherWebhookClash in the selected local Config profile. LOAD and Auto Load restore them; alerts saved ON resume automatically. The URL is stored in plain text in the executor profile, so remove it before sharing that profile.
+The URL field shows the current value. Replacing it and leaving the field replaces the endpoint; clearing it (including whitespace-only input) and leaving the field removes the saved endpoint. Invalid URLs keep the existing endpoint and show a short validation notification. SAVE persists the current URL in the local Config profile; it is not uploaded in capture logs.
 
-The watcher runs independently of visible tabs or window rendering. It reads the live DomainConfig.Order/Data positive weights to identify the rarest random Domain, including ties. In the uploaded place Infinite Void has weight 0.1 out of 100 (0.1%). Domain Clash has weight zero and is a separate scheduled event; its optional notification is enabled by default.
+The dropdown displays each Domain's name and normalized random weight percentage. Live DomainConfig.Order/Data is authoritative; before config is available it uses the uploaded place's fallback list:
+- Horizon of the Captivating Beach: 58.4%.
+- Coffin of Death: 30%.
+- Unyielding Love: 10%.
+- Judge Courtroom: 1%.
+- Shrine of Sorrow: 0.5%.
+- Infinite Void: 0.1%.
+- Domain Clash: 0% random, special event.
 
-Only active DomainId/DomainEndsAt occurrences are eligible. Each server occurrence is marked before sending and retained in getgenv across script re-execution, so duration extensions, toggle off/on and re-running the script do not repeat alerts to the same URL. Changing the destination allows the current occurrence to notify the new URL. An expired or changed Domain starts a new occurrence. The script must remain running in that server to observe events.
+Only selected Domains trigger automatic notifications. The old rarest-only behavior is removed. The watcher runs independently of visible tabs/window rendering and retains per-server occurrence deduplication across re-execution and duration extensions. Changing the URL permits the current selected occurrence to notify the new destination. Requests use the executor HTTP API, keep a five-second gap and retry HTTP 429 at most twice. Turning alerts OFF, unselecting the current Domain or unloading cancels queued automatic retries. Already-sent requests cannot be recalled.
 
-Notifications include Domain name, rarity, remaining duration, luck boost and server ID/join link. SEND TEST explicitly sends a labelled test even with alerts OFF. Only HTTPS Discord webhook endpoints are accepted. Delivery uses the executor request/http_request/syn.request API, with a five-second request gap. HTTP 429 retries twice with bounded backoff; transport/other HTTP errors report failure without repeated automatic sends for the occurrence. Disabling alerts or unloading cancels queued automatic retries. An HTTP request already sent cannot be recalled.
+WeatherWebhookDomains saves the selected internal IDs in Config, including an explicitly empty selection. Existing profiles migrate to Infinite Void plus Domain Clash unless the old Clash toggle was OFF. URL and global toggle retain their existing profile keys. Test delivery is manually initiated and does not depend on Domain selection. Profile files contain the URL in plain text; remove it before sharing a profile.
 
-All HTTP calls in validation were mocked; no real webhook was contacted. Checks cover URL validation, rarity/ties, common-domain silence, new occurrences, extension/re-execution deduplication, destination replacement, manual test, Clash opt-in, success/failure counts, rate-limit retries, cancellation and Config persistence/legacy defaults. Existing Story, Skill Tree, Higher or Lower and Monitor checks also pass. Actual Discord delivery and executor UI need an in-game check.
+Validation uses mocked HTTP only: common and rare selected Domain alerts, unselected suppression, fallback/live percentages, zero-random special events, selection persistence and legacy migration, URL replacement/clearing, restart deduplication, retry/cancellation and removed UI controls. Real Discord delivery and live Roblox rendering remain untested.
 
-## Active Rules: per-card conditional GuestActive
 
-The Active Rules tab discovers ability-bearing cards from BattleState.guestActives. During active battles the card picker lists ability cards from the selected lane(s); Both lanes combines their ability cards. Before a snapshot is available, it offers previously discovered/saved cards and SCP3008. Each discovered card starts with its rule OFF; this avoids spending abilities before a condition is configured. First receive a combat snapshot to populate the deck's ability list.
+## Combat Helper: per-card conditional GuestActive
+
+The Combat Helper tab discovers ability-bearing cards from BattleState.guestActives. During active battles the card picker lists ability cards from the selected lane(s); Both lanes combines their ability cards. Before a snapshot is available, it offers previously discovered/saved cards and SCP3008. Each discovered card starts with its rule OFF; this avoids spending abilities before a condition is configured. First receive a combat snapshot to populate the deck's ability list.
 
 Choose Battles 1, 2 or Both lanes and turn Auto active ON. Pick a Card, turn Use this card ON, and choose Use when. Both lanes applies the same per-card rules to both battles; HP, rounds, battle IDs and ability-use history remain separate. Choose one condition:
 - Combat start: requires an observed fresh/round-1 battle and fires only while round is at most 1. Enabling it midway does not count as combat start.
@@ -165,11 +167,11 @@ This version attempts each card at most once per battle, including abilities tha
 
 Config SAVE/LOAD/Auto Load preserve the global toggle, selected lane/card and independent per-card rule settings. Legacy profiles default conditional actives OFF. Profile loading waits for outstanding active requests. UNLOAD disconnects the listeners and stops the watcher. COPY CAPTURE includes ActiveRuleRequest and ActiveRuleResponse; the UI reports returned/rejected requests without assuming ability success.
 
-Validation: compiled the complete generated script, replayed the actual uploaded string-keyed BattleState shape, and mocked all three conditions, multiple independent card rules, exact payload, event-driven HP updates, strict thresholds, dead/suppressed/unavailable casters, lane isolation, ended/stale snapshots, re-execution history, native-use suppression, request spacing, uncertain errors and profile/pending/stop guards. Config tests verify multiple card rules plus enabled/lane settings round-trip and legacy OFF defaults. Existing Story, Skill Tree, Higher or Lower, Monitor and webhook checks pass. Live Roblox UI and actual GuestActive server acceptance remain untested.
+Validation: compiled the complete generated script, replayed the actual uploaded string-keyed BattleState shape, and mocked all three conditions, multiple independent card rules, exact payload, event-driven HP updates, strict thresholds, dead/suppressed/unavailable casters, lane isolation, ended/stale snapshots, re-execution history, native-use suppression, request spacing, uncertain errors and profile/pending/stop guards. Config tests verify multiple card rules plus enabled/lane settings round-trip and legacy OFF defaults. Existing Story, Skill Tree, Guess Minigame, Monitor and webhook checks pass. Live Roblox UI and actual GuestActive server acceptance remain untested.
 
-## Simpler Active Rules controls and Both lanes
+## Simpler Combat Helper controls and Both lanes
 
-The Active Rules tab now shows a compact setup: Auto active, Battles, Card, Use this card and Use when. Both lanes is the third Battles option and is saved/restored by Config; existing numeric lane selections and legacy defaults remain compatible.
+The Combat Helper tab now shows a compact setup: Auto active, Battles, Card, Use this card and Use when. Both lanes is the third Battles option and is saved/restored by Config; existing numeric lane selections and legacy defaults remain compatible.
 
 Only condition-specific fields are visible:
 - Low HP shows Watch card and the HP slider.
@@ -189,3 +191,11 @@ A verified in-flight Story tracker now survives OFF/ON and script re-execution. 
 If the server rejects a start, the UI now shows its reason. An already-running Story battle that was never tracked by this controller requires waiting for native completion and turning Auto Story ON again; the script does not guess its identity or cancel it. No server restrictions are bypassed.
 
 Checks replay the actual uploaded refusal and mock stop/switch waiting, unrelated/wrong-lane events, old-loss isolation, wait cancellation and verified tracker handoff across re-execution. Story, Config, active rules and compact-UI regression checks pass. Live Roblox verification remains outstanding.
+
+## Current names and theme-aware text
+
+The Higher or Lower tab is now Guess Minigame and its How it chooses section has been removed. The Active Rules tab is now Combat Helper. Gameplay remotes, per-card rules, Both lanes behavior and existing Config keys remain compatible.
+
+Text gradients now derive their colors from the selected theme's accent, text and mint tokens. All six themes update their palettes instead of sharing one fixed dark-theme gradient. Light uses darker readable text on light surfaces; the fixed dark Story header retains a brighter variant for contrast.
+
+Full generated-script syntax and mocked checks passed for compact Monitor, URL replace/clear, multi-select Domain odds and selections, Config migration/empty selections, actual six-theme text repaint, renamed tabs and removed sections. Existing Story switching, conditional actives, Guess Minigame, Skill Tree and Monitor checks passed. No live Roblox visual verification or real HTTP delivery was performed.
