@@ -2,6 +2,96 @@
 -- Upstream SHA: 543f7f2b12f690f6b6592dcf10d805807fe2c29b
 -- Standalone: embeds the adapted Origin UI; no remote code download.
 -- Combat tracking uses server BattleEnd events matched to the admitted battleId.
+repeat task.wait() until game:IsLoaded()
+local AfkRuntime=(function()
+local AfkRuntime={}
+function AfkRuntime.start(ctx)
+    local state,flags=ctx.state,ctx.flags
+    local runtime={cpu=false,white=false,stopped=false}
+    local function service(name) local ok,s=pcall(function() return ctx.game:GetService(name) end);return ok and s or nil end
+    local run=service('RunService');local virtual=service('VirtualUser')
+    local overlay;local previousFPS;local previousRendering=true;local renderingChanged=false
+    local warned={};local lastIdle=-math.huge
+    local function noticeOnce(key,text)
+        if warned[key] then return end;warned[key]=true
+        if ctx.notice then ctx.notice(text,'warning') end
+    end
+    if ctx.player.Idled and type(ctx.player.Idled.Connect)=='function' then
+        state.connections[#state.connections+1]=ctx.player.Idled:Connect(function()
+            if not state.alive or runtime.stopped or not flags.AntiAFK or os.clock()-lastIdle<60 then return end
+            lastIdle=os.clock()
+            local ok=pcall(function()
+                assert(virtual,'VirtualUser unavailable')
+                virtual:CaptureController()
+                virtual:ClickButton2(Vector2.new(0,0))
+            end)
+            if not ok then noticeOnce('idle','Anti-AFK input is unavailable in this executor.') end
+        end)
+    end
+    local function createOverlay()
+        if overlay then return end
+        local gui=Instance.new('ScreenGui');gui.Name='AnimeCardOnlineWhiteScreen';gui.ResetOnSpawn=false
+        gui.IgnoreGuiInset=true;gui.DisplayOrder=9899;gui.Enabled=false
+        local frame=Instance.new('Frame');frame.Name='WhiteBackground';frame.Size=UDim2.fromScale(1,1)
+        frame.BorderSizePixel=0;frame.BackgroundColor3=Color3.new(1,1,1);frame.Active=false;frame.Parent=gui
+        local exit=Instance.new('TextButton');exit.Name='ShowGame';exit.Text='Show game'
+        exit.Size=UDim2.fromOffset(140,38);exit.Position=UDim2.new(1,-156,1,-54)
+        exit.BackgroundColor3=Color3.fromRGB(235,238,245);exit.TextColor3=Color3.fromRGB(25,32,48)
+        exit.Font=Enum.Font.GothamMedium;exit.TextSize=14;exit.BorderSizePixel=0;exit.Parent=gui
+        local corner=Instance.new('UICorner');corner.CornerRadius=UDim.new(0,10);corner.Parent=exit
+        state.connections[#state.connections+1]=exit.Activated:Connect(function()
+            if state.alive and not runtime.stopped then ctx.setFlag('WhiteScreen',false) end
+        end)
+        gui.Parent=ctx.playerGui;overlay=gui
+    end
+    function runtime.apply()
+        if runtime.stopped or not state.alive then return end
+        local cpu=flags.SaveCPU==true
+        if cpu~=runtime.cpu then
+            if cpu then
+                previousFPS=60
+                if type(getfpscap)=='function' then
+                    local ok,value=pcall(getfpscap)
+                    if ok and type(value)=='number' and value==value and value>=0 and value<10000 then previousFPS=value end
+                end
+                if type(setfpscap)=='function' then
+                    local ok=pcall(setfpscap,15)
+                    if not ok then noticeOnce('fps','Save CPU: executor could not set the FPS cap.') end
+                else noticeOnce('fps','Save CPU: FPS cap API unavailable; only script UI refresh is reduced.') end
+            elseif type(setfpscap)=='function' and previousFPS~=nil then pcall(setfpscap,previousFPS) end
+            runtime.cpu=cpu
+        end
+        local white=flags.WhiteScreen==true
+        if white~=runtime.white then
+            if white then
+                local ok=pcall(createOverlay)
+                if ok and overlay then overlay.Enabled=true else noticeOnce('overlay','White Screen overlay could not be created.') end
+                local got,value=pcall(function() return run:Is3dRenderingEnabled() end)
+                previousRendering=true
+                if got and type(value)=='boolean' then previousRendering=value end
+                renderingChanged=pcall(function() run:Set3dRenderingEnabled(false) end)
+                if not renderingChanged then noticeOnce('render','White Screen is visible, but disabling 3D rendering is unavailable.') end
+            else
+                if overlay then overlay.Enabled=false end
+                if renderingChanged then pcall(function() run:Set3dRenderingEnabled(previousRendering) end);renderingChanged=false end
+            end
+            runtime.white=white
+        end
+    end
+    function runtime.stop()
+        if runtime.stopped then return end
+        runtime.stopped=true
+        if runtime.cpu and type(setfpscap)=='function' and previousFPS~=nil then pcall(setfpscap,previousFPS) end
+        if renderingChanged then pcall(function() run:Set3dRenderingEnabled(previousRendering) end) end
+        renderingChanged=false;runtime.cpu=false;runtime.white=false
+        if overlay then pcall(function() overlay:Destroy() end);overlay=nil end
+    end
+    runtime.apply()
+    return runtime
+end
+return AfkRuntime
+
+end)()
 local SessionRuntime=(function()
 local SessionRuntime={}
 function SessionRuntime.start(ctx)
@@ -1620,6 +1710,10 @@ local configStatus=addStatus('Config','Storage','Ready')
 local configAuto=addStatus('Config','Auto Load','None')
 section('Settings','Startup')
 addToggle('Settings','Autoexec','AutoExec')
+section('Settings','AFK')
+addToggle('Settings','Anti-AFK','AntiAFK')
+addToggle('Settings','Save CPU (15 FPS)','SaveCPU')
+addToggle('Settings','White Screen','WhiteScreen')
 section('Settings','Appearance')
 addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose','Light'})
 local transparencyRow=row('Settings','Transparency')
@@ -1934,7 +2028,7 @@ if previous and previous.stop then previous.stop() end
 local Players=game:GetService('Players')
 local HttpService=game:GetService('HttpService')
 local player=Players.LocalPlayer
-assert(player,'Origin Story requires a client session')
+while not player do task.wait();player=Players.LocalPlayer end
 local net=game:GetService('ReplicatedStorage'):WaitForChild('Shared',15)
 assert(net,'Shared not found')
 net=net:WaitForChild('Net',15)
@@ -1943,7 +2037,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={}}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -1952,6 +2046,7 @@ local state={alive=true,serverId=game.JobId,enabled=false,connections={},status=
 state.storyInFlight=previous and (previous.storyInFlight or (previous.attempt and previous.attempt.started and previous.attempt)) or nil
 env.OriginStory=state
 local ui
+local afkRuntime
 local function message(text,kind)
     state.status=text
     if ui then ui.Notify(text,kind or 'info',4) end
@@ -2090,6 +2185,7 @@ state.stop=function()
     state.alive=false;state.enabled=false;state.skillEnabled=false;state.hlEnabled=false
     for _,c in ipairs(state.connections) do pcall(function() c:Disconnect() end) end
     state.connections={}
+    if afkRuntime then afkRuntime.stop() end
     if ui then ui.Destroy() end
 end
 local function exportCapture()
@@ -2588,6 +2684,8 @@ local function setFlag(key,value)
         if value then startSkills() else stopSkills() end
     elseif key=='HLRunning' then
         if value then startHL() else stopHL() end
+    elseif key=='AntiAFK' or key=='SaveCPU' or key=='WhiteScreen' then
+        flags[key]=value==true;if afkRuntime then afkRuntime.apply() end
     elseif key=='AutoExec' then sessionRuntime.setAutoExec(value)
     elseif key=='WeatherWebhookDomains' then flags[key]=WeatherWebhook.selection(value)
     elseif activeRules.edit(key,value) then
@@ -2643,6 +2741,9 @@ local function loadProfile(name,quiet)
     flags.StoryMaps=maps;flags.StoryCards=cards;flags.StoryModes=modes
     flags.StoryRepeat=nextFlags.StoryRepeat==true
     flags.HLRepeat=nextFlags.HLRepeat==true
+    flags.AntiAFK=nextFlags.AntiAFK~=false
+    flags.SaveCPU=nextFlags.SaveCPU==true
+    flags.WhiteScreen=nextFlags.WhiteScreen==true
     flags.ActiveRules=ActiveRules.normalize(nextFlags.ActiveRules)
     flags.ActiveRulesEnabled=nextFlags.ActiveRulesEnabled==true
     flags.ActiveRuleLane=ActiveRules.lane(nextFlags.ActiveRuleLane)
@@ -2664,6 +2765,7 @@ local function loadProfile(name,quiet)
     end
     profile.currentProfile=name;profile.status='Loaded: '..name
     state.profileLoading=false
+    if afkRuntime then afkRuntime.apply() end
     if ui then applyRunFlags();ui.Repaint() else state.restoreModes=true end
     if not quiet then profileMessage(profile.status,'success') end
     return true
@@ -2697,6 +2799,7 @@ local function setAutoProfile(name)
     local ok=pcall(writeIndex)
     if ok then profile.autoProfile=name;profileMessage('Auto Load: '..name,'success') else profileMessage('Auto Load save failed.','error') end
 end
+afkRuntime=AfkRuntime.start({game=game,player=player,playerGui=player:WaitForChild('PlayerGui'),state=state,flags=flags,setFlag=setFlag,notice=function(text,kind) if ui then ui.Notify(text,kind,5) end end})
 if canFiles then
     local ok=pcall(function()
         if type(isfolder)~='function' or not isfolder(profileDir) then pcall(makefolder,profileDir) end
@@ -2727,7 +2830,7 @@ ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=
     exportCapture=exportCapture,
 })
 task.spawn(function()
-    while state.alive do if not state.profileLoading and not state.restoreModes then syncRunFlags() end;ui.Repaint();ui.Refresh();task.wait(.3) end
+    while state.alive do if not state.profileLoading and not state.restoreModes then syncRunFlags() end;ui.Repaint();ui.Refresh();task.wait(flags.SaveCPU and 1 or .3) end
 end)
 requestMonitorSync()
 message('Ready: server BattleEnd results matched by battleId.')
