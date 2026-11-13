@@ -3,6 +3,73 @@
 -- Standalone: embeds the adapted Origin UI; no remote code download.
 -- Combat tracking uses server BattleEnd events matched to the admitted battleId.
 repeat task.wait() until game:IsLoaded()
+local Dungeon=(function()
+local Dungeon={}
+function Dungeon.highest(config,view)
+    if type(view)~='table' or type(view.best)~='table' then return nil end
+    local highest
+    for i,id in ipairs(config.Order) do if config.isUnlocked(view,id) then highest=i end end
+    return highest
+end
+function Dungeon.event(run,event)
+    if type(run)~='table' or type(event)~='table' or event.type~='dungeon' or type(event.run)~='table' then return nil end
+    if event.run.id~=run.id or event.run.gate~=run.gate then return nil end
+    if event.phase=='cleared' then return 'win' end
+    if event.phase=='heart' or event.phase=='down' or event.phase=='fallen' then return 'loss' end
+    return nil
+end
+function Dungeon.next(index,outcome,farming,highest)
+    if outcome=='loss' then
+        if index<=1 then return nil,true end
+        return index-1,true
+    end
+    if outcome~='win' then return nil,farming end
+    return farming and math.min(index,highest) or math.min(index+1,highest),farming
+end
+local statOrder={'luk','str','vit','agi','sen'}
+function Dungeon.priority(value)
+    local result,seen={},{}
+    if type(value)=='table' then
+        for _,id in ipairs(value) do
+            if type(id)=='string' then
+                id=id:lower()
+                for _,known in ipairs(statOrder) do if id==known and not seen[id] then seen[id]=true;result[#result+1]=id end end
+            end
+        end
+    end
+    for _,id in ipairs(statOrder) do if not seen[id] then result[#result+1]=id end end
+    return result
+end
+function Dungeon.editPriority(value,index,id)
+    local order=Dungeon.priority(value)
+    id=type(id)=='string' and id:lower() or ''
+    if type(index)~='number' or index<1 or index>5 or index%1~=0 then return order end
+    for i,known in ipairs(order) do if known==id then order[index],order[i]=order[i],order[index];break end end
+    return order
+end
+function Dungeon.allocate(config,view,priority)
+    local points=type(view)=='table' and view.points
+    if type(points)~='table' or type(points.earned)~='number' or points.earned<0 or points.earned%1~=0 then return nil,'Waiting for verified System points' end
+    local free=points.earned
+    for _,id in ipairs(statOrder) do
+        local n=points[id]
+        if type(n)~='number' or n<0 or n%1~=0 then return nil,'Waiting for verified System stats' end
+        free=free-n
+    end
+    if free<=0 then return nil,'Waiting for System points' end
+    local spend={str=0,vit=0,agi=0,sen=0,luk=0};local total=0
+    for _,id in ipairs(Dungeon.priority(priority)) do
+        local cap=config.statLimit(view,id)
+        if type(cap)~='number' or cap<0 or cap%1~=0 then return nil,'Unknown System stat limit' end
+        local amount=math.min(free,math.max(0,cap-points[id]))
+        spend[id]=amount;free=free-amount;total=total+amount
+    end
+    if total==0 then return nil,'Current System limits reached; clear higher gates' end
+    return spend
+end
+return Dungeon
+
+end)()
 local AfkRuntime=(function()
 local AfkRuntime={}
 function AfkRuntime.start(ctx)
@@ -1037,7 +1104,7 @@ local body=make('Frame',main,{
 local selectedTab='Story'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Story','Guess Minigame','Skill Tree','Combat Helper','Config','Settings'}
+local tabNames={'Monitor','Story','Guess Minigame','Skill Tree','Combat Helper','Dungeon','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
@@ -1412,6 +1479,20 @@ local function clearNotifications()
     toast.queue={};toast.active=false;toast.item=nil
     toastBox.Visible=false
 end
+section('Dungeon','Smart progression')
+addToggle('Dungeon','Auto Dungeon','DungeonRunning')
+local dungeonLive=addStatus('Dungeon','Status','OFF')
+local dungeonTarget=addStatus('Dungeon','Gate / Floor','--')
+section('Dungeon','Auto System')
+do
+    local toggle=addToggle('Dungeon','Auto spend System points','SystemRunning')
+    tooltip(toggle,'Fills each stat to its current unlocked limit in priority order, then moves to the next stat. Uses only earned System points; no reset or purchases.')
+end
+do
+    for i=1,5 do addDropdown('Dungeon','Priority '..i,'SystemPriority'..i,{'LUK','STR','VIT','AGI','SEN'}) end
+end
+local systemLive=addStatus('Dungeon','System status','OFF')
+
 local activeRuleUI={}
 do
     section('Combat Helper','Auto abilities')
@@ -2032,6 +2113,9 @@ local function refreshOverview()
     showStatus(hlPool,state.hlPoolCount and tostring(state.hlPoolCount) or 'Loaded on start')
     showStatus(hlScore,tostring(state.hlStreak or 0)..' / 100')
     showStatus(skillLive,state.skillStatus or 'OFF')
+    showStatus(dungeonLive,state.dungeonStatus or 'OFF')
+    showStatus(systemLive,state.systemStatus or 'OFF')
+    showStatus(dungeonTarget,tostring(state.dungeonGate or '--')..' / '..tostring(state.dungeonFloor or '--'))
     if selectedTab=='Combat Helper' then
         showStatus(activeRuleUI.last,state.activeRuleLast or '--')
         showStatus(activeRuleUI.hp1,ctx.activeRules.preview(1))
@@ -2054,7 +2138,7 @@ end)()
 local env=(getgenv and getgenv()) or _G
 local previous=env.OriginStory
 -- An InvokeServer cannot be cancelled. Do not create a second controller while one is pending.
-if previous and (previous.pending or previous.skillPending or previous.hlPending or previous.hlBusy or previous.activePending) then error('Origin Story: previous request still pending; wait for it to return.') end
+if previous and (previous.pending or previous.skillPending or previous.hlPending or previous.hlBusy or previous.activePending or previous.dungeonBusy or previous.dungeonPending or previous.systemBusy) then error('Origin Story: previous request still pending; wait for it to return.') end
 if previous and previous.stop then previous.stop() end
 local Players=game:GetService('Players')
 local HttpService=game:GetService('HttpService')
@@ -2068,7 +2152,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -2694,17 +2778,194 @@ do
     end)
 end
 
+local dungeon={}
+do
+    local enabled=false;local generation=0;local busy=false;local remote;local config;local owned;local entering;local result;local lastView;local nextCall=0;local requestBusy=false
+    state.dungeonStatus='OFF';state.dungeonBusy=false;state.dungeonPending=false
+    local function call(verb,payload,cleanup,system)
+        local function allowed() return cleanup or (state.alive and not state.profileLoading and ((system and flags.SystemRunning) or (not system and enabled))) end
+        while requestBusy or os.clock()<nextCall do
+            if not allowed() then return nil,'Stopped' end
+            task.wait(.1)
+        end
+        if not allowed() then return nil,'Stopped' end
+        requestBusy=true;state.dungeonPending=true;nextCall=os.clock()+1
+        log('DungeonRequest',{action=verb,payload=payload})
+        local response=table.pack(pcall(function() return remote:InvokeServer(verb,payload or {}) end))
+        requestBusy=false;state.dungeonPending=false
+        log('DungeonResponse',{action=verb,response=response})
+        if type(response[4])=='table' then lastView=response[4] end
+        if response[1]~=true then return nil,'Request failed; result unknown' end
+        if response[2]~=true then return nil,tostring(response[3] or 'Server rejected request') end
+        return true,response[3],response[4]
+    end
+    local eventRemote=net:FindFirstChild('GateEvent')
+    if eventRemote and eventRemote:IsA('RemoteEvent') then
+        state.connections[#state.connections+1]=eventRemote.OnClientEvent:Connect(function(event)
+            if not state.alive or not busy or type(event)~='table' or event.type~='dungeon' then return end
+            local run=event.run
+            if not owned and entering and type(run)=='table' and run.gate==entering and run.id~=nil then owned={id=run.id,gate=run.gate} end
+            local outcome=Dungeon.event(owned,event)
+            if outcome and not result then result=outcome;log('DungeonResult',{run=owned,phase=event.phase,result=outcome}) end
+            if owned and type(run)=='table' and run.id==owned.id and run.gate==owned.gate then
+                state.dungeonFloor=run.floor;state.dungeonGate=run.gate
+            end
+        end)
+    end
+    function dungeon.stop()
+        enabled=false;generation=generation+1;state.dungeonEnabled=false;flags.DungeonRunning=false
+        state.dungeonStatus=busy and 'Stopping; waiting for pending request' or 'OFF'
+    end
+    function dungeon.start()
+        if busy then message('Dungeon worker is still active; wait for it to stop.','warning');return end
+        remote=net:FindFirstChild('GateAction')
+        if not remote or not remote:IsA('RemoteFunction') or not eventRemote then message('GateAction/GateEvent unavailable in this server.','warning');return end
+        local ok,value=pcall(function()
+            local shared=game:GetService('ReplicatedStorage'):WaitForChild('Shared',10)
+            return require(shared:WaitForChild('Config',10):WaitForChild('GateConfig',10))
+        end)
+        if not ok or type(value)~='table' or type(value.Order)~='table' or value.Order[1]~='E' or type(value.isUnlocked)~='function' or type(value.window)~='function' then message('Dungeon config unavailable.','warning');return end
+        config=value;enabled=true;busy=true;generation=generation+1
+        state.dungeonEnabled=true;state.dungeonBusy=true;flags.DungeonRunning=true
+        local token=generation
+        local function active() return enabled and state.alive and generation==token end
+        local function waitFor(seconds)
+            local untilTime=os.clock()+seconds
+            while active() and os.clock()<untilTime do task.wait(.2) end
+            return active()
+        end
+        task.spawn(function()
+            local function work()
+                local good,reason=call('state')
+                if not active() then return end
+                if not good then error(reason) end
+                if not Dungeon.highest(config,lastView) then error('Missing verified gate unlock data') end
+                if type(lastView.dungeon)=='table' or type(lastView.run)=='table' then error('Already in a gate; leave the existing run before starting Smart progression') end
+                -- Native auto-hop must not race the script's gate selection. Dungeon AUTO drives floors.
+                good,reason=call('auto',{on=false});if not good then error(reason) end
+                local index,farming=1,false
+                while active() do
+                    local highest=Dungeon.highest(config,lastView)
+                    if not highest then error('Gate unlock state missing') end
+                    index=math.min(index,highest)
+                    local id=config.Order[index]
+                    state.dungeonGate=id;state.dungeonStatus=farming and ('Farming gate '..id) or ('Climbing gate '..id)
+                    local open,delay=config.window(id,workspace:GetServerTimeNow())
+                    if not open then
+                        state.dungeonStatus='Waiting for gate '..id..' to open'
+                        if not waitFor(math.min(10,math.max(1,tonumber(delay) or 5))) then break end
+                        good,reason=call('state');if not good then error(reason) end
+                    else
+                        owned=nil;result=nil;entering=id
+                        good,reason=call('enter',{gate=id})
+                        if not good then owned=nil;entering=nil;error(reason) end
+                        local run=lastView and lastView.dungeon
+                        if type(run)=='table' and run.id~=nil and run.gate==id then
+                            if owned and owned.id~=run.id then owned=nil;entering=nil;error('Dungeon admission/event run IDs disagree') end
+                            owned={id=run.id,gate=id};state.dungeonFloor=run.floor
+                        end
+                        entering=nil
+                        if not active() then break end
+                        if not owned then error('No verified dungeon run ID returned; stopped without guessing') end
+                        if not result then good,reason=call('autoplay',{on=true});if not good then error(reason) end end
+                        local deadline=os.clock()+7200
+                        while active() and not result do
+                            if os.clock()>deadline then error('No matched dungeon completion after two hours') end
+                            if not waitFor(3) then break end
+                            good,reason=call('state');if not good then error(reason) end
+                            local current=lastView and lastView.dungeon
+                            if not result and (type(current)~='table' or current.id~=owned.id) then error('Dungeon run changed/ended without a matched result; stopped') end
+                        end
+                        if not active() then break end
+                        good,reason=call('autoplay',{on=false});if not good then error(reason) end
+                        good,reason=call('leave');if not good then error(reason) end
+                        local leaveDeadline=os.clock()+15
+                        while active() and lastView and (type(lastView.dungeon)=='table' or type(lastView.run)=='table') and os.clock()<leaveDeadline do
+                            if not waitFor(2) then break end
+                            good,reason=call('state');if not good then error(reason) end
+                        end
+                        if not active() then break end
+                        if lastView and (type(lastView.dungeon)=='table' or type(lastView.run)=='table') then error('Previous dungeon has not closed; stopped') end
+                        good,reason=call('state');if not good then error(reason) end
+                        highest=Dungeon.highest(config,lastView);if not highest then error('Missing gate unlock state') end
+                        local nextIndex;nextIndex,farming=Dungeon.next(index,result,farming,highest)
+                        owned=nil;entering=nil;result=nil
+                        if not nextIndex then state.dungeonStatus='Lost at gate E; stopped';break end
+                        index=nextIndex
+                        if not waitFor(2) then break end
+                    end
+                end
+            end
+            local worked,err=pcall(work)
+            if owned then call('autoplay',{on=false},true) end
+            enabled=false;busy=false;state.dungeonEnabled=false;state.dungeonBusy=false;flags.DungeonRunning=false
+            if not worked then state.dungeonStatus=tostring(err):sub(1,250);log('DungeonStopped',{reason=state.dungeonStatus})
+            elseif not state.alive or generation~=token then state.dungeonStatus='OFF' end
+        end)
+    end
+    state.systemStatus='OFF';state.systemBusy=false
+    local systemFailed=false
+    function dungeon.syncSystemEditor()
+        flags.SystemPriority=Dungeon.priority(flags.SystemPriority)
+        for i,id in ipairs(flags.SystemPriority) do flags['SystemPriority'..i]=id:upper() end
+    end
+    function dungeon.editSystemPriority(key,value)
+        local index=type(key)=='string' and tonumber(key:match('^SystemPriority([1-5])$'))
+        if not index then return false end
+        flags.SystemPriority=Dungeon.editPriority(flags.SystemPriority,index,value);dungeon.syncSystemEditor()
+        return true
+    end
+    dungeon.syncSystemEditor()
+    task.spawn(function()
+        while state.alive do
+            if flags.SystemRunning and not state.profileLoading then
+                systemFailed=false;state.systemBusy=true
+                local worked,err=pcall(function()
+                    if not remote then remote=net:FindFirstChild('GateAction') end
+                    if not remote or not remote:IsA('RemoteFunction') then error('GateAction unavailable') end
+                    if not config then
+                        local shared=game:GetService('ReplicatedStorage'):WaitForChild('Shared',10)
+                        config=require(shared:WaitForChild('Config',10):WaitForChild('GateConfig',10))
+                    end
+                    if type(config.statLimit)~='function' then error('System stat limits unavailable') end
+                    local ok,reason=call('state',nil,nil,true)
+                    if not ok then if not flags.SystemRunning or state.profileLoading or not state.alive then return end;error(reason) end
+                    local spend,why=Dungeon.allocate(config,lastView,flags.SystemPriority)
+                    if not spend then state.systemStatus=why;return end
+                    local before={};local labels={}
+                    for id,n in pairs(spend) do before[id]=lastView.points[id];if n>0 then labels[#labels+1]=id:upper()..' +'..n end end
+                    table.sort(labels);state.systemStatus='Upgrading '..table.concat(labels,' / ')
+                    ok,reason=call('spend',spend,nil,true)
+                    if not ok then if not flags.SystemRunning or state.profileLoading or not state.alive then return end;error(reason) end
+                    ok,reason=call('state',nil,nil,true);if not ok then error(reason) end
+                    for id,n in pairs(spend) do
+                        if n>0 and (not lastView or type(lastView.points)~='table' or type(lastView.points[id])~='number' or lastView.points[id]<before[id]+n) then error('System spend not confirmed; stopped without retry') end
+                    end
+                    state.systemStatus='Confirmed '..table.concat(labels,' / ')
+                end)
+                state.systemBusy=false
+                if not worked then systemFailed=true;flags.SystemRunning=false;state.systemStatus=tostring(err):sub(1,240);log('SystemStopped',{reason=state.systemStatus}) end
+            elseif not systemFailed then state.systemStatus='OFF' end
+            task.wait(5)
+        end
+        state.systemBusy=false
+    end)
+
+end
+
 local sessionRuntime=SessionRuntime.start({game=game,player=player,state=state,flags=flags,env=env,notice=function(text,kind) if ui then ui.Notify(text,kind,5) end end})
 local function syncRunFlags()
     flags.StoryRunning=state.enabled==true
     flags.SkillRunning=state.skillEnabled==true
     flags.HLRunning=state.hlEnabled==true
+    flags.DungeonRunning=state.dungeonEnabled==true
 end
 local function applyRunFlags()
     local storyOn,skillOn,hlOn=flags.StoryRunning,flags.SkillRunning,flags.HLRunning
     if storyOn then beginRun() end
     if skillOn then startSkills() end
     if hlOn then startHL() end
+    if flags.DungeonRunning then dungeon.start() end
     syncRunFlags()
 end
 local function setFlag(key,value)
@@ -2715,6 +2976,9 @@ local function setFlag(key,value)
         if value then startSkills() else stopSkills() end
     elseif key=='HLRunning' then
         if value then startHL() else stopHL() end
+    elseif dungeon.editSystemPriority(key,value) then
+    elseif key=='DungeonRunning' then
+        if value then dungeon.start() else dungeon.stop() end
     elseif key=='AntiAFK' or key=='SaveCPU' or key=='WhiteScreen' then
         flags[key]=value==true;if afkRuntime then afkRuntime.apply() end
     elseif key=='AutoExec' then sessionRuntime.setAutoExec(value)
@@ -2746,8 +3010,9 @@ local function loadProfile(name,quiet)
     if state.enabled then stopRun('Loading profile; stopping Story scheduling.') end
     if state.skillEnabled then stopSkills() end
     if state.hlEnabled then stopHL() end
+    if state.dungeonEnabled then dungeon.stop() end
     local deadline=os.clock()+30
-    while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy or state.activePending
+    while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy or state.activePending or state.dungeonBusy or state.dungeonPending or state.systemBusy
         or (nextFlags.StoryRunning==true and state.attempt and state.attempt.started and not state.attempt.ended)) do
         profile.status='Waiting for current request / battle before loading'
         if os.clock()>deadline then
@@ -2786,6 +3051,10 @@ local function loadProfile(name,quiet)
     flags.StoryRunning=nextFlags.StoryRunning==true
     flags.SkillRunning=nextFlags.SkillRunning==true
     flags.HLRunning=nextFlags.HLRunning==true
+    flags.DungeonRunning=nextFlags.DungeonRunning==true
+    flags.SystemRunning=nextFlags.SystemRunning==true
+    flags.SystemPriority=Dungeon.priority(nextFlags.SystemPriority)
+    dungeon.syncSystemEditor()
     flags.AutoSkills={}
     for _,id in ipairs(Skills.Order) do if type(nextFlags.AutoSkills)=='table' and nextFlags.AutoSkills[id]==true then flags.AutoSkills[id]=true end end
     flags.SkillPurchaseMode=nextFlags.SkillPurchaseMode=='PurchaseMax' and 'PurchaseMax' or 'Purchase'
