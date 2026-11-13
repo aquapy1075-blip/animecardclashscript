@@ -458,6 +458,23 @@ function Story.buildQueue(flags)
     end
     return queue
 end
+function Story.bulkModes(flags,selection,selectedOnly)
+    local cards,modes,count={},{},0
+    for id,on in pairs(flags.StoryCards or {}) do cards[id]=on end
+    for id,set in pairs(flags.StoryModes or {}) do modes[id]=set end
+    for _,world in ipairs(Story.Worlds) do
+        if (flags.StoryMaps or {})[world.map] then
+            for _,id in ipairs(world.cards) do
+                if not selectedOnly or cards[id] then
+                    local chosen={}
+                    for _,mode in ipairs(Story.Modes) do if selection[mode]==true then chosen[mode]=true end end
+                    cards[id]=true;modes[id]=chosen;count=count+1
+                end
+            end
+        end
+    end
+    return cards,modes,count
+end
 return Story
 
 end)()
@@ -1613,6 +1630,20 @@ multiDropdown('Maps',mapLabels,function() return displaySet(mapLookup,flags.Stor
 multiDropdown('Mob / Boss',function() return story.targetOptions(flags.StoryMaps) end,function() return displaySet(cardLookup,flags.StoryCards) end,
     function(value) setFlag('StoryCards',internalSet(cardLookup,value)) end)
 section('Story','Modes per mob / boss')
+do
+    local bulkModes={Easy=true}
+    multiDropdown('Bulk difficulties',story.Modes,function() return bulkModes end,function(value) bulkModes=value end)
+    local function applyBulk(selectedOnly)
+        local cards,modes,count=story.bulkModes(flags,bulkModes,selectedOnly)
+        if count==0 then notify('Choose maps and targets first.','warning');return end
+        setFlag('StoryCards',cards);setFlag('StoryModes',modes)
+        notify('Applied difficulties to '..count..' targets. Restart Auto Story if it is running.','success')
+    end
+    local selected=addAction('Story','Apply to selected mob / boss','APPLY SELECTED',function() applyBulk(true) end)
+    tooltip(selected,'Replaces difficulties for selected targets in selected maps. Other targets keep their settings.')
+    local all=addAction('Story','Select all mob / boss in chosen maps','APPLY ALL',function() applyBulk(false) end)
+    tooltip(all,'Selects every mob and boss in chosen maps, then replaces their difficulties with Bulk difficulties. An empty difficulty selection clears their modes.')
+end
 -- Each selected target reveals its own difficulty multi-dropdown. Defaults to Easy.
 local modeRows={}
 for _,w in ipairs(story.Worlds) do
