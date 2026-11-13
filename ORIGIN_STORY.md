@@ -241,15 +241,16 @@ These three settings persist through Config SAVE/LOAD/SET AUTO LOAD. Legacy prof
 
 Tests: real entry guard in a coroutine, throttled Idled-only input, independent FPS/white controls, prior FPS and prior-enabled/disabled rendering restoration, accessible Show game button, unload, unsupported APIs and profile round-trips/legacy defaults. Generated Lua syntax and existing Story switching, autoexec/rejoin, Combat Helper and compact Monitor checks pass. Actual executor permission, idle prevention, visual rendering and resource savings require in-game verification.
 
-## Dungeon: smart progression
+## Dungeon: one-pass progression
 
-Implemented from the updated Place_139541882461209.rbxlx supplied inside aco.zip. GateConfig.Order is E → D → C → B → A → S → Red. Every regular gate has 100 floors; Red is endless. The live server's returned best state and GateConfig.isUnlocked determine eligibility, never guessed UI visibility. E/D/C are initially open in the supplied config, but Smart progression starts at E and proceeds sequentially.
+The updated GateConfig order is E → D → C → B → A → S → Red. Auto Dungeon now skips every gate with best >= GateConfig.Floors (100 in the supplied game). E at BEST 100/100 therefore starts D if D is incomplete. It targets the highest unlocked gate captured when the toggle turns ON; newly unlocked gates can be attempted on a subsequent run.
 
-Dungeon → Auto Dungeon enters E, enables native dungeon autoplay to handle floors/hunters/bosses, and advances after a matched GateEvent dungeon phase cleared. A matched heart/down/fallen event counts as a loss immediately; it leaves that run and farms the preceding gate. That fallback stays pinned even after a win; another loss steps down again. A loss in E stops after leaving. Turning Auto Dungeon OFF and ON begins a new E-first progression. At the current highest unlocked gate, a clear repeats that gate unless the refreshed unlock data permits advancement. Closed scheduled gates wait for GateConfig.window and server time rather than skipping ahead. Red continues until a loss/exit or timeout.
+It clears each remaining eligible gate once. The first matched loss ends Dungeon after leaving the run. Clearing the captured target also ends it; neither the top gate nor a failed gate is farmed/retried. If all unlocked gates are already cleared, it ends without sending enter. Red is endless, so a matched server transition beyond floor 100 counts as its one-pass checkpoint; merely reaching floor 100 does not.
 
-The worker uses GateAction state, auto, enter, autoplay and leave, and matches GateEvent run.id/gate. Script-managed progression disables native post-result auto-hop so it does not race gate selection. An existing unowned dungeon must be left manually before starting this worker. Missing admission IDs, unknown endings, server refusals, or two hours without a matching result stop with diagnostics. No downBuy, reset, revive or other paid action is sent. The game's own location, admission and gate-window checks remain authoritative.
+After Dungeon stops offers Stop, Story or War Boss. The handoff runs once after a normal loss or completion, after the gate has closed and the worker releases pending work. Manual OFF, UNLOAD, profile transitions and uncertain/errors do not start another mode. Story uses existing Story selections/repeat settings; configure the desired bosses before choosing it. War Boss uses the shared boss selection. DungeonAfter persists in Config; the old DungeonLossMode options are removed.
 
-OFF stops future scheduling and disables native autoplay after an outstanding request returns; it leaves the current run in place. Config SAVE/LOAD/SET AUTO LOAD preserve DungeonRunning. Profile switches wait for old workers/requests; re-execution is blocked until pending Dungeon/System work finishes. COPY CAPTURE includes DungeonRequest, DungeonResponse, DungeonResult and stop diagnostics.
+GateAction calls, live unlock checks, schedule waiting, matched run IDs and Slow down backoff remain. Existing unknown runs must be left manually before starting the worker. No revive, double-reward or paid reset is automated. OFF disables native autoplay but leaves the current native run in place.
+
 
 ## Auto System priorities
 
@@ -276,3 +277,13 @@ Native dungeon AUTO handles fighting/progression inside the selected gate. Scrip
 For farming decisions, the supplied update notes state every tenth gate floor pays Gate Coins every run, while System milestone points and regular-gate milestone Essence/Cores are first-clear rewards. Gate clears also give a 24-hour luck buff. Red has a separate endless reward table beyond floor 100. Repeated regular gates are primarily a Gate Coin goal, not an assumption of unlimited first-clear rewards.
 
 Checks passed for transient recovery/backoff limits, OFF cancellation, native shared API selection, one confirmed System allocation after refused attempts, slower serialized workers, both loss policies, Config persistence and existing Story behavior. Live server acceptance remains to be verified; no real GateAction or paid action was sent during testing.
+
+## War Boss
+
+New War Boss tab: choose Goku or Saitama, then toggle Auto War Boss. Goku maps to the native Son boss (WarBossSonWarrior); Saitama maps to Punch (WarBossPunchHero). The native TeamWarConfig makes the opponent depend on the player's WarTeam: Son/Goku faction can fight only Saitama; Punch/Saitama faction can fight only Goku. A mismatch stops with an explanation and sends no join/faction-change request.
+
+Uses exactly TeamWarAction:InvokeServer("fight"), without an invented boss argument. It verifies an admitted response snapshot or a newly received matching BattleState using teamWar.kind/team, enemy portrait, battleId and lane. An existing verified matching War fight can be adopted after toggling OFF/ON. Only the matching BattleEnd permits another fight, regardless of win/loss (the native mode awards participation points). Early end events are buffered, unrelated Story/Tower events do not release the wait, and missing admission/result data stops without starting duplicate fights. Exact Slow down refusals have bounded retries; unknown transport failures do not. Native server location/team/slot restrictions still apply.
+
+WarRunning and WarBossName persist through Config/Auto Load. OFF stops repeat scheduling and leaves the current fight to the game. Profile loads and re-execution wait for pending War work. COPY CAPTURE includes WarRequest, WarResponse, WarAdmitted and WarCompleted.
+
+Checks passed: one-pass gate ceiling, E100 → D skip, all-cleared stop, stop-on-first-loss, Red checkpoint, early result races, scheduled waits, no handoff on OFF/errors, actual controller dispatch to Story/War Boss/Stop, System/War/Dungeon Config compatibility, Goku/Saitama faction validation, native fight payload, battleId/lane matching, existing-run adoption, early ends, refusal/unknown-admission guards, rate-limit handling and existing automation regressions. Runtime checks use mocks grounded in the supplied client source. Live dungeon/War integration and native location checks remain untested.
