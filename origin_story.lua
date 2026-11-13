@@ -18,8 +18,9 @@ function Dungeon.event(run,event)
     if event.phase=='heart' or event.phase=='down' or event.phase=='fallen' then return 'loss' end
     return nil
 end
-function Dungeon.next(index,outcome,farming,highest)
+function Dungeon.next(index,outcome,farming,highest,lossMode)
     if outcome=='loss' then
+        if lossMode=='Retry same gate' then return index,farming end
         if index<=1 then return nil,true end
         return index-1,true
     end
@@ -1481,6 +1482,7 @@ local function clearNotifications()
 end
 section('Dungeon','Smart progression')
 addToggle('Dungeon','Auto Dungeon','DungeonRunning')
+addDropdown('Dungeon','On loss','DungeonLossMode',{'Previous gate','Retry same gate'})
 local dungeonLive=addStatus('Dungeon','Status','OFF')
 local dungeonTarget=addStatus('Dungeon','Gate / Floor','--')
 section('Dungeon','Auto System')
@@ -2152,7 +2154,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,DungeonLossMode='Previous gate',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -2782,6 +2784,21 @@ local dungeon={}
 do
     local enabled=false;local generation=0;local busy=false;local remote;local config;local owned;local entering;local result;local lastView;local nextCall=0;local requestBusy=false
     state.dungeonStatus='OFF';state.dungeonBusy=false;state.dungeonPending=false
+    local nativeUi;local nextNativeProbe=0
+    local function ask(verb,payload)
+        if not nativeUi and os.clock()>=nextNativeProbe then
+            nextNativeProbe=os.clock()+10
+            pcall(function()
+                local shared=game:GetService('ReplicatedStorage'):FindFirstChild('Shared')
+                local uiFolder=shared and shared:FindFirstChild('UI')
+                local module=uiFolder and uiFolder:FindFirstChild('GateUI')
+                if module then nativeUi=require(module) end
+            end)
+        end
+        local api=type(nativeUi)=='table' and nativeUi.api
+        if type(api)=='table' and type(api.call)=='function' then return api.call(verb,payload or {}) end
+        return remote:InvokeServer(verb,payload or {})
+    end
     local function call(verb,payload,cleanup,system)
         local function allowed() return cleanup or (state.alive and not state.profileLoading and ((system and flags.SystemRunning) or (not system and enabled))) end
         while requestBusy or os.clock()<nextCall do
@@ -2789,15 +2806,34 @@ do
             task.wait(.1)
         end
         if not allowed() then return nil,'Stopped' end
-        requestBusy=true;state.dungeonPending=true;nextCall=os.clock()+1
-        log('DungeonRequest',{action=verb,payload=payload})
-        local response=table.pack(pcall(function() return remote:InvokeServer(verb,payload or {}) end))
-        requestBusy=false;state.dungeonPending=false
-        log('DungeonResponse',{action=verb,response=response})
-        if type(response[4])=='table' then lastView=response[4] end
-        if response[1]~=true then return nil,'Request failed; result unknown' end
-        if response[2]~=true then return nil,tostring(response[3] or 'Server rejected request') end
-        return true,response[3],response[4]
+        requestBusy=true;state.dungeonPending=true
+        local function finish(ok,reason,view)
+            requestBusy=false;state.dungeonPending=false
+            return ok,reason,view
+        end
+        for attempt=1,4 do
+            while os.clock()<nextCall do
+                if not allowed() then return finish(nil,'Stopped') end
+                task.wait(.1)
+            end
+            if not allowed() then return finish(nil,'Stopped') end
+            nextCall=os.clock()+1.5
+            log('DungeonRequest',{action=verb,payload=payload,attempt=attempt})
+            local response=table.pack(pcall(ask,verb,payload))
+            log('DungeonResponse',{action=verb,response=response,attempt=attempt})
+            if response[1]~=true then return finish(nil,'Request failed; result unknown') end
+            if type(response[4])=='table' then lastView=response[4] end
+            if response[2]==true then return finish(true,response[3],response[4]) end
+            if response[2]==false and response[3]=='Slow down' and attempt<4 then
+                local delay=2^attempt;nextCall=os.clock()+delay
+                local status='Server busy; retrying in '..delay..'s'
+                if system then state.systemStatus=status else state.dungeonStatus=status end
+                log('DungeonRetry',{action=verb,delay=delay,reason='Slow down'})
+            else
+                local reason=response[3]=='Slow down' and 'Server busy (Slow down); wait a moment, then turn this mode ON again' or tostring(response[3] or 'Server rejected request')
+                return finish(nil,reason)
+            end
+        end
     end
     local eventRemote=net:FindFirstChild('GateEvent')
     if eventRemote and eventRemote:IsA('RemoteEvent') then
@@ -2869,12 +2905,17 @@ do
                         if not owned then error('No verified dungeon run ID returned; stopped without guessing') end
                         if not result then good,reason=call('autoplay',{on=true});if not good then error(reason) end end
                         local deadline=os.clock()+7200
+                        local pollAt=os.clock()+8
                         while active() and not result do
                             if os.clock()>deadline then error('No matched dungeon completion after two hours') end
-                            if not waitFor(3) then break end
-                            good,reason=call('state');if not good then error(reason) end
-                            local current=lastView and lastView.dungeon
-                            if not result and (type(current)~='table' or current.id~=owned.id) then error('Dungeon run changed/ended without a matched result; stopped') end
+                            if not waitFor(1) then break end
+                            if result then break end
+                            if os.clock()>=pollAt then
+                                good,reason=call('state');if not good then error(reason) end
+                                pollAt=os.clock()+8
+                                local current=lastView and lastView.dungeon
+                                if not result and (type(current)~='table' or current.id~=owned.id) then error('Dungeon run changed/ended without a matched result; stopped') end
+                            end
                         end
                         if not active() then break end
                         good,reason=call('autoplay',{on=false});if not good then error(reason) end
@@ -2888,7 +2929,7 @@ do
                         if lastView and (type(lastView.dungeon)=='table' or type(lastView.run)=='table') then error('Previous dungeon has not closed; stopped') end
                         good,reason=call('state');if not good then error(reason) end
                         highest=Dungeon.highest(config,lastView);if not highest then error('Missing gate unlock state') end
-                        local nextIndex;nextIndex,farming=Dungeon.next(index,result,farming,highest)
+                        local nextIndex;nextIndex,farming=Dungeon.next(index,result,farming,highest,flags.DungeonLossMode)
                         owned=nil;entering=nil;result=nil
                         if not nextIndex then state.dungeonStatus='Lost at gate E; stopped';break end
                         index=nextIndex
@@ -2899,7 +2940,7 @@ do
             local worked,err=pcall(work)
             if owned then call('autoplay',{on=false},true) end
             enabled=false;busy=false;state.dungeonEnabled=false;state.dungeonBusy=false;flags.DungeonRunning=false
-            if not worked then state.dungeonStatus=tostring(err):sub(1,250);log('DungeonStopped',{reason=state.dungeonStatus})
+            if not worked then state.dungeonStatus=tostring(err):gsub('^.-:%d+:%s*',''):sub(1,250);log('DungeonStopped',{reason=state.dungeonStatus})
             elseif not state.alive or generation~=token then state.dungeonStatus='OFF' end
         end)
     end
@@ -2944,9 +2985,9 @@ do
                     state.systemStatus='Confirmed '..table.concat(labels,' / ')
                 end)
                 state.systemBusy=false
-                if not worked then systemFailed=true;flags.SystemRunning=false;state.systemStatus=tostring(err):sub(1,240);log('SystemStopped',{reason=state.systemStatus}) end
+                if not worked then systemFailed=true;flags.SystemRunning=false;state.systemStatus=tostring(err):gsub('^.-:%d+:%s*',''):sub(1,240);log('SystemStopped',{reason=state.systemStatus}) end
             elseif not systemFailed then state.systemStatus='OFF' end
-            task.wait(5)
+            task.wait(10)
         end
         state.systemBusy=false
     end)
@@ -3052,6 +3093,7 @@ local function loadProfile(name,quiet)
     flags.SkillRunning=nextFlags.SkillRunning==true
     flags.HLRunning=nextFlags.HLRunning==true
     flags.DungeonRunning=nextFlags.DungeonRunning==true
+    flags.DungeonLossMode=nextFlags.DungeonLossMode=='Retry same gate' and 'Retry same gate' or 'Previous gate'
     flags.SystemRunning=nextFlags.SystemRunning==true
     flags.SystemPriority=Dungeon.priority(nextFlags.SystemPriority)
     dungeon.syncSystemEditor()
