@@ -262,3 +262,17 @@ Uses the native GateAction spend payload with str/vit/agi/sen/luk amounts. After
 Dungeon and System share a serialized GateAction request manager with at least a one-second gap, including slow requests. UI remains compact: Auto Dungeon, current status/gate/floor, Auto System, five priorities and System status.
 
 Validation: full Lua syntax; mocked E-first progression, live unlocks, matched wins/losses, pinned fallback, E-loss stop, unrelated run filtering, early-result race, scheduled-gate waiting, OFF cleanup, admission refusal and existing-run guard. System checks cover strict/partial allocation, current caps, unique reorder, independent operation, confirmed server balances, no blind repeat, Config round-trips/legacy defaults and concurrent worker serialization. Existing Story, AFK, Autoexec/rejoin, Combat Helper, minigame and compact UI checks pass. The source protocol is verified against native client scripts, but live GateAction/GateEvent acceptance and actual dungeon gameplay remain untested; COPY CAPTURE is available for any integration mismatch.
+
+## GateAction Slow down and repeated-gate option
+
+The user's live screenshot reports Slow down for both Dungeon and System. The native GateController also treats this exact explicit refusal as transient. The script now prefers GateUI.api.call when initialized, sharing the native client's request coordination. Its own workers remain serialized, with a 1.5-second minimum interval. Exact false / Slow down responses retry at most three times after 2/4/8-second backoff. Transport errors, accepted side effects and other refusal messages are not replayed. Exhaustion produces a readable Server busy message, without a Lua source-line prefix.
+
+Dungeon waits on matched events and polls state only about every eight seconds while fighting; Auto System checks about every ten seconds. This reduces contention with native UI state requests. OFF cancels queued retries. Native API unavailability falls back to the verified GateAction remote. The server's actual quota is unknown; these are conservative client timings, not a bypass or a claim of guaranteed admission.
+
+Dungeon → On loss now offers Previous gate (existing default) or Retry same gate. Retry same gate leaves/re-enters the same gate after a verified loss, including E, using the game's saved floor/hearts. A confirmed clear then continues normal progression. Previous gate retains pinned fallback farming and stops after an E loss. DungeonLossMode persists in Config; old profiles retain Previous gate. No paid revive/reset is automated.
+
+Native dungeon AUTO handles fighting/progression inside the selected gate. Script Smart progression manages gate choice and loss policy; the user need not manually toggle native AUTO while the script manages a run.
+
+For farming decisions, the supplied update notes state every tenth gate floor pays Gate Coins every run, while System milestone points and regular-gate milestone Essence/Cores are first-clear rewards. Gate clears also give a 24-hour luck buff. Red has a separate endless reward table beyond floor 100. Repeated regular gates are primarily a Gate Coin goal, not an assumption of unlimited first-clear rewards.
+
+Checks passed for transient recovery/backoff limits, OFF cancellation, native shared API selection, one confirmed System allocation after refused attempts, slower serialized workers, both loss policies, Config persistence and existing Story behavior. Live server acceptance remains to be verified; no real GateAction or paid action was sent during testing.
