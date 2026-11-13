@@ -11,21 +11,24 @@ function Dungeon.highest(config,view)
     for i,id in ipairs(config.Order) do if config.isUnlocked(view,id) then highest=i end end
     return highest
 end
+function Dungeon.firstUncleared(config,view,ceiling,start)
+    for i=start or 1,ceiling do
+        local id=config.Order[i]
+        if config.isUnlocked(view,id) and (tonumber(view.best[id]) or 0)<(config.Floors or 100) then return i end
+    end
+    return nil
+end
 function Dungeon.event(run,event)
     if type(run)~='table' or type(event)~='table' or event.type~='dungeon' or type(event.run)~='table' then return nil end
     if event.run.id~=run.id or event.run.gate~=run.gate then return nil end
     if event.phase=='cleared' then return 'win' end
+    if run.gate=='Red' and event.phase=='floor' and type(event.run.floor)=='number' and event.run.floor>100 then return 'win' end
     if event.phase=='heart' or event.phase=='down' or event.phase=='fallen' then return 'loss' end
     return nil
 end
-function Dungeon.next(index,outcome,farming,highest,lossMode)
-    if outcome=='loss' then
-        if lossMode=='Retry same gate' then return index,farming end
-        if index<=1 then return nil,true end
-        return index-1,true
-    end
-    if outcome~='win' then return nil,farming end
-    return farming and math.min(index,highest) or math.min(index+1,highest),farming
+function Dungeon.next(index,outcome,ceiling)
+    if outcome~='win' or index>=ceiling then return nil end
+    return index+1
 end
 local statOrder={'luk','str','vit','agi','sen'}
 function Dungeon.priority(value)
@@ -1105,7 +1108,7 @@ local body=make('Frame',main,{
 local selectedTab='Story'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Story','Guess Minigame','Skill Tree','Combat Helper','Dungeon','Config','Settings'}
+local tabNames={'Monitor','Story','Guess Minigame','Skill Tree','Combat Helper','Dungeon','War Boss','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
@@ -1480,9 +1483,18 @@ local function clearNotifications()
     toast.queue={};toast.active=false;toast.item=nil
     toastBox.Visible=false
 end
+section('War Boss','Auto War Boss')
+addDropdown('War Boss','Boss','WarBossName',{'Goku','Saitama'})
+addToggle('War Boss','Auto War Boss','WarRunning')
+local warLive=addStatus('War Boss','Status','OFF')
+
 section('Dungeon','Smart progression')
 addToggle('Dungeon','Auto Dungeon','DungeonRunning')
-addDropdown('Dungeon','On loss','DungeonLossMode',{'Previous gate','Retry same gate'})
+addDropdown('Dungeon','After Dungeon stops','DungeonAfter',{'Stop','Story','War Boss'})
+do
+    local boss=addDropdown('Dungeon','War Boss target','WarBossName',{'Goku','Saitama'})
+    widgets[#widgets+1]=function() boss.Parent.Visible=flags.DungeonAfter=='War Boss' end
+end
 local dungeonLive=addStatus('Dungeon','Status','OFF')
 local dungeonTarget=addStatus('Dungeon','Gate / Floor','--')
 section('Dungeon','Auto System')
@@ -2117,6 +2129,7 @@ local function refreshOverview()
     showStatus(skillLive,state.skillStatus or 'OFF')
     showStatus(dungeonLive,state.dungeonStatus or 'OFF')
     showStatus(systemLive,state.systemStatus or 'OFF')
+    showStatus(warLive,state.warStatus or 'OFF')
     showStatus(dungeonTarget,tostring(state.dungeonGate or '--')..' / '..tostring(state.dungeonFloor or '--'))
     if selectedTab=='Combat Helper' then
         showStatus(activeRuleUI.last,state.activeRuleLast or '--')
@@ -2140,7 +2153,7 @@ end)()
 local env=(getgenv and getgenv()) or _G
 local previous=env.OriginStory
 -- An InvokeServer cannot be cancelled. Do not create a second controller while one is pending.
-if previous and (previous.pending or previous.skillPending or previous.hlPending or previous.hlBusy or previous.activePending or previous.dungeonBusy or previous.dungeonPending or previous.systemBusy) then error('Origin Story: previous request still pending; wait for it to return.') end
+if previous and (previous.pending or previous.skillPending or previous.hlPending or previous.hlBusy or previous.activePending or previous.dungeonBusy or previous.dungeonPending or previous.systemBusy or previous.warBusy or previous.warPending) then error('Origin Story: previous request still pending; wait for it to return.') end
 if previous and previous.stop then previous.stop() end
 local Players=game:GetService('Players')
 local HttpService=game:GetService('HttpService')
@@ -2154,13 +2167,14 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,DungeonLossMode='Previous gate',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,DungeonAfter='Stop',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
 local state={alive=true,serverId=game.JobId,enabled=false,connections={},status='Ready',index=0,queue={},pending=false,logs={},awaiting=false,runId=0}
 -- Keep a verified Story battle across Stop/Start and script re-execution.
 state.storyInFlight=previous and (previous.storyInFlight or (previous.attempt and previous.attempt.started and previous.attempt)) or nil
+state.warInFlight=previous and previous.warInFlight or nil
 env.OriginStory=state
 local ui
 local afkRuntime
@@ -2871,21 +2885,25 @@ do
             return active()
         end
         task.spawn(function()
+            local finishedReason
             local function work()
                 local good,reason=call('state')
                 if not active() then return end
                 if not good then error(reason) end
                 if not Dungeon.highest(config,lastView) then error('Missing verified gate unlock data') end
                 if type(lastView.dungeon)=='table' or type(lastView.run)=='table' then error('Already in a gate; leave the existing run before starting Smart progression') end
+                local ceiling=Dungeon.highest(config,lastView)
+                state.dungeonCeiling=config.Order[ceiling]
+                local index=Dungeon.firstUncleared(config,lastView,ceiling)
+                if not index then finishedReason='completed';state.dungeonStatus='All unlocked gates already cleared';return end
                 -- Native auto-hop must not race the script's gate selection. Dungeon AUTO drives floors.
                 good,reason=call('auto',{on=false});if not good then error(reason) end
-                local index,farming=1,false
                 while active() do
                     local highest=Dungeon.highest(config,lastView)
                     if not highest then error('Gate unlock state missing') end
                     index=math.min(index,highest)
                     local id=config.Order[index]
-                    state.dungeonGate=id;state.dungeonStatus=farming and ('Farming gate '..id) or ('Climbing gate '..id)
+                    state.dungeonGate=id;state.dungeonStatus='Climbing gate '..id..' / target '..state.dungeonCeiling
                     local open,delay=config.window(id,workspace:GetServerTimeNow())
                     if not open then
                         state.dungeonStatus='Waiting for gate '..id..' to open'
@@ -2929,9 +2947,15 @@ do
                         if lastView and (type(lastView.dungeon)=='table' or type(lastView.run)=='table') then error('Previous dungeon has not closed; stopped') end
                         good,reason=call('state');if not good then error(reason) end
                         highest=Dungeon.highest(config,lastView);if not highest then error('Missing gate unlock state') end
-                        local nextIndex;nextIndex,farming=Dungeon.next(index,result,farming,highest,flags.DungeonLossMode)
+                        local outcome=result
+                        local nextIndex=Dungeon.next(index,outcome,ceiling)
+                        if nextIndex then nextIndex=Dungeon.firstUncleared(config,lastView,ceiling,nextIndex) end
                         owned=nil;entering=nil;result=nil
-                        if not nextIndex then state.dungeonStatus='Lost at gate E; stopped';break end
+                        if not nextIndex then
+                            finishedReason=outcome=='loss' and 'loss' or 'completed'
+                            state.dungeonStatus=outcome=='loss' and ('Lost at gate '..id..'; stopped') or ('Completed target gate '..id..'; stopped')
+                            break
+                        end
                         index=nextIndex
                         if not waitFor(2) then break end
                     end
@@ -2942,6 +2966,7 @@ do
             enabled=false;busy=false;state.dungeonEnabled=false;state.dungeonBusy=false;flags.DungeonRunning=false
             if not worked then state.dungeonStatus=tostring(err):gsub('^.-:%d+:%s*',''):sub(1,250);log('DungeonStopped',{reason=state.dungeonStatus})
             elseif not state.alive or generation~=token then state.dungeonStatus='OFF' end
+            if worked and finishedReason and state.alive and generation==token and not state.profileLoading and dungeon.onFinished then dungeon.onFinished(finishedReason) end
         end)
     end
     state.systemStatus='OFF';state.systemBusy=false
@@ -2994,12 +3019,134 @@ do
 
 end
 
+local war={}
+do
+    local running=false;local busy=false;local revision=0;local sequence=0;local latest;local ends={};local endOrder={}
+    state.warStatus='OFF';state.warEnabled=false;state.warBusy=false;state.warPending=false
+    local function desired() return flags.WarBossName=='Goku' and 'Son' or 'Punch' end
+    local function valid(snapshot)
+        return type(snapshot)=='table' and snapshot.active==true and type(snapshot.battleId)=='string' and (snapshot.lane==1 or snapshot.lane==2)
+            and type(snapshot.teamWar)=='table' and (snapshot.teamWar.kind=='Son' or snapshot.teamWar.kind=='Punch')
+    end
+    local function track(snapshot)
+        if not valid(snapshot) then return end
+        sequence=sequence+1;latest={snapshot=snapshot,sequence=sequence}
+        local attempt=state.warInFlight
+        if attempt and attempt.battleId==snapshot.battleId then attempt.lane=snapshot.lane end
+    end
+    local stateRemote=net:FindFirstChild('BattleState')
+    if stateRemote and stateRemote:IsA('RemoteEvent') then state.connections[#state.connections+1]=stateRemote.OnClientEvent:Connect(function(snapshot) if state.alive then track(snapshot) end end) end
+    state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
+        if not state.alive or type(event)~='table' or event.type~='BattleEnd' or type(event.battleId)~='string' then return end
+        if not ends[event.battleId] then endOrder[#endOrder+1]=event.battleId end
+        ends[event.battleId]=event
+        if #endOrder>64 then ends[table.remove(endOrder,1)]=nil end
+        if latest and latest.snapshot.battleId==event.battleId and (event.lane==nil or event.lane==latest.snapshot.lane) then latest.ended=true end
+        local attempt=state.warInFlight
+        if attempt and event.battleId==attempt.battleId and (event.lane==nil or event.lane==attempt.lane) then attempt.ended=true end
+    end)
+    local function adopt(snapshot)
+        local team=player:GetAttribute('WarTeam')
+        local expected=desired()
+        local bossId=expected=='Son' and 'WarBossSonWarrior' or 'WarBossPunchHero'
+        local portrait=type(snapshot)=='table' and snapshot.enemy and snapshot.enemy.portrait
+        if not valid(snapshot) or snapshot.teamWar.kind~=expected or snapshot.teamWar.team~=team or type(portrait)~='table' or portrait.cardId~=bossId then return nil end
+        local ending=ends[snapshot.battleId]
+        return {battleId=snapshot.battleId,lane=snapshot.lane,kind=expected,ended=ending~=nil and (ending.lane==nil or ending.lane==snapshot.lane)}
+    end
+    function war.stop()
+        running=false;revision=revision+1;state.warEnabled=false;flags.WarRunning=false
+        state.warStatus=busy and 'Stopping; current fight continues' or 'OFF'
+    end
+    function war.start()
+        if busy then return end
+        local team=player:GetAttribute('WarTeam');local expected=desired()
+        if team~='Son' and team~='Punch' then state.warStatus='Join a Team War faction in game first';flags.WarRunning=false;return end
+        if (team=='Son' and expected~='Punch') or (team=='Punch' and expected~='Son') then
+            state.warStatus=team=='Son' and 'Your Goku team can fight Saitama only' or 'Your Saitama team can fight Goku only';flags.WarRunning=false;return
+        end
+        local remote=net:FindFirstChild('TeamWarAction')
+        if not remote or not remote:IsA('RemoteFunction') then state.warStatus='TeamWarAction unavailable';flags.WarRunning=false;return end
+        running=true;busy=true;revision=revision+1
+        state.warEnabled=true;state.warBusy=true;flags.WarRunning=true
+        local token=revision
+        local function active() return state.alive and running and revision==token end
+        local function waitFor(seconds)
+            local untilTime=os.clock()+seconds
+            while active() and os.clock()<untilTime do task.wait(.2) end
+            return active()
+        end
+        task.spawn(function()
+            local function work()
+                while active() do
+                    if desired()~=expected then error('Boss selection changed; restart War Boss') end
+                    local currentTeam=player:GetAttribute('WarTeam')
+                    if currentTeam~=team then error('Team changed; stopped') end
+                    local attempt=state.warInFlight
+                    if not attempt or attempt.ended or attempt.kind~=expected then
+                        attempt=latest and not latest.ended and adopt(latest.snapshot)
+                        if attempt and attempt.ended then attempt=nil end
+                    end
+                    if not attempt then
+                        local before=sequence
+                        state.warStatus='Starting '..flags.WarBossName
+                        local response
+                        for retry=1,3 do
+                            if not active() then return end
+                            state.warPending=true
+                            log('WarRequest',{action='fight',boss=flags.WarBossName,attempt=retry})
+                            response=table.pack(pcall(function() return remote:InvokeServer('fight') end))
+                            state.warPending=false;log('WarResponse',response)
+                            if response[1]==true and response[2]==false and response[3]=='Slow down' and retry<3 then
+                                state.warStatus='Server busy; waiting to retry'
+                                if not waitFor(2^retry) then return end
+                            else break end
+                        end
+                        if response[1]~=true then error('War request failed; result unknown') end
+                        if response[2]~=true then error(tostring(response[3] or 'War start rejected')) end
+                        if type(response[4])=='table' then attempt=adopt(response[4]) end
+                        if not attempt then
+                            local deadline=os.clock()+12
+                            while state.alive and os.clock()<deadline do
+                                if latest and latest.sequence>before then attempt=adopt(latest.snapshot);if attempt then break end end
+                                if not active() then break end
+                                task.wait(.1)
+                            end
+                        end
+                        if not attempt then error('No matching War battle ID; stopped without repeating the request') end
+                    end
+                    state.warInFlight=attempt
+                    log('WarAdmitted',{battleId=attempt.battleId,lane=attempt.lane,boss=flags.WarBossName})
+                    state.warStatus='Farming '..flags.WarBossName..' / lane '..attempt.lane
+                    local deadline=os.clock()+1800
+                    while active() and not attempt.ended do
+                        if os.clock()>deadline then error('No matching War BattleEnd after 30 minutes') end
+                        task.wait(.2)
+                    end
+                    if not active() then break end
+                    log('WarCompleted',{battleId=attempt.battleId,lane=attempt.lane})
+                    if not waitFor(2) then break end
+                end
+            end
+            local ok,reason=pcall(work)
+            running=false;busy=false;state.warEnabled=false;state.warBusy=false;flags.WarRunning=false
+            state.warStatus=not ok and tostring(reason):gsub('^.-:%d+:%s*',''):sub(1,240) or 'OFF'
+        end)
+    end
+end
+
+dungeon.onFinished=function(reason)
+    log('DungeonHandoff',{reason=reason,mode=flags.DungeonAfter})
+    if flags.DungeonAfter=='Story' then beginRun()
+    elseif flags.DungeonAfter=='War Boss' then war.start() end
+end
 local sessionRuntime=SessionRuntime.start({game=game,player=player,state=state,flags=flags,env=env,notice=function(text,kind) if ui then ui.Notify(text,kind,5) end end})
 local function syncRunFlags()
     flags.StoryRunning=state.enabled==true
     flags.SkillRunning=state.skillEnabled==true
     flags.HLRunning=state.hlEnabled==true
     flags.DungeonRunning=state.dungeonEnabled==true
+    flags.WarRunning=state.warEnabled==true
 end
 local function applyRunFlags()
     local storyOn,skillOn,hlOn=flags.StoryRunning,flags.SkillRunning,flags.HLRunning
@@ -3007,6 +3154,7 @@ local function applyRunFlags()
     if skillOn then startSkills() end
     if hlOn then startHL() end
     if flags.DungeonRunning then dungeon.start() end
+    if flags.WarRunning then war.start() end
     syncRunFlags()
 end
 local function setFlag(key,value)
@@ -3018,6 +3166,8 @@ local function setFlag(key,value)
     elseif key=='HLRunning' then
         if value then startHL() else stopHL() end
     elseif dungeon.editSystemPriority(key,value) then
+    elseif key=='WarRunning' then
+        if value then war.start() else war.stop() end
     elseif key=='DungeonRunning' then
         if value then dungeon.start() else dungeon.stop() end
     elseif key=='AntiAFK' or key=='SaveCPU' or key=='WhiteScreen' then
@@ -3052,8 +3202,9 @@ local function loadProfile(name,quiet)
     if state.skillEnabled then stopSkills() end
     if state.hlEnabled then stopHL() end
     if state.dungeonEnabled then dungeon.stop() end
+    if state.warEnabled then war.stop() end
     local deadline=os.clock()+30
-    while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy or state.activePending or state.dungeonBusy or state.dungeonPending or state.systemBusy
+    while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy or state.activePending or state.dungeonBusy or state.dungeonPending or state.systemBusy or state.warBusy or state.warPending
         or (nextFlags.StoryRunning==true and state.attempt and state.attempt.started and not state.attempt.ended)) do
         profile.status='Waiting for current request / battle before loading'
         if os.clock()>deadline then
@@ -3093,7 +3244,9 @@ local function loadProfile(name,quiet)
     flags.SkillRunning=nextFlags.SkillRunning==true
     flags.HLRunning=nextFlags.HLRunning==true
     flags.DungeonRunning=nextFlags.DungeonRunning==true
-    flags.DungeonLossMode=nextFlags.DungeonLossMode=='Retry same gate' and 'Retry same gate' or 'Previous gate'
+    flags.DungeonAfter=(nextFlags.DungeonAfter=='Story' or nextFlags.DungeonAfter=='War Boss') and nextFlags.DungeonAfter or 'Stop'
+    flags.WarRunning=nextFlags.WarRunning==true
+    flags.WarBossName=nextFlags.WarBossName=='Goku' and 'Goku' or 'Saitama'
     flags.SystemRunning=nextFlags.SystemRunning==true
     flags.SystemPriority=Dungeon.priority(nextFlags.SystemPriority)
     dungeon.syncSystemEditor()
