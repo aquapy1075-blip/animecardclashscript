@@ -142,8 +142,20 @@ assert(type(native)=='table' and type(native._moveHeart)=='function','Unsupporte
 local original=native._moveHeart
 local originalUpdate=native.update
 local updateWrapper
-local state={enabled=true,controlled=setmetatable({}, {__mode='k'}),decisions=0,lastError=nil,phase=nil,round=0,result=nil,autoStart=true,difficulty='Final',raidActive=false,waitingStart=false,startAttempts=0,nextStartAt=os.clock()+2,autoReady=true,pickSent=false,pickAttempts=0,readyConfirmed=false,deckOptions=nil}
+local raidSettings=type(env.OriginSkeletonSettings)=='table' and env.OriginSkeletonSettings or {}
+env.OriginSkeletonSettings=raidSettings
+local function validDifficulty(value)
+    for _,id in ipairs(config.DifficultyOrder or {'Mercy','Judgment','Final'}) do if value==id then return true end end
+    return false
+end
+if not validDifficulty(raidSettings.Difficulty) then raidSettings.Difficulty='Final' end
+local state={enabled=true,controlled=setmetatable({}, {__mode='k'}),decisions=0,lastError=nil,phase=nil,round=0,result=nil,autoStart=true,difficulty=raidSettings.Difficulty,raidActive=false,waitingStart=false,startAttempts=0,nextStartAt=os.clock()+2,autoReady=true,pickSent=false,pickAttempts=0,readyConfirmed=false,deckOptions=nil}
 env.OriginSkeletonDodge=state
+function state.setDifficulty(value)
+    if not validDifficulty(value) then return false,'Choose Mercy, Judgment or Final' end
+    raidSettings.Difficulty=value;state.difficulty=value
+    return true,'Applies to the next raid start'
+end
 local wrapper
 wrapper=function(self,dt)
     if state.enabled and self.running and self.visible and type(self.heart)=='table' and type(self.cur)=='table' and type(self.objs)=='table' and type(self.input)=='table' then
@@ -270,4 +282,4 @@ task.spawn(function()
         task.wait(.25)
     end
 end)
-print('Skeleton: timed-jump assist + auto-start Final enabled. Auto Ready selects indices 1–5. Stop: getgenv().OriginSkeletonDodge.stop()')
+print('Skeleton: timed-jump assist + auto-start enabled; mode: '..state.difficulty..'. Auto Ready selects indices 1–5. Stop: getgenv().OriginSkeletonDodge.stop()')
