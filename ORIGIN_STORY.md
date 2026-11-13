@@ -240,3 +240,25 @@ Settings → AFK adds:
 These three settings persist through Config SAVE/LOAD/SET AUTO LOAD. Legacy profiles use Anti-AFK ON, Save CPU OFF and White Screen OFF. Re-execution/UNLOAD cleans up the old runtime, restores graphics settings and disconnects the idle listener.
 
 Tests: real entry guard in a coroutine, throttled Idled-only input, independent FPS/white controls, prior FPS and prior-enabled/disabled rendering restoration, accessible Show game button, unload, unsupported APIs and profile round-trips/legacy defaults. Generated Lua syntax and existing Story switching, autoexec/rejoin, Combat Helper and compact Monitor checks pass. Actual executor permission, idle prevention, visual rendering and resource savings require in-game verification.
+
+## Dungeon: smart progression
+
+Implemented from the updated Place_139541882461209.rbxlx supplied inside aco.zip. GateConfig.Order is E → D → C → B → A → S → Red. Every regular gate has 100 floors; Red is endless. The live server's returned best state and GateConfig.isUnlocked determine eligibility, never guessed UI visibility. E/D/C are initially open in the supplied config, but Smart progression starts at E and proceeds sequentially.
+
+Dungeon → Auto Dungeon enters E, enables native dungeon autoplay to handle floors/hunters/bosses, and advances after a matched GateEvent dungeon phase cleared. A matched heart/down/fallen event counts as a loss immediately; it leaves that run and farms the preceding gate. That fallback stays pinned even after a win; another loss steps down again. A loss in E stops after leaving. Turning Auto Dungeon OFF and ON begins a new E-first progression. At the current highest unlocked gate, a clear repeats that gate unless the refreshed unlock data permits advancement. Closed scheduled gates wait for GateConfig.window and server time rather than skipping ahead. Red continues until a loss/exit or timeout.
+
+The worker uses GateAction state, auto, enter, autoplay and leave, and matches GateEvent run.id/gate. Script-managed progression disables native post-result auto-hop so it does not race gate selection. An existing unowned dungeon must be left manually before starting this worker. Missing admission IDs, unknown endings, server refusals, or two hours without a matching result stop with diagnostics. No downBuy, reset, revive or other paid action is sent. The game's own location, admission and gate-window checks remain authoritative.
+
+OFF stops future scheduling and disables native autoplay after an outstanding request returns; it leaves the current run in place. Config SAVE/LOAD/SET AUTO LOAD preserve DungeonRunning. Profile switches wait for old workers/requests; re-execution is blocked until pending Dungeon/System work finishes. COPY CAPTURE includes DungeonRequest, DungeonResponse, DungeonResult and stop diagnostics.
+
+## Auto System priorities
+
+Dungeon → Auto System can run independently of Auto Dungeon. Choose Priority 1–5 from LUK, STR, VIT, AGI, SEN; choosing an already-used stat swaps positions so the order stays unique. Default: LUK → STR → VIT → AGI → SEN.
+
+The allocator reads confirmed points.earned and current stat values, fills Priority 1 to its currently unlocked GateConfig.statLimit, then allocates remaining points to the next priority. It rechecks from the top on the next pass, including when clearing a gate raises limits. The supplied config starts at 20% of each stat's maximum and raises that to 40/60/80/100% on C/B/A/S clears.
+
+Uses the native GateAction spend payload with str/vit/agi/sen/luk amounts. After an accepted spend it refreshes state and verifies the stat increases before allowing another allocation. Missing data waits; refusals, errors or unconfirmed spending stop Auto System without blind retry. Only earned System points are allocated; no reset, quest claim, coin purchase or Robux transaction is automated. SystemRunning and SystemPriority persist in Config. Old profiles default both new automation toggles OFF.
+
+Dungeon and System share a serialized GateAction request manager with at least a one-second gap, including slow requests. UI remains compact: Auto Dungeon, current status/gate/floor, Auto System, five priorities and System status.
+
+Validation: full Lua syntax; mocked E-first progression, live unlocks, matched wins/losses, pinned fallback, E-loss stop, unrelated run filtering, early-result race, scheduled-gate waiting, OFF cleanup, admission refusal and existing-run guard. System checks cover strict/partial allocation, current caps, unique reorder, independent operation, confirmed server balances, no blind repeat, Config round-trips/legacy defaults and concurrent worker serialization. Existing Story, AFK, Autoexec/rejoin, Combat Helper, minigame and compact UI checks pass. The source protocol is verified against native client scripts, but live GateAction/GateEvent acceptance and actual dungeon gameplay remain untested; COPY CAPTURE is available for any integration mismatch.
