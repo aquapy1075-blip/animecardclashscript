@@ -1515,7 +1515,7 @@ end
 section('Ranked','Auto Ranked')
 addDropdown('Ranked','Mode','RankedMode',{'Normal','Scaled'})
 addToggle('Ranked','Auto Ranked','RankedRunning')
-do local rankedLive=addStatus('Ranked','Status','OFF');widgets[#widgets+1]=function() showStatus(rankedLive,state.rankedStatus or 'OFF') end end
+do local rankedLive=addStatus('Ranked','Status','OFF');task.spawn(function() while lifecycle.alive and rankedLive.Parent do local value=state.rankedStatus or 'OFF';if rankedLive.Text~=value then rankedLive.Text=value end;task.wait(1) end end) end
 section('War Boss','Auto War Boss')
 addDropdown('War Boss','Boss','WarBossName',{'Goku','Saitama'})
 addToggle('War Boss','Auto War Boss','WarRunning')
