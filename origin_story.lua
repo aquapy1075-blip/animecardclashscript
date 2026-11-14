@@ -392,7 +392,17 @@ end
 function ActiveRules.cancelStarts(store)
     for _,entry in pairs(store.lanes) do entry.startReady={} end
 end
+function ActiveRules.battleData(data)
+    if type(data)~='table' then return data end
+    if data.lane==nil and identity(data.battleId) and data.battleId:match('^pvp%-') then
+        local copy={};for k,v in pairs(data) do copy[k]=v end
+        copy.lane=1 -- Same default as the native BattleController._twinAttach.
+        return copy
+    end
+    return data
+end
 function ActiveRules.snapshot(store,data,now)
+    data=ActiveRules.battleData(data)
     if type(data)~='table' or not identity(data.battleId) or (data.lane~=1 and data.lane~=2) then return false end
     local lane=data.lane;local previous=store.lanes[lane]
     if data.active==false then
@@ -417,6 +427,7 @@ function ActiveRules.snapshot(store,data,now)
     return true
 end
 function ActiveRules.event(store,event,now)
+    event=ActiveRules.battleData(event)
     if type(event)~='table' or not identity(event.battleId) or (event.lane~=1 and event.lane~=2) then return false end
     local entry=store.lanes[event.lane]
     if event.type=='BattleEnd' then
@@ -1126,7 +1137,7 @@ local body=make('Frame',main,{
 local selectedTab='Story'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Story','Guess Minigame','Skill Tree','Combat Helper','Dungeon','War Boss','Config','Settings'}
+local tabNames={'Monitor','Story','Guess Minigame','Skill Tree','Combat Helper','Dungeon','War Boss','Ranked','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
@@ -1501,6 +1512,10 @@ local function clearNotifications()
     toast.queue={};toast.active=false;toast.item=nil
     toastBox.Visible=false
 end
+section('Ranked','Auto Ranked')
+addDropdown('Ranked','Mode','RankedMode',{'Normal','Scaled'})
+addToggle('Ranked','Auto Ranked','RankedRunning')
+do local rankedLive=addStatus('Ranked','Status','OFF');widgets[#widgets+1]=function() showStatus(rankedLive,state.rankedStatus or 'OFF') end end
 section('War Boss','Auto War Boss')
 addDropdown('War Boss','Boss','WarBossName',{'Goku','Saitama'})
 addToggle('War Boss','Auto War Boss','WarRunning')
@@ -2186,7 +2201,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,DungeonAfter='Stop',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,DungeonAfter='Stop',RankedRunning=false,RankedMode='Normal',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -2766,6 +2781,7 @@ do
     if sync and sync:IsA('RemoteEvent') then
         state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
             if not state.alive then return end
+            data=ActiveRules.battleData(data)
             if ActiveRules.snapshot(store,data,os.clock()) then
                 if flags.ActiveRulesEnabled and not state.profileLoading and (flags.ActiveRuleLane=='Both lanes' or flags.ActiveRuleLane==data.lane) then
                     ActiveRules.armStarts(store.lanes[data.lane],flags.ActiveRules,os.clock())
@@ -3159,6 +3175,65 @@ dungeon.onFinished=function(reason)
     if flags.DungeonAfter=='Story' then beginRun()
     elseif flags.DungeonAfter=='War Boss' then war.start() end
 end
+local ranked={}
+do
+    local remote=net:FindFirstChild('RankedAction')
+    local events=net:FindFirstChild('RankedEvent')
+    local running=false;local pending=false;local phase='idle';local nextAt=0;local battleId
+    local function finish(text)
+        running=false;state.rankedEnabled=false;flags.RankedRunning=false;state.rankedStatus=text
+    end
+    if events and events:IsA('RemoteEvent') then
+        state.connections[#state.connections+1]=events.OnClientEvent:Connect(function(event)
+            if not state.alive or type(event)~='table' then return end
+            log('RankedEvent',event)
+            if event.kind=='Searching' then phase='searching';state.rankedStatus='Searching'
+            elseif event.kind=='MatchFound' then phase='battle';battleId=nil;state.rankedStatus='Match found'
+            elseif event.kind=='Result' then phase='idle';battleId=nil;nextAt=os.clock()+5;state.rankedStatus='Match finished'
+            elseif event.kind=='Aborted' or event.kind=='SearchStopped' then
+                phase='idle';battleId=nil
+                if running then finish(tostring(event.reason or 'Search stopped; turn ON to retry')) end
+            end
+        end)
+    end
+    local sync=net:FindFirstChild('BattleState')
+    if sync then state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
+        if type(data)~='table' or type(data.battleId)~='string' or not data.battleId:match('^pvp%-') then return end
+        if data.active==true then phase='battle';battleId=data.battleId;state.rankedStatus='In Ranked battle'
+        elseif data.active==false and battleId==data.battleId then phase='idle';battleId=nil;nextAt=os.clock()+5 end
+    end) end
+    function ranked.stop()
+        finish('OFF; current match continues')
+        if phase=='searching' and not pending and remote then
+            pending=true
+            task.spawn(function() pcall(function() remote:InvokeServer('cancel') end);pending=false end)
+        end
+    end
+    function ranked.start()
+        if running then return end
+        if not remote or not remote:IsA('RemoteFunction') or not events then finish('Ranked remotes unavailable');return end
+        running=true;state.rankedEnabled=true;flags.RankedRunning=true
+        state.rankedStatus=phase=='idle' and 'Ready to search' or 'Waiting for current search / match'
+    end
+    task.spawn(function()
+        while state.alive do
+            if running and not state.profileLoading and not pending and phase=='idle' and os.clock()>=nextAt then
+                pending=true;phase='requesting';state.rankedStatus='Starting search'
+                local mode=flags.RankedMode=='Scaled' and 'scaled' or 'normal'
+                local response=table.pack(pcall(function() return remote:InvokeServer('play',{mode=mode}) end))
+                log('RankedResponse',{mode=mode,response=response})
+                pending=false
+                if not response[1] or response[2]~=true then
+                    if phase=='requesting' then phase='idle' end
+                    finish(tostring(response[1] and response[3] or 'Request failed; search state unknown'))
+                elseif phase=='requesting' then phase='searching';state.rankedStatus='Searching' end
+                if not running and phase=='searching' then pcall(function() remote:InvokeServer('cancel') end) end
+            end
+            task.wait(1)
+        end
+    end)
+end
+
 local sessionRuntime=SessionRuntime.start({game=game,player=player,state=state,flags=flags,env=env,notice=function(text,kind) if ui then ui.Notify(text,kind,5) end end})
 local function syncRunFlags()
     flags.StoryRunning=state.enabled==true
@@ -3166,6 +3241,7 @@ local function syncRunFlags()
     flags.HLRunning=state.hlEnabled==true
     flags.DungeonRunning=state.dungeonEnabled==true
     flags.WarRunning=state.warEnabled==true
+    flags.RankedRunning=state.rankedEnabled==true
 end
 local function applyRunFlags()
     local storyOn,skillOn,hlOn=flags.StoryRunning,flags.SkillRunning,flags.HLRunning
@@ -3174,6 +3250,7 @@ local function applyRunFlags()
     if hlOn then startHL() end
     if flags.DungeonRunning then dungeon.start() end
     if flags.WarRunning then war.start() end
+    if flags.RankedRunning then ranked.start() end
     syncRunFlags()
 end
 local function setFlag(key,value)
@@ -3185,6 +3262,8 @@ local function setFlag(key,value)
     elseif key=='HLRunning' then
         if value then startHL() else stopHL() end
     elseif dungeon.editSystemPriority(key,value) then
+    elseif key=='RankedRunning' then
+        if value then ranked.start() else ranked.stop() end
     elseif key=='WarRunning' then
         if value then war.start() else war.stop() end
     elseif key=='DungeonRunning' then
@@ -3222,6 +3301,7 @@ local function loadProfile(name,quiet)
     if state.hlEnabled then stopHL() end
     if state.dungeonEnabled then dungeon.stop() end
     if state.warEnabled then war.stop() end
+    if state.rankedEnabled then ranked.stop() end
     local deadline=os.clock()+30
     while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy or state.activePending or state.dungeonBusy or state.dungeonPending or state.systemBusy or state.warBusy or state.warPending
         or (nextFlags.StoryRunning==true and state.attempt and state.attempt.started and not state.attempt.ended)) do
@@ -3264,6 +3344,8 @@ local function loadProfile(name,quiet)
     flags.HLRunning=nextFlags.HLRunning==true
     flags.DungeonRunning=nextFlags.DungeonRunning==true
     flags.DungeonAfter=(nextFlags.DungeonAfter=='Story' or nextFlags.DungeonAfter=='War Boss') and nextFlags.DungeonAfter or 'Stop'
+    flags.RankedMode=nextFlags.RankedMode=='Scaled' and 'Scaled' or 'Normal'
+    flags.RankedRunning=nextFlags.RankedRunning==true
     flags.WarRunning=nextFlags.WarRunning==true
     flags.WarBossName=nextFlags.WarBossName=='Goku' and 'Goku' or 'Saitama'
     flags.SystemRunning=nextFlags.SystemRunning==true
