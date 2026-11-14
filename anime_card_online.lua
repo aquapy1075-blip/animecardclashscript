@@ -3210,7 +3210,7 @@ do
     end
     local sync=net:FindFirstChild('BattleState')
     if sync then state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
-        if type(data)~='table' or type(data.battleId)~='string' or not data.battleId:match('^pvp%-') then return end
+        if type(data)~='table' or type(data.battleId)~='string' or not (data.ranked or data.battleId:match('^pvp%-')) then return end
         if closed[data.battleId] then return end
         if data.active==true then phase='battle';battleId=data.battleId;state.rankedStatus='In Ranked battle'
         elseif data.active==false and battleId==data.battleId then endBattle(data.battleId) end
@@ -3220,9 +3220,16 @@ do
         state.connections[#state.connections+1]=battleEvents.OnClientEvent:Connect(function(event)
             if not state.alive or type(event)~='table' or event.type~='BattleEnd' then return end
             local id=event.battleId
-            if type(id)~='string' or not id:match('^pvp%-') or closed[id] then return end
-            if battleId and battleId~=id then return end
-            log('RankedBattleEnd',{battleId=id,won=event.won})
+            -- Native RankedController uses event.ranked to open its result screen.
+            if type(event.ranked)=='table' then
+                if id and battleId and id~=battleId then return end
+                id=id or battleId
+            else
+                if type(id)~='string' or not id:match('^pvp%-') then return end
+                if battleId and battleId~=id then return end
+            end
+            if id and closed[id] then return end
+            log('RankedBattleEnd',{battleId=id,ranked=event.ranked,won=event.won})
             endBattle(id)
         end)
     end
@@ -3239,8 +3246,24 @@ do
         running=true;state.rankedEnabled=true;flags.RankedRunning=true
         state.rankedStatus=phase=='idle' and 'Ready to search' or 'Waiting for current search / match'
     end
+    local resultSeen=setmetatable({}, {__mode='k'})
+    local resultCandidate,resultSince
+    local function checkResultScreen()
+        local gui=player and player:FindFirstChild('PlayerGui')
+        local screen=gui and gui:FindFirstChild('RankedScreen')
+        local result=screen and screen.Enabled~=false and screen:FindFirstChild('Result')
+        if not result or not result.Visible or resultSeen[result] then resultCandidate=nil;return end
+        if resultCandidate~=result then resultCandidate=result;resultSince=os.clock();return end
+        if os.clock()-resultSince<1.5 then return end
+        resultSeen[result]=true
+        if phase=='battle' then
+            log('RankedResultScreen',{battleId=battleId})
+            endBattle(battleId)
+        end
+    end
     task.spawn(function()
         while state.alive do
+            checkResultScreen()
             if running and not state.profileLoading and not pending and phase=='idle' and os.clock()>=nextAt then
                 pending=true;phase='requesting';state.rankedStatus='Starting search'
                 local mode=flags.RankedMode=='Scaled' and 'scaled' or 'normal'
