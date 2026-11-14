@@ -3189,8 +3189,8 @@ do
             closed[id]=true;closedOrder[#closedOrder+1]=id
             if #closedOrder>128 then closed[table.remove(closedOrder,1)]=nil end
         end
-        phase='idle';battleId=nil;nextAt=os.clock()+5
-        state.rankedStatus=running and 'Match finished; next search in 5s' or 'OFF'
+        phase='idle';battleId=nil;nextAt=os.clock()+1.5
+        state.rankedStatus=running and 'Match finished; next search in 1.5s' or 'OFF'
     end
     local function finish(text)
         running=false;state.rankedEnabled=false;flags.RankedRunning=false;state.rankedStatus=text
@@ -3276,7 +3276,7 @@ do
                 elseif phase=='requesting' then phase='searching';state.rankedStatus='Searching' end
                 if not running and phase=='searching' then pcall(function() remote:InvokeServer('cancel') end) end
             end
-            task.wait(1)
+            task.wait(.25)
         end
     end)
 end
