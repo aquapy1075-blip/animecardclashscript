@@ -348,6 +348,98 @@ end
 return SessionRuntime
 
 end)()
+local BossHelper=(function()
+local BossHelper={}
+function BossHelper.start(ctx)
+    local remote=ctx.remote
+    local current;local closed={};local closedOrder={};local lastSend=-math.huge
+    local function close(id)
+        if id and not closed[id] then closed[id]=true;closedOrder[#closedOrder+1]=id end
+        if #closedOrder>64 then closed[table.remove(closedOrder,1)]=nil end
+        if current and (not id or current.id==id) then current=nil end
+    end
+    local function snapshot(data)
+        if type(data)~='table' or data.id==nil or type(data.lanes)~='table' or closed[data.id] then return end
+        -- Only Gate co-op fights; other raids retain their native handling.
+        if not (type(data.theme)=='table' and data.theme.kind=='gate') and not (current and current.id==data.id and data.theme==nil) then return end
+        if not current or current.id~=data.id then
+            if current then close(current.id) end
+            current={id=data.id,marked={},starts={},lanes={}}
+        end
+        current.round=data.round;current.updated=ctx.now()
+        local lanes={}
+        for _,lane in pairs(data.lanes) do
+            if type(lane)=='table' and lane.owner==ctx.userId and type(lane.slot)=='number' and type(lane.card)=='table' then lanes[#lanes+1]=lane end
+        end
+        table.sort(lanes,function(a,b) return a.slot<b.slot end)
+        current.lanes=lanes
+    end
+    local function packet(p)
+        if type(p)~='table' then return end
+        ctx.log('BossHelperPacket',p)
+        if p.kind=='Begin' or p.kind=='State' then snapshot(p.snapshot);return end
+        if not current or (p.id and p.id~=current.id) then return end
+        if p.kind=='Result' or p.kind=='Closed' or p.kind=='Pick' then close(current.id);return end
+        if p.kind=='Guest' then
+            for _,lane in ipairs(current.lanes) do if lane.slot==p.slot and lane.guest then
+                if p.state=='queued' then lane.guest.queued=true
+                elseif p.state=='denied' then
+                    -- Explicit refusals are logged; no blind replay of a FireServer action.
+                    ctx.log('BossHelperDenied',{id=current.id,slot=p.slot,reason=p.reason})
+                end
+            end end
+        elseif p.kind=='Event' and type(p.event)=='table' then
+            local e=p.event;current.updated=ctx.now()
+            if e.type=='RoundStart' then current.round=e.round end
+            if e.side~='enemy' then for _,lane in ipairs(current.lanes) do if lane.slot==e.slot then
+                if type(e.hp)=='number' then lane.card.currentHP=e.hp end
+                if type(e.maxHP)=='number' then lane.card.maxHP=e.maxHP end
+                if e.type=='Death' then lane.alive=false;lane.card.currentHP=0 end
+                if e.type=='Revive' then lane.alive=true end
+                if e.type=='GuestActive' and lane.guest then lane.guest.used=true;lane.guest.queued=false end
+            end end end
+        end
+    end
+    local function tick()
+        if not current or not ctx.enabled() or ctx.now()-current.updated>12 then return end
+        local rules=ctx.rules();local now=ctx.now()
+        for _,lane in ipairs(current.lanes) do
+            local rule=rules[lane.card.cardId];local g=lane.guest
+            if rule and rule.enabled and rule.mode=='Combat start' and type(current.round)=='number' and current.round<=1 and g and not g.used and not g.queued and not current.starts[lane.slot] then
+                current.starts[lane.slot]=now+10
+            end
+        end
+        if now-lastSend<1 or ctx.busy() then return end
+        for _,lane in ipairs(current.lanes) do
+            local id=lane.card.cardId;local r=rules[id];local g=lane.guest
+            if r and r.enabled and g and not g.used and not g.queued and lane.alive~=false and (lane.card.currentHP or 0)>0 and not current.marked[lane.slot] then
+                local ready=false
+                if r.mode=='Combat start' then ready=current.starts[lane.slot]~=nil and now<current.starts[lane.slot]
+                elseif r.mode=='Round' then ready=type(current.round)=='number' and current.round>=r.round
+                elseif r.mode=='Low HP' then
+                    for index,target in ipairs(current.lanes) do
+                        local card=target.card
+                        if (r.slot==0 or r.slot==index) and target.alive~=false and type(card.currentHP)=='number' and type(card.maxHP)=='number' and card.currentHP>0 and card.maxHP>0 and card.currentHP/card.maxHP*100<r.hp then ready=true;break end
+                    end
+                end
+                if ready then
+                    current.marked[lane.slot]=true;lastSend=now
+                    ctx.log('BossHelperRequest',{id=current.id,slot=lane.slot,cardId=id,round=current.round,mode=r.mode})
+                    local ok,err=pcall(function() remote:FireServer('GuestActive',{slot=lane.slot}) end)
+                    if not ok then ctx.log('BossHelperError',{error=tostring(err),slot=lane.slot}) end
+                    return
+                end
+            end
+        end
+    end
+    ctx.connect(remote.OnClientEvent,packet)
+    ctx.spawn(function() while ctx.alive() do tick();ctx.wait(.25) end end)
+    ctx.spawn(function() ctx.wait(3);if ctx.alive() then pcall(function() remote:FireServer('Snapshot') end) end end)
+    return {packet=packet,tick=tick}
+end
+return BossHelper
+
+end)()
 local ActiveRules=(function()
 local ActiveRules={}
 ActiveRules.Modes={'Combat start','Low HP','Round'}
@@ -1595,7 +1687,7 @@ do
     local master=addToggle('Combat Helper','Auto active','ActiveRulesEnabled')
     tooltip(master,'Turn off the game active auto first. Each enabled card uses its own saved condition.')
     local lanes=addDropdown('Combat Helper','Battles','ActiveRuleLane',{1,2,'Both lanes'})
-    tooltip(lanes,'Both lanes applies these card rules to both battles. HP and ability uses stay separate per battle.')
+    tooltip(lanes,'Both lanes applies rules to both normal battles. Gate co-op bosses are tracked separately for your own cards; HP slots follow your own selected cards in slot order.')
     section('Combat Helper','Card settings')
     local pick
     pick=addAction('Combat Helper','Card','SCP3008  ▾',function()
@@ -2774,6 +2866,22 @@ do
     env.OriginActiveRuleHistory=type(env.OriginActiveRuleHistory)=='table' and env.OriginActiveRuleHistory or {}
     local store=ActiveRules.new(env.OriginActiveRuleHistory)
     state.activeRuleStatus='OFF';state.activeRuleLast='--';state.activePending=false
+    do
+        local shared=game and game:GetService('ReplicatedStorage'):FindFirstChild('Shared')
+        local raids=shared and shared:FindFirstChild('GuestRaids')
+        local remotes=raids and raids:FindFirstChild('Remotes')
+        local boss=remotes and remotes:FindFirstChild('Boss')
+        if boss and boss:IsA('RemoteEvent') then
+            BossHelper.start({remote=boss,userId=player.UserId,now=os.clock,
+                alive=function() return state.alive end,
+                enabled=function() return flags.ActiveRulesEnabled and not state.profileLoading end,
+                rules=function() return flags.ActiveRules end,
+                busy=function() return state.activePending end,
+                log=log,spawn=task.spawn,wait=task.wait,
+                connect=function(signal,fn) state.connections[#state.connections+1]=signal:Connect(fn) end})
+        end
+    end
+
     local lastRequest=-math.huge
     local preferredLane=1
     function activeRules.syncEditor()
