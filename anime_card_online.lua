@@ -352,11 +352,12 @@ local BossHelper=(function()
 local BossHelper={}
 function BossHelper.start(ctx)
     local remote=ctx.remote
+    local function status(text) if ctx.state then ctx.state.bossHelperLast=text end end
     local current;local closed={};local closedOrder={};local lastSend=-math.huge
     local function close(id)
         if id and not closed[id] then closed[id]=true;closedOrder[#closedOrder+1]=id end
         if #closedOrder>64 then closed[table.remove(closedOrder,1)]=nil end
-        if current and (not id or current.id==id) then current=nil end
+        if current and (not id or current.id==id) then current=nil;status('Boss battle ended') end
     end
     local function snapshot(data)
         if type(data)~='table' or data.id==nil or type(data.lanes)~='table' or closed[data.id] then return end
@@ -382,9 +383,10 @@ function BossHelper.start(ctx)
         if p.kind=='Result' or p.kind=='Closed' or p.kind=='Pick' then close(current.id);return end
         if p.kind=='Guest' then
             for _,lane in ipairs(current.lanes) do if lane.slot==p.slot and lane.guest then
-                if p.state=='queued' then lane.guest.queued=true
+                if p.state=='queued' then lane.guest.queued=true;status('Slot '..p.slot..': queued')
                 elseif p.state=='denied' then
                     -- Explicit refusals are logged; no blind replay of a FireServer action.
+                    status('Slot '..p.slot..': denied - '..tostring(p.reason))
                     ctx.log('BossHelperDenied',{id=current.id,slot=p.slot,reason=p.reason})
                 end
             end end
@@ -396,7 +398,7 @@ function BossHelper.start(ctx)
                 if type(e.maxHP)=='number' then lane.card.maxHP=e.maxHP end
                 if e.type=='Death' then lane.alive=false;lane.card.currentHP=0 end
                 if e.type=='Revive' then lane.alive=true end
-                if e.type=='GuestActive' and lane.guest then lane.guest.used=true;lane.guest.queued=false end
+                if e.type=='GuestActive' and lane.guest then lane.guest.used=true;lane.guest.queued=false;status('Slot '..lane.slot..': '..tostring(lane.card.cardId)..' used') end
             end end end
         end
     end
@@ -424,16 +426,29 @@ function BossHelper.start(ctx)
                 end
                 if ready then
                     current.marked[lane.slot]=true;lastSend=now
+                    status('Requesting slot '..lane.slot..': '..tostring(id))
                     ctx.log('BossHelperRequest',{id=current.id,slot=lane.slot,cardId=id,round=current.round,mode=r.mode})
                     local ok,err=pcall(function() remote:FireServer('GuestActive',{slot=lane.slot}) end)
-                    if not ok then ctx.log('BossHelperError',{error=tostring(err),slot=lane.slot}) end
+                    if not ok then status('Request error: '..tostring(err));ctx.log('BossHelperError',{error=tostring(err),slot=lane.slot}) end
                     return
                 end
             end
         end
     end
-    ctx.connect(remote.OnClientEvent,packet)
-    ctx.spawn(function() while ctx.alive() do tick();ctx.wait(.25) end end)
+    local function report()
+        if not ctx.state then return end
+        if not current then ctx.state.bossHelperView='No Gate boss battle';return end
+        local parts={'Boss R'..tostring(current.round or '?')}
+        for index,lane in ipairs(current.lanes) do
+            local c=lane.card;local hp=type(c.currentHP)=='number' and type(c.maxHP)=='number' and c.maxHP>0 and math.floor(c.currentHP/c.maxHP*100) or 0
+            local g=lane.guest
+            local ability=g and (g.used and 'used' or g.queued and 'queued' or current.marked[lane.slot] and 'sent' or 'ready') or nil
+            parts[#parts+1]='S'..index..' '..hp..'%'..(ability and ' '..ability or '')
+        end
+        ctx.state.bossHelperView=table.concat(parts,' / ')
+    end
+    ctx.connect(remote.OnClientEvent,function(p) packet(p);report() end)
+    ctx.spawn(function() while ctx.alive() do tick();report();ctx.wait(.25) end end)
     ctx.spawn(function() ctx.wait(3);if ctx.alive() then pcall(function() remote:FireServer('Snapshot') end) end end)
     return {packet=packet,tick=tick}
 end
@@ -1751,9 +1766,13 @@ do
     detailsButton=addAction('Combat Helper','Battle details','SHOW',function()
         details=not details;detailsButton.Text=details and 'HIDE' or 'SHOW'
         activeRuleUI.last.Parent.Visible=details
+        activeRuleUI.bossLast.Parent.Visible=details
+        activeRuleUI.bossView.Parent.Visible=details
         activeRuleUI.hp1.Parent.Visible=details and (flags.ActiveRuleLane==1 or flags.ActiveRuleLane=='Both lanes')
         activeRuleUI.hp2.Parent.Visible=details and (flags.ActiveRuleLane==2 or flags.ActiveRuleLane=='Both lanes')
     end)
+    activeRuleUI.bossLast=addStatus('Active Rules','Boss last request','--')
+    activeRuleUI.bossView=addStatus('Active Rules','Gate boss HP / round','No Gate boss battle')
     activeRuleUI.last=addStatus('Combat Helper','Last request','--')
     activeRuleUI.hp1=addStatus('Combat Helper','Battle 1 HP / round','Waiting for battle sync')
     activeRuleUI.hp2=addStatus('Combat Helper','Battle 2 HP / round','Waiting for battle sync')
@@ -1765,6 +1784,8 @@ do
         if not lowHP or editedCard~=flags.ActiveRuleCard then drag=nil end
         editedCard=flags.ActiveRuleCard
         activeRuleUI.last.Parent.Visible=details
+        activeRuleUI.bossLast.Parent.Visible=details
+        activeRuleUI.bossView.Parent.Visible=details
         activeRuleUI.hp1.Parent.Visible=details and (flags.ActiveRuleLane==1 or flags.ActiveRuleLane=='Both lanes')
         activeRuleUI.hp2.Parent.Visible=details and (flags.ActiveRuleLane==2 or flags.ActiveRuleLane=='Both lanes')
     end
@@ -2312,6 +2333,8 @@ local function refreshOverview()
     showStatus(dungeonTarget,tostring(state.dungeonGate or '--')..' / '..tostring(state.dungeonFloor or '--'))
     if selectedTab=='Combat Helper' then
         showStatus(activeRuleUI.last,state.activeRuleLast or '--')
+        showStatus(activeRuleUI.bossLast,state.bossHelperLast or '--')
+        showStatus(activeRuleUI.bossView,state.bossHelperView or 'No Gate boss battle')
         showStatus(activeRuleUI.hp1,ctx.activeRules.preview(1))
         showStatus(activeRuleUI.hp2,ctx.activeRules.preview(2))
     end
@@ -2872,7 +2895,7 @@ do
         local remotes=raids and raids:FindFirstChild('Remotes')
         local boss=remotes and remotes:FindFirstChild('Boss')
         if boss and boss:IsA('RemoteEvent') then
-            BossHelper.start({remote=boss,userId=player.UserId,now=os.clock,
+            BossHelper.start({state=state,remote=boss,userId=player.UserId,now=os.clock,
                 alive=function() return state.alive end,
                 enabled=function() return flags.ActiveRulesEnabled and not state.profileLoading end,
                 rules=function() return flags.ActiveRules end,
