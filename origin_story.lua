@@ -266,6 +266,23 @@ if not success then warn('Anime Card Online autoexec failed: '..tostring(err)) e
         end
         return false
     end
+    function runtime.rejoin()
+        if runtime.manualRejoining or not state.alive then return end
+        if not teleport then notice('TeleportService unavailable.','error');return end
+        runtime.manualRejoining=true
+        notice('Rejoining server...','info')
+        task.spawn(function()
+            local ok,err=pcall(function()
+                if type(game.JobId)=='string' and game.JobId~='' then
+                    teleport:TeleportToPlaceInstance(game.PlaceId,game.JobId,player)
+                else
+                    teleport:Teleport(game.PlaceId,player)
+                end
+            end)
+            if not ok then runtime.manualRejoining=false;notice('Rejoin failed: '..tostring(err),'error');return end
+            task.delay(20,function() runtime.manualRejoining=false end)
+        end)
+    end
     local function attemptRejoin()
         runtime.attempts=runtime.attempts+1;runtime.busy=true;runtime.started=os.clock()
         runtime.nextTry=os.clock()+math.min(60,2^runtime.attempts)
@@ -1836,6 +1853,7 @@ local configStatus=addStatus('Config','Storage','Ready')
 local configAuto=addStatus('Config','Auto Load','None')
 section('Settings','Startup')
 addToggle('Settings','Autoexec','AutoExec')
+addAction('Settings','Rejoin Server','REJOIN',ctx.rejoinServer)
 section('Settings','AFK')
 addToggle('Settings','Anti-AFK','AntiAFK')
 addToggle('Settings','Save CPU (15 FPS)','SaveCPU')
@@ -3323,6 +3341,7 @@ ui=Library.Create({playerGui=player:WaitForChild('PlayerGui'),state=state,flags=
         state.awaiting=false;message('Previous battle marked ended; ready to start.')
     end,
     exportCapture=exportCapture,
+    rejoinServer=sessionRuntime.rejoin,
 })
 task.spawn(function()
     while state.alive do if not state.profileLoading and not state.restoreModes then syncRunFlags() end;ui.Repaint();ui.Refresh();task.wait(flags.SaveCPU and 1 or .3) end
