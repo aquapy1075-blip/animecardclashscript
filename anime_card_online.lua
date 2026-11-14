@@ -72,6 +72,37 @@ function Dungeon.allocate(config,view,priority)
     if total==0 then return nil,'Current System limits reached; clear higher gates' end
     return spend
 end
+function Dungeon.selection(value)
+    local out={}
+    for _,id in ipairs({'E','D','C','B','A','S','Red'}) do
+        if type(value)=='table' and value[id]==true then out[id]=true end
+    end
+    return out
+end
+function Dungeon.openGate(config,view,id,now)
+    if not config.isUnlocked(view,id) then return false end
+    local gate=type(view.gates)=='table' and view.gates[id]
+    if type(gate)=='table' and type(gate.open)=='boolean' then return gate.open end
+    return config.window(id,now)==true
+end
+function Dungeon.windowKey(config,id,now)
+    local gate=config.Gates and config.Gates[id]
+    local schedule=gate and gate.schedule
+    if schedule and type(schedule.period)=='number' and schedule.period>0 then
+        return math.floor((now-(schedule.offset or 0))/schedule.period)
+    end
+    return 0
+end
+function Dungeon.choose(config,view,selected,blocked,now)
+    if type(view)~='table' then return nil end
+    for i=#config.Order,1,-1 do
+        local id=config.Order[i]
+        local open=Dungeon.openGate(config,view,id,now)
+        if not open then blocked[id]=nil end
+        if selected[id] and open and blocked[id]~=Dungeon.windowKey(config,id,now) then return id end
+    end
+end
+
 return Dungeon
 
 end)()
@@ -1520,9 +1551,28 @@ addDropdown('War Boss','Boss','WarBossName',{'Goku','Saitama'})
 addToggle('War Boss','Auto War Boss','WarRunning')
 local warLive=addStatus('War Boss','Status','OFF')
 
-section('Dungeon','Smart progression')
+section('Dungeon','Gate schedule')
+do
+    local gates={'E','D','C','B','A','S','Red'}
+    local pick
+    pick=addAction('Dungeon','Gates','SELECT',function()
+        if menu.Visible then hideMenu();return end
+        openMenu(pick,gates,function(_,id)
+            local selected={};for k,v in pairs(flags.DungeonGates or {}) do selected[k]=v end
+            selected[id]=not selected[id] or nil
+            setFlag('DungeonGates',selected)
+        end)
+        menuData.multi=true
+        menuData.selected=function() return flags.DungeonGates or {} end
+        renderMenuOptions()
+    end)
+    widgets[#widgets+1]=function()
+        local names={};for _,id in ipairs(gates) do if flags.DungeonGates and flags.DungeonGates[id] then names[#names+1]=id end end
+        pick.Text=#names>0 and table.concat(names,', ')..'  ▾' or 'Select gates  ▾'
+    end
+end
 addToggle('Dungeon','Auto Dungeon','DungeonRunning')
-addDropdown('Dungeon','After Dungeon stops','DungeonAfter',{'Stop','Story','War Boss'})
+addDropdown('Dungeon','While gates are closed','DungeonAfter',{'Stop','Story','War Boss'})
 do
     local boss=addDropdown('Dungeon','War Boss target','WarBossName',{'Goku','Saitama'})
     widgets[#widgets+1]=function() boss.Parent.Visible=flags.DungeonAfter=='War Boss' end
@@ -2204,7 +2254,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,DungeonAfter='Stop',RankedRunning=false,RankedMode='Normal',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,DungeonAfter='Stop',DungeonGates={Red=true},RankedRunning=false,RankedMode='Normal',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -2900,6 +2950,20 @@ do
             end
         end
     end
+    local sideBattles,sideClosed,sideOrder={},{},{}
+    local sync=net:FindFirstChild('BattleState')
+    if sync then state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
+        if type(data)~='table' or type(data.battleId)~='string' then return end
+        if data.active==false then sideBattles[data.battleId]=nil
+        elseif data.active==true and not data.gate and not sideClosed[data.battleId] then sideBattles[data.battleId]=true end
+    end) end
+    if battleEvent then state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
+        if type(event)=='table' and event.type=='BattleEnd' and type(event.battleId)=='string' then
+            sideBattles[event.battleId]=nil
+            if not sideClosed[event.battleId] then sideClosed[event.battleId]=true;sideOrder[#sideOrder+1]=event.battleId end
+            if #sideOrder>128 then sideClosed[table.remove(sideOrder,1)]=nil end
+        end
+    end) end
     local eventRemote=net:FindFirstChild('GateEvent')
     if eventRemote and eventRemote:IsA('RemoteEvent') then
         state.connections[#state.connections+1]=eventRemote.OnClientEvent:Connect(function(event)
@@ -2915,6 +2979,7 @@ do
     end
     function dungeon.stop()
         enabled=false;generation=generation+1;state.dungeonEnabled=false;flags.DungeonRunning=false
+        if dungeon.pauseFallback then dungeon.pauseFallback() end
         state.dungeonStatus=busy and 'Stopping; waiting for pending request' or 'OFF'
     end
     function dungeon.start()
@@ -2942,25 +3007,30 @@ do
                 if not active() then return end
                 if not good then error(reason) end
                 if not Dungeon.highest(config,lastView) then error('Missing verified gate unlock data') end
-                if type(lastView.dungeon)=='table' or type(lastView.run)=='table' then error('Already in a gate; leave the existing run before starting Smart progression') end
-                local ceiling=Dungeon.highest(config,lastView)
-                state.dungeonCeiling=config.Order[ceiling]
-                local index=Dungeon.firstUncleared(config,lastView,ceiling)
-                if not index then finishedReason='completed';state.dungeonStatus='All unlocked gates already cleared';return end
-                -- Native auto-hop must not race the script's gate selection. Dungeon AUTO drives floors.
+                if type(lastView.dungeon)=='table' or type(lastView.run)=='table' then error('Already in a gate; start scheduling after this run ends') end
+                local blocked={}
+                if not next(Dungeon.selection(flags.DungeonGates)) then error('Select at least one gate') end
                 good,reason=call('auto',{on=false});if not good then error(reason) end
                 while active() do
-                    local highest=Dungeon.highest(config,lastView)
-                    if not highest then error('Gate unlock state missing') end
-                    index=math.min(index,highest)
-                    local id=config.Order[index]
-                    state.dungeonGate=id;state.dungeonStatus='Climbing gate '..id..' / target '..state.dungeonCeiling
-                    local open,delay=config.window(id,workspace:GetServerTimeNow())
-                    if not open then
-                        state.dungeonStatus='Waiting for gate '..id..' to open'
-                        if not waitFor(math.min(10,math.max(1,tonumber(delay) or 5))) then break end
+                    local id=Dungeon.choose(config,lastView,Dungeon.selection(flags.DungeonGates),blocked,workspace:GetServerTimeNow())
+                    if not id then
+                        state.dungeonGate='--';state.dungeonStatus='Waiting for selected gates / '..tostring(flags.DungeonAfter)
+                        if dungeon.fallback then dungeon.fallback(flags.DungeonAfter) end
+                        if not waitFor(5) then break end
                         good,reason=call('state');if not good then error(reason) end
                     else
+                        if dungeon.pauseFallback then dungeon.pauseFallback() end
+                        state.dungeonStatus='Waiting for side battle before gate '..id
+                        if not waitFor(1) then break end
+                        while active() and (next(sideBattles) or state.pending or state.warPending or state.warBusy) do
+                            if not waitFor(.5) then break end
+                        end
+                        if not active() then break end
+                        good,reason=call('state');if not good then error(reason) end
+                        id=Dungeon.choose(config,lastView,Dungeon.selection(flags.DungeonGates),blocked,workspace:GetServerTimeNow())
+                        if id then
+                        state.dungeonGate=id;state.dungeonStatus='Climbing gate '..id
+                        local runWindow=Dungeon.windowKey(config,id,workspace:GetServerTimeNow())
                         owned=nil;result=nil;entering=id
                         good,reason=call('enter',{gate=id})
                         if not good then owned=nil;entering=nil;error(reason) end
@@ -2983,6 +3053,7 @@ do
                                 good,reason=call('state');if not good then error(reason) end
                                 pollAt=os.clock()+8
                                 local current=lastView and lastView.dungeon
+                                if not result and type(current)=='table' and current.id==owned.id and current.gate=='Red' and type(current.floor)=='number' and current.floor>100 then result='win' end
                                 if not result and (type(current)~='table' or current.id~=owned.id) then error('Dungeon run changed/ended without a matched result; stopped') end
                             end
                         end
@@ -2997,22 +3068,16 @@ do
                         if not active() then break end
                         if lastView and (type(lastView.dungeon)=='table' or type(lastView.run)=='table') then error('Previous dungeon has not closed; stopped') end
                         good,reason=call('state');if not good then error(reason) end
-                        highest=Dungeon.highest(config,lastView);if not highest then error('Missing gate unlock state') end
-                        local outcome=result
-                        local nextIndex=Dungeon.next(index,outcome,ceiling)
-                        if nextIndex then nextIndex=Dungeon.firstUncleared(config,lastView,ceiling,nextIndex) end
+                        blocked[id]=runWindow
+                        log('DungeonScheduledResult',{gate=id,result=result})
                         owned=nil;entering=nil;result=nil
-                        if not nextIndex then
-                            finishedReason=outcome=='loss' and 'loss' or 'completed'
-                            state.dungeonStatus=outcome=='loss' and ('Lost at gate '..id..'; stopped') or ('Completed target gate '..id..'; stopped')
-                            break
                         end
-                        index=nextIndex
                         if not waitFor(2) then break end
                     end
                 end
             end
             local worked,err=pcall(work)
+            if dungeon.pauseFallback then dungeon.pauseFallback() end
             if owned then call('autoplay',{on=false},true) end
             enabled=false;busy=false;state.dungeonEnabled=false;state.dungeonBusy=false;flags.DungeonRunning=false
             if not worked then state.dungeonStatus=tostring(err):gsub('^.-:%d+:%s*',''):sub(1,250);log('DungeonStopped',{reason=state.dungeonStatus})
@@ -3186,10 +3251,18 @@ do
     end
 end
 
-dungeon.onFinished=function(reason)
-    log('DungeonHandoff',{reason=reason,mode=flags.DungeonAfter})
-    if flags.DungeonAfter=='Story' then beginRun()
-    elseif flags.DungeonAfter=='War Boss' then war.start() end
+do
+    local sideMode
+    function dungeon.pauseFallback()
+        if state.enabled then stopRun('Gate available; waiting for current Story battle') end
+        if state.warEnabled then war.stop() end
+        sideMode=nil
+    end
+    function dungeon.fallback(mode)
+        if sideMode~=mode then dungeon.pauseFallback();sideMode=mode end
+        if mode=='Story' and not state.enabled and not state.pending then beginRun()
+        elseif mode=='War Boss' and not state.warEnabled and not state.warBusy then war.start() end
+    end
 end
 local ranked={}
 do
@@ -3404,6 +3477,7 @@ local function loadProfile(name,quiet)
     flags.SkillRunning=nextFlags.SkillRunning==true
     flags.HLRunning=nextFlags.HLRunning==true
     flags.DungeonRunning=nextFlags.DungeonRunning==true
+    flags.DungeonGates=Dungeon.selection(nextFlags.DungeonGates or {Red=true})
     flags.DungeonAfter=(nextFlags.DungeonAfter=='Story' or nextFlags.DungeonAfter=='War Boss') and nextFlags.DungeonAfter or 'Stop'
     flags.RankedMode=nextFlags.RankedMode=='Scaled' and 'Scaled' or 'Normal'
     flags.RankedRunning=nextFlags.RankedRunning==true
