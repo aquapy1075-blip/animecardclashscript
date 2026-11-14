@@ -1275,7 +1275,7 @@ local body=make('Frame',main,{
 local selectedTab='Story'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Story','Guess Minigame','Skill Tree','Combat Helper','Dungeon','War Boss','Ranked','Config','Settings'}
+local tabNames={'Monitor','Story','Guess Minigame','Skill Tree','Combat Helper','Dungeon','War Boss','Ranked','Tower','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
@@ -1650,6 +1650,20 @@ local function clearNotifications()
     toast.queue={};toast.active=false;toast.item=nil
     toastBox.Visible=false
 end
+section('Tower','Auto Tower')
+addDropdown('Tower','Mode','TowerKind',{'Material','Challenge','Artifact'})
+do
+    local challenge=addDropdown('Tower','Challenge tier','TowerChallenge',{'Basic','Gilded','Divine','Secret','Cosmic','Transcendent','Otherworldly'})
+    local artifact=addDropdown('Tower','Artifact tower','TowerArtifact',{'A1','A2','A3','A4','A5'})
+    widgets[#widgets+1]=function()
+        challenge.Parent.Visible=flags.TowerKind=='Challenge'
+        artifact.Parent.Visible=flags.TowerKind=='Artifact'
+    end
+end
+addToggle('Tower','Retry after loss','TowerRetry')
+addToggle('Tower','Auto Tower','TowerRunning')
+state.towerUI={status=addStatus('Tower','Status','OFF')}
+
 section('Ranked','Auto Ranked')
 addDropdown('Ranked','Mode','RankedMode',{'Normal','Scaled'})
 state.rankedUI={toggle=addToggle('Ranked','Auto Ranked','RankedRunning'),status=addStatus('Ranked','Status','OFF')}
@@ -2326,6 +2340,7 @@ local function refreshOverview()
     showStatus(dungeonLive,state.dungeonStatus or 'OFF')
     showStatus(systemLive,state.systemStatus or 'OFF')
     showStatus(warLive,state.warStatus or 'OFF')
+    if state.towerUI then showStatus(state.towerUI.status,state.towerStatus or 'OFF') end
     if state.rankedUI then
         showStatus(state.rankedUI.status,state.rankedStatus or 'OFF')
         state.rankedUI.toggle.Text=state.rankedEnabled and 'ON  ●' or 'OFF  ○'
@@ -2355,7 +2370,7 @@ end)()
 local env=(getgenv and getgenv()) or _G
 local previous=env.OriginStory
 -- An InvokeServer cannot be cancelled. Do not create a second controller while one is pending.
-if previous and (previous.pending or previous.skillPending or previous.hlPending or previous.hlBusy or previous.activePending or previous.dungeonBusy or previous.dungeonPending or previous.systemBusy or previous.warBusy or previous.warPending or previous.rankedPending) then error('Anime Card Online: previous request still pending; wait for it to return.') end
+if previous and (previous.pending or previous.skillPending or previous.hlPending or previous.hlBusy or previous.activePending or previous.dungeonBusy or previous.dungeonPending or previous.systemBusy or previous.warBusy or previous.warPending or previous.rankedPending or previous.towerPending) then error('Anime Card Online: previous request still pending; wait for it to return.') end
 if previous and previous.stop then previous.stop() end
 local Players=game:GetService('Players')
 local HttpService=game:GetService('HttpService')
@@ -2369,7 +2384,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,DungeonAfter='Stop',DungeonGates={Red=true},RankedRunning=false,RankedMode='Normal',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,TowerRunning=false,TowerKind='Material',TowerChallenge='Basic',TowerArtifact='A1',TowerRetry=true,DungeonAfter='Stop',DungeonGates={Red=true},RankedRunning=false,RankedMode='Normal',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -3498,6 +3513,83 @@ do
     end)
 end
 
+local tower={}
+do
+    local remote=net:FindFirstChild('TowerAction')
+    local resultRemote=net:FindFirstChild('TowerResult')
+    local running=false;local pending=false;local phase='idle';local due=0
+    local own;local currentBattle;local epoch=0;local handled={};local recent={}
+    local function selected()
+        local kind=flags.TowerKind=='Challenge' and 'challenge' or flags.TowerKind=='Artifact' and 'artifact' or 'material'
+        local tier=kind=='material' and 'Material' or kind=='artifact' and flags.TowerArtifact or flags.TowerChallenge
+        return kind,tier
+    end
+    local function stop(reason)
+        running=false;flags.TowerRunning=false;state.towerEnabled=false
+        state.towerStatus=reason or 'OFF; current tower run continues'
+    end
+    function tower.stop() stop() end
+    local function outcome(info)
+        if type(info)~='table' or not own or info.kind~=own.kind or info.tier~=own.tier then return end
+        if info.claimed or info.cleared or (info.done and info.won) then stop('Tower completed');phase='idle'
+        elseif info.done or (info.won==false and not info.choice) then
+            if flags.TowerRetry and info.reason~='left' and info.reason~='forfeit' then phase='restart';due=os.clock()+2;state.towerStatus='Lost; restarting'
+            else stop('Tower run ended');phase='idle' end
+        elseif info.won or info.choice then phase='next';due=os.clock()+2;state.towerStatus='Wave cleared; next wave'
+        end
+    end
+    local sync=net:FindFirstChild('BattleState')
+    if sync then state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
+        if not state.alive or type(data)~='table' or data.active~=true or type(data.tower)~='table' or type(data.battleId)~='string' then return end
+        local t=data.tower
+        if own and t.kind==own.kind and t.tier==own.tier and not handled[data.battleId] then
+            if currentBattle~=data.battleId then epoch=epoch+1 end
+            currentBattle=data.battleId;phase='battle'
+            state.towerStatus='In tower / wave '..tostring(t.wave or t.floor or '?')
+        end
+    end) end
+    state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
+        if not state.alive or not running or type(event)~='table' or event.type~='BattleEnd' or type(event.tower)~='table' then return end
+        if currentBattle and event.battleId~=currentBattle then return end
+        if event.battleId and handled[event.battleId] then return end
+        if event.battleId then handled[event.battleId]=true;recent[#recent+1]=event.battleId end
+        if #recent>128 then handled[table.remove(recent,1)]=nil end
+        log('TowerBattleEnd',event)
+        outcome(event.tower)
+    end)
+    if resultRemote then state.connections[#state.connections+1]=resultRemote.OnClientEvent:Connect(function(info)
+        if state.alive and running then log('TowerResult',info);outcome(info) end
+    end) end
+    function tower.start()
+        if running or pending then return end
+        if not remote or not remote:IsA('RemoteFunction') or not resultRemote then stop('Tower remotes unavailable');return end
+        local kind,tier=selected();own={kind=kind,tier=tier};currentBattle=nil
+        running=true;flags.TowerRunning=true;state.towerEnabled=true
+        phase='start';due=os.clock();state.towerStatus='Starting '..kind..' / '..tostring(tier)
+    end
+    task.spawn(function()
+        while state.alive do
+            if running and not state.profileLoading and not pending and (phase=='start' or phase=='restart' or phase=='next') and os.clock()>=due then
+                pending=true;state.towerPending=true
+                local action=phase=='next' and 'next' or 'start'
+                local payload=action=='start' and {kind=own.kind,tier=own.tier,fresh=false} or nil
+                phase='requesting';local before=epoch
+                log('TowerRequest',{action=action,payload=payload})
+                local response=table.pack(pcall(function() return remote:InvokeServer(action,payload) end))
+                log('TowerResponse',{action=action,response=response})
+                pending=false;state.towerPending=false
+                if not running then
+                elseif epoch~=before or phase~='requesting' then
+                    -- A new snapshot or end packet has already advanced this request.
+                elseif response[1] and (response[2]==true or response[3]=='The wave is not over yet') then
+                    phase='battle';state.towerStatus='Waiting for tower battle'
+                else stop(tostring(response[1] and response[3] or 'Tower request failed; outcome unknown')) end
+            end
+            task.wait(.25)
+        end
+    end)
+end
+
 local sessionRuntime=SessionRuntime.start({game=game,player=player,state=state,flags=flags,env=env,notice=function(text,kind) if ui then ui.Notify(text,kind,5) end end})
 local function syncRunFlags()
     flags.StoryRunning=state.enabled==true
@@ -3506,6 +3598,7 @@ local function syncRunFlags()
     flags.DungeonRunning=state.dungeonEnabled==true
     flags.WarRunning=state.warEnabled==true
     flags.RankedRunning=state.rankedEnabled==true
+    flags.TowerRunning=state.towerEnabled==true
 end
 local function applyRunFlags()
     local storyOn,skillOn,hlOn=flags.StoryRunning,flags.SkillRunning,flags.HLRunning
@@ -3515,6 +3608,7 @@ local function applyRunFlags()
     if flags.DungeonRunning then dungeon.start() end
     if flags.WarRunning then war.start() end
     if flags.RankedRunning then ranked.start() end
+    if flags.TowerRunning then tower.start() end
     syncRunFlags()
 end
 local function setFlag(key,value)
@@ -3527,6 +3621,8 @@ local function setFlag(key,value)
         if value then startHL() else stopHL() end
     elseif dungeon.editSystemPriority(key,value) then
 
+    elseif key=='TowerRunning' then
+        if value then tower.start() else tower.stop() end
     elseif key=='RankedRunning' then
         if value then ranked.start() else ranked.stop() end
     elseif key=='WarRunning' then
@@ -3567,8 +3663,9 @@ local function loadProfile(name,quiet)
     if state.dungeonEnabled then dungeon.stop() end
     if state.warEnabled then war.stop() end
     if state.rankedEnabled then ranked.stop() end
+    if state.towerEnabled then tower.stop() end
     local deadline=os.clock()+30
-    while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy or state.activePending or state.dungeonBusy or state.dungeonPending or state.systemBusy or state.warBusy or state.warPending or state.rankedPending
+    while state.alive and (state.pending or state.skillPending or state.hlPending or state.hlBusy or state.activePending or state.dungeonBusy or state.dungeonPending or state.systemBusy or state.warBusy or state.warPending or state.rankedPending or state.towerPending
         or (nextFlags.StoryRunning==true and state.attempt and state.attempt.started and not state.attempt.ended)) do
         profile.status='Waiting for current request / battle before loading'
         if os.clock()>deadline then
@@ -3610,6 +3707,11 @@ local function loadProfile(name,quiet)
     flags.DungeonRunning=nextFlags.DungeonRunning==true
     flags.DungeonGates=Dungeon.selection(nextFlags.DungeonGates or {Red=true})
     flags.DungeonAfter=(nextFlags.DungeonAfter=='Story' or nextFlags.DungeonAfter=='War Boss') and nextFlags.DungeonAfter or 'Stop'
+    flags.TowerKind=(nextFlags.TowerKind=='Challenge' or nextFlags.TowerKind=='Artifact') and nextFlags.TowerKind or 'Material'
+    flags.TowerChallenge=nextFlags.TowerChallenge or 'Basic'
+    flags.TowerArtifact=nextFlags.TowerArtifact or 'A1'
+    flags.TowerRetry=nextFlags.TowerRetry~=false
+    flags.TowerRunning=nextFlags.TowerRunning==true
     flags.RankedMode=nextFlags.RankedMode=='Scaled' and 'Scaled' or 'Normal'
     flags.RankedRunning=nextFlags.RankedRunning==true
     flags.WarRunning=nextFlags.WarRunning==true
