@@ -1553,7 +1553,7 @@ do
         openMenu(pick,ctx.activeRules.options(),function(_,id) setFlag('ActiveRuleCard',id) end)
     end)
     widgets[#widgets+1]=function() pick.Text=tostring(flags.ActiveRuleCard)..'  ▾' end
-    tooltip(pick,'Lists ability cards received from the selected battle(s). Start a battle once if your cards are missing.')
+    tooltip(pick,'Lists all cards with an active ability from game config, plus received cards and saved rules. Only available abilities in your current battle can be used.')
     addToggle('Combat Helper','Use this card','ActiveEditEnabled')
     addDropdown('Combat Helper','Use when','ActiveEditMode',{'Combat start','Low HP','Round'})
     local hpTarget
@@ -2749,20 +2749,33 @@ do
         flags.ActiveRulesRevision=(flags.ActiveRulesRevision or 0)+1
         return true
     end
+    local activeCatalog
     function activeRules.options()
-        local found={};local received=false
-        for _,lane in ipairs(ActiveRules.lanes(flags.ActiveRuleLane)) do
-            local entry=store.lanes[lane]
-            if entry then
-                received=true
-                for id in pairs(entry.abilities) do found[id]=true end
+        local found={}
+        if not activeCatalog then
+            local ok,definitions=pcall(function()
+                local shared=game:GetService('ReplicatedStorage'):FindFirstChild('Shared')
+                local config=shared and shared:FindFirstChild('Config')
+                local module=config and config:FindFirstChild('CardDefinitions')
+                return module and require(module)
+            end)
+            if ok and type(definitions)=='table' and type(definitions.Data)=='table' then
+                activeCatalog={}
+                for id,card in pairs(definitions.Data) do
+                    if ActiveRules.cardId(id) and type(card)=='table' and type(card.guestActive)=='string' and card.guestActive~='' then
+                        activeCatalog[id]=true
+                    end
+                end
             end
         end
-        if not received then
-            found.SCP3008=true
-            for id in pairs(store.known) do found[id]=true end
-            for id in pairs(flags.ActiveRules) do found[id]=true end
+        for id in pairs(activeCatalog or {}) do found[id]=true end
+        for _,lane in ipairs(ActiveRules.lanes(flags.ActiveRuleLane)) do
+            local entry=store.lanes[lane]
+            if entry then for id in pairs(entry.abilities) do found[id]=true end end
         end
+        for id in pairs(store.known) do found[id]=true end
+        for id in pairs(flags.ActiveRules) do found[id]=true end
+        if not next(found) then found.SCP3008=true end
         local ids={};for id in pairs(found) do ids[#ids+1]=id end;table.sort(ids)
         return ids
     end
