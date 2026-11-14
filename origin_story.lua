@@ -23,7 +23,8 @@ function Dungeon.event(run,event)
     if event.run.id~=run.id or event.run.gate~=run.gate then return nil end
     if event.phase=='cleared' then return 'win' end
     if run.gate=='Red' and event.phase=='floor' and type(event.run.floor)=='number' and event.run.floor>100 then return 'win' end
-    if event.phase=='heart' or event.phase=='down' or event.phase=='fallen' then return 'loss' end
+    -- Losing one heart is not the end of the run; native autoplay continues.
+    if event.phase=='down' or event.phase=='fallen' then return 'loss' end
     return nil
 end
 function Dungeon.next(index,outcome,ceiling)
