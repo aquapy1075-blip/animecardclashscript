@@ -3183,6 +3183,15 @@ do
     local remote=net:FindFirstChild('RankedAction')
     local events=net:FindFirstChild('RankedEvent')
     local running=false;local pending=false;local phase='idle';local nextAt=0;local battleId
+    local closed,closedOrder={},{}
+    local function endBattle(id)
+        if id and not closed[id] then
+            closed[id]=true;closedOrder[#closedOrder+1]=id
+            if #closedOrder>128 then closed[table.remove(closedOrder,1)]=nil end
+        end
+        phase='idle';battleId=nil;nextAt=os.clock()+5
+        state.rankedStatus=running and 'Match finished; next search in 5s' or 'OFF'
+    end
     local function finish(text)
         running=false;state.rankedEnabled=false;flags.RankedRunning=false;state.rankedStatus=text
     end
@@ -3192,7 +3201,7 @@ do
             log('RankedEvent',event)
             if event.kind=='Searching' then phase='searching';state.rankedStatus='Searching'
             elseif event.kind=='MatchFound' then phase='battle';battleId=nil;state.rankedStatus='Match found'
-            elseif event.kind=='Result' then phase='idle';battleId=nil;nextAt=os.clock()+5;state.rankedStatus='Match finished'
+            elseif event.kind=='Result' then endBattle(battleId)
             elseif event.kind=='Aborted' or event.kind=='SearchStopped' then
                 phase='idle';battleId=nil
                 if running and not pending then finish(tostring(event.reason or 'Search stopped; turn ON to retry')) end
@@ -3202,9 +3211,21 @@ do
     local sync=net:FindFirstChild('BattleState')
     if sync then state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
         if type(data)~='table' or type(data.battleId)~='string' or not data.battleId:match('^pvp%-') then return end
+        if closed[data.battleId] then return end
         if data.active==true then phase='battle';battleId=data.battleId;state.rankedStatus='In Ranked battle'
-        elseif data.active==false and battleId==data.battleId then phase='idle';battleId=nil;nextAt=os.clock()+5 end
+        elseif data.active==false and battleId==data.battleId then endBattle(data.battleId) end
     end) end
+    local battleEvents=net:FindFirstChild('BattleEvent')
+    if battleEvents and battleEvents:IsA('RemoteEvent') then
+        state.connections[#state.connections+1]=battleEvents.OnClientEvent:Connect(function(event)
+            if not state.alive or type(event)~='table' or event.type~='BattleEnd' then return end
+            local id=event.battleId
+            if type(id)~='string' or not id:match('^pvp%-') or closed[id] then return end
+            if battleId and battleId~=id then return end
+            log('RankedBattleEnd',{battleId=id,won=event.won})
+            endBattle(id)
+        end)
+    end
     function ranked.stop()
         finish('OFF; current match continues')
         if phase=='searching' and not pending and remote then
