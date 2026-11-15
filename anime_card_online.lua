@@ -1768,6 +1768,7 @@ do
     widgets[#widgets+1]=function() pick.Text=tostring(flags.ActiveRuleCard)..'  ▾' end
     tooltip(pick,'Lists all cards with an active ability from game config, plus received cards and saved rules. Only available abilities in your current battle can be used.')
     addToggle('Combat Helper','Use this card','ActiveEditEnabled')
+    addDropdown('Combat Helper','Priority (1 first)','ActiveEditPriority',{1,2,3,4,5})
     addDropdown('Combat Helper','Use when','ActiveEditMode',{'Combat start','Low HP','Round'})
     local hpTarget
     hpTarget=addAction('Combat Helper','Watch card','Any living card  ▾',function()
