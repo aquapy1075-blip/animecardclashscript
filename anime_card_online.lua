@@ -402,10 +402,22 @@ function BossHelper.start(ctx)
             end end end
         end
     end
-    local function waitingForGojo(lane,rules)
-        if lane.card.cardId~='InfernoGuildmaster' or not (rules.LimitlessWielder and rules.LimitlessWielder.enabled) then return false end
+    local function condition(lane,r,now)
+        if r.mode=='Combat start' then return (type(current.round)=='number' and current.round<=1) or (current.starts[lane.slot] and now<current.starts[lane.slot]) end
+        if r.mode=='Round' then return type(current.round)=='number' and current.round>=r.round end
+        for i,target in ipairs(current.lanes) do
+            local c=target.card
+            if (r.slot==0 or r.slot==i) and target.alive~=false and type(c.currentHP)=='number' and type(c.maxHP)=='number' and c.currentHP>0 and c.maxHP>0 and c.currentHP/c.maxHP*100<r.hp then return true end
+        end
+        return false
+    end
+    local function waitingForPriority(lane,rules,now)
+        local priority=(rules[lane.card.cardId] or {}).priority or 3
         for _,other in ipairs(current.lanes) do
-            if other.card.cardId=='LimitlessWielder' and other.guest then return not other.guest.used end
+            local r=rules[other.card.cardId];local g=other.guest
+            if other.slot~=lane.slot and r and r.enabled and (r.priority or 3)<priority and g and not g.used and other.alive~=false and (other.card.currentHP or 0)>0 then
+                if g.queued or condition(other,r,now) then return true end
+            end
         end
         return false
     end
@@ -414,7 +426,7 @@ function BossHelper.start(ctx)
         local rules=ctx.rules();local now=ctx.now()
         for _,lane in ipairs(current.lanes) do
             local rule=rules[lane.card.cardId];local g=lane.guest
-            if current.starts[lane.slot] and waitingForGojo(lane,rules) then current.starts[lane.slot]=now+10 end
+            if current.starts[lane.slot] and waitingForPriority(lane,rules,now) then current.starts[lane.slot]=now+10 end
             if rule and rule.enabled and rule.mode=='Combat start' and type(current.round)=='number' and current.round<=1 and g and not g.used and not g.queued and not current.starts[lane.slot] then
                 current.starts[lane.slot]=now+10
             end
@@ -432,7 +444,7 @@ function BossHelper.start(ctx)
                         if (r.slot==0 or r.slot==index) and target.alive~=false and type(card.currentHP)=='number' and type(card.maxHP)=='number' and card.currentHP>0 and card.maxHP>0 and card.currentHP/card.maxHP*100<r.hp then ready=true;break end
                     end
                 end
-                if waitingForGojo(lane,rules) then ready=false end
+                if waitingForPriority(lane,rules,now) then ready=false end
                 if ready then
                     current.marked[lane.slot]=true;lastSend=now
                     status('Requesting slot '..lane.slot..': '..tostring(id))
@@ -478,7 +490,7 @@ function ActiveRules.rule(value)
     value=type(value)=='table' and value or {}
     local mode=value.mode
     if mode~='Combat start' and mode~='Low HP' and mode~='Round' then mode='Low HP' end
-    return {enabled=value.enabled==true,mode=mode,slot=integer(value.slot,0,0,5),hp=integer(value.hp,50,1,99),round=integer(value.round,3,1,999)}
+    return {enabled=value.enabled==true,mode=mode,priority=integer(value.priority,3,1,5),slot=integer(value.slot,0,0,5),hp=integer(value.hp,50,1,99),round=integer(value.round,3,1,999)}
 end
 function ActiveRules.normalize(value)
     local out={}
@@ -603,17 +615,31 @@ end
 local function alive(card)
     return card and finite(card.currentHP) and finite(card.maxHP) and card.maxHP>0 and card.currentHP>0
 end
-function ActiveRules.waitForGojo(entry,rules,id)
-    local rule=rules.LimitlessWielder
-    local ability=entry.abilities.LimitlessWielder
-    return id=='InfernoGuildmaster' and rule and rule.enabled and ability and not ability.used
+function ActiveRules.condition(entry,rule,id,now)
+    if rule.mode=='Combat start' then return (finite(entry.round) and entry.round<=1) or (entry.startReady[id]~=nil and now<entry.startReady[id]) end
+    if rule.mode=='Round' then return finite(entry.round) and entry.round>=rule.round end
+    for slot,card in pairs(entry.cards) do
+        if (rule.slot==0 or rule.slot==slot) and alive(card) and card.currentHP/card.maxHP*100<rule.hp then return true end
+    end
+    return false
+end
+function ActiveRules.waitForPriority(entry,rules,id,now)
+    local priority=(rules[id] and rules[id].priority) or 3
+    for other,r in pairs(rules) do
+        local ability=entry.abilities[other]
+        if other~=id and r.enabled and (r.priority or 3)<priority and ability and not ability.used then
+            local caster=false
+            for _,card in pairs(entry.cards) do if card.cardId==other and alive(card) and not card.abilityOff then caster=true;break end end
+            if caster and (ability.queued or ActiveRules.condition(entry,r,other,now)) then return other end
+        end
+    end
 end
 function ActiveRules.armStarts(entry,rules,now)
     if not entry then return end
     -- Latch every enabled start rule before choosing the first request.
     -- The remaining requests may outlive round 1 while another ability resolves.
     for id,rule in pairs(rules) do
-        if ActiveRules.waitForGojo(entry,rules,id) and entry.startReady[id] then entry.startReady[id]=now+10 end
+        if ActiveRules.waitForPriority(entry,rules,id,now) and entry.startReady[id] then entry.startReady[id]=now+10 end
         if not rule.enabled or rule.mode~='Combat start' then entry.startReady[id]=nil
         elseif finite(entry.round) and entry.round<=1 and not entry.startReady[id] then
             local ability=entry.abilities[id]
@@ -629,7 +655,7 @@ function ActiveRules.candidate(store,lane,rules,now)
     local entry=store.lanes[lane]
     if not entry then return nil,'Waiting for a battle snapshot' end
     if now-entry.updated>8 then return nil,'Waiting for fresh battle data' end
-    local ids={};for id,rule in pairs(rules) do if rule.enabled then ids[#ids+1]=id end end;table.sort(ids)
+    local ids={};for id,rule in pairs(rules) do if rule.enabled then ids[#ids+1]=id end end;table.sort(ids,function(a,b) local pa,pb=rules[a].priority or 3,rules[b].priority or 3;if pa~=pb then return pa<pb end;return a<b end)
     if #ids==0 then return nil,'Enable a rule for an ability card' end
     ActiveRules.armStarts(entry,rules,now)
     for _,id in ipairs(ids) do
@@ -651,7 +677,7 @@ function ActiveRules.candidate(store,lane,rules,now)
                         end
                     end
                 end
-                if ActiveRules.waitForGojo(entry,rules,id) then ready=false end
+                if ActiveRules.waitForPriority(entry,rules,id,now) then ready=false end
                 if ready then return {cardId=id,battleId=entry.battleId,lane=lane},reason,entry end
             end
         end
@@ -2943,7 +2969,7 @@ do
         if not ActiveRules.cardId(id) then id='SCP3008';flags.ActiveRuleCard=id end
         flags.ActiveRules=ActiveRules.normalize(flags.ActiveRules)
         local rule=flags.ActiveRules[id] or ActiveRules.rule(nil)
-        flags.ActiveEditEnabled=rule.enabled;flags.ActiveEditMode=rule.mode
+        flags.ActiveEditEnabled=rule.enabled;flags.ActiveEditMode=rule.mode;flags.ActiveEditPriority=rule.priority
         flags.ActiveEditSlot=rule.slot;flags.ActiveEditHP=rule.hp;flags.ActiveEditRound=rule.round
     end
     function activeRules.edit(key,value)
@@ -2952,7 +2978,7 @@ do
         elseif key=='ActiveRuleLane' then flags.ActiveRuleLane=ActiveRules.lane(value)
         elseif key=='ActiveRulesEnabled' then flags.ActiveRulesEnabled=value==true
         else
-            local fields={ActiveEditEnabled='enabled',ActiveEditMode='mode',ActiveEditSlot='slot',ActiveEditHP='hp',ActiveEditRound='round'}
+            local fields={ActiveEditPriority='priority',ActiveEditEnabled='enabled',ActiveEditMode='mode',ActiveEditSlot='slot',ActiveEditHP='hp',ActiveEditRound='round'}
             local field=fields[key]
             if not field then return false end
             local rule=ActiveRules.rule(flags.ActiveRules[flags.ActiveRuleCard]);rule[field]=value
