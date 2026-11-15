@@ -402,11 +402,19 @@ function BossHelper.start(ctx)
             end end end
         end
     end
+    local function waitingForGojo(lane,rules)
+        if lane.card.cardId~='InfernoGuildmaster' or not (rules.LimitlessWielder and rules.LimitlessWielder.enabled) then return false end
+        for _,other in ipairs(current.lanes) do
+            if other.card.cardId=='LimitlessWielder' and other.guest then return not other.guest.used end
+        end
+        return false
+    end
     local function tick()
         if not current or not ctx.enabled() or ctx.now()-current.updated>12 then return end
         local rules=ctx.rules();local now=ctx.now()
         for _,lane in ipairs(current.lanes) do
             local rule=rules[lane.card.cardId];local g=lane.guest
+            if current.starts[lane.slot] and waitingForGojo(lane,rules) then current.starts[lane.slot]=now+10 end
             if rule and rule.enabled and rule.mode=='Combat start' and type(current.round)=='number' and current.round<=1 and g and not g.used and not g.queued and not current.starts[lane.slot] then
                 current.starts[lane.slot]=now+10
             end
@@ -424,6 +432,7 @@ function BossHelper.start(ctx)
                         if (r.slot==0 or r.slot==index) and target.alive~=false and type(card.currentHP)=='number' and type(card.maxHP)=='number' and card.currentHP>0 and card.maxHP>0 and card.currentHP/card.maxHP*100<r.hp then ready=true;break end
                     end
                 end
+                if waitingForGojo(lane,rules) then ready=false end
                 if ready then
                     current.marked[lane.slot]=true;lastSend=now
                     status('Requesting slot '..lane.slot..': '..tostring(id))
@@ -580,7 +589,7 @@ function ActiveRules.event(store,event,now)
         local card=entry.cards[event.slot]
         if event.type=='GuestActive' and ActiveRules.cardId(event.cardId) then
             ActiveRules.confirm(store,entry,event.cardId)
-            if entry.abilities[event.cardId] then entry.abilities[event.cardId].available=false end
+            if entry.abilities[event.cardId] then entry.abilities[event.cardId].available=false;entry.abilities[event.cardId].used=true;entry.abilities[event.cardId].queued=false end
         elseif card then
             if event.type=='Death' then card.currentHP=0
             elseif event.type=='Damage' or event.type=='Heal' or event.type=='Stat' or event.type=='Revive' then
@@ -594,11 +603,17 @@ end
 local function alive(card)
     return card and finite(card.currentHP) and finite(card.maxHP) and card.maxHP>0 and card.currentHP>0
 end
+function ActiveRules.waitForGojo(entry,rules,id)
+    local rule=rules.LimitlessWielder
+    local ability=entry.abilities.LimitlessWielder
+    return id=='InfernoGuildmaster' and rule and rule.enabled and ability and not ability.used
+end
 function ActiveRules.armStarts(entry,rules,now)
     if not entry then return end
     -- Latch every enabled start rule before choosing the first request.
     -- The remaining requests may outlive round 1 while another ability resolves.
     for id,rule in pairs(rules) do
+        if ActiveRules.waitForGojo(entry,rules,id) and entry.startReady[id] then entry.startReady[id]=now+10 end
         if not rule.enabled or rule.mode~='Combat start' then entry.startReady[id]=nil
         elseif finite(entry.round) and entry.round<=1 and not entry.startReady[id] then
             local ability=entry.abilities[id]
@@ -636,6 +651,7 @@ function ActiveRules.candidate(store,lane,rules,now)
                         end
                     end
                 end
+                if ActiveRules.waitForGojo(entry,rules,id) then ready=false end
                 if ready then return {cardId=id,battleId=entry.battleId,lane=lane},reason,entry end
             end
         end
@@ -3022,6 +3038,10 @@ do
                     local response=table.pack(pcall(function() return action:InvokeServer('GuestActive',payload) end))
                     state.activePending=false
                     log('ActiveRuleResponse',{payload=payload,response=response})
+                    if state.alive and response[1] and type(response[4])=='table' and response[4].battleId==payload.battleId then
+                        local received=ActiveRules.battleData(response[4])
+                        if received.lane==payload.lane then ActiveRules.snapshot(store,received,os.clock()) end
+                    end
                     if state.alive then
                         local retry=ActiveRules.retryBusy(store,entry,payload.cardId,response,os.clock())
                         if retry then
