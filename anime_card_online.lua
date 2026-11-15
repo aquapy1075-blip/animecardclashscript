@@ -3055,7 +3055,7 @@ do
             if flags.ActiveRulesEnabled and not state.profileLoading then
                 local payload,reason,entry=ActiveRules.nextCandidate(store,flags.ActiveRuleLane,flags.ActiveRules,os.clock(),preferredLane)
                 state.activeRuleStatus=reason
-                if payload and not state.activePending and not state.pending and os.clock()-lastRequest>=1 then
+                if payload and not state.activePending and not state.pending and os.clock()-lastRequest>=.25 then
                     -- Claim before InvokeServer yields. Do not replay an uncertain/rejected request.
                     ActiveRules.mark(store,entry,payload.cardId)
                     preferredLane=payload.lane==1 and 2 or 1
