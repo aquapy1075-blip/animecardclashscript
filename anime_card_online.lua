@@ -3,6 +3,28 @@
 -- Standalone: embeds the adapted Origin UI; no remote code download.
 -- Combat tracking uses server BattleEnd events matched to the admitted battleId.
 repeat task.wait() until game:IsLoaded()
+local SoftRetry=(function()
+local SoftRetry={}
+function SoftRetry.transient(response)
+    return response[1]==true and response[2]==false and type(response[3])=='string'
+        and response[3]:lower():match('^%s*slow down[%.!]?%s*$')~=nil
+end
+function SoftRetry.call(fn,active,onWait)
+    local failures=0
+    while active() do
+        local response=table.pack(pcall(fn))
+        if not SoftRetry.transient(response) or not active() then return response end
+        failures=failures+1
+        local delay=failures==1 and 5 or 10
+        if onWait then onWait(delay,response[3]) end
+        local deadline=os.clock()+delay
+        repeat task.wait(.2) until not active() or os.clock()>=deadline
+    end
+    return {false,'Stopped',n=2}
+end
+return SoftRetry
+
+end)()
 local Dungeon=(function()
 local Dungeon={}
 function Dungeon.highest(config,view)
@@ -534,16 +556,22 @@ function ActiveRules.confirm(store,entry,id)
     ActiveRules.mark(store,entry,id);store.history.confirmed[key(entry,id)]=true
 end
 function ActiveRules.retryBusy(store,entry,id,response,now)
-    if response[1]~=true or response[2]~=false or type(response[3])~='string'
-        or response[3]:lower()~='the ability is already resolving' then return false end
+    if response[1]~=true or response[2]~=false or type(response[3])~='string' then return false end
+    local slowdown=response[3]:lower():match('^%s*slow down[%.!]?%s*$')~=nil
+    if not slowdown and response[3]:lower()~='the ability is already resolving' then return false end
     local current=store.lanes[entry.lane]
     if not current or current.battleId~=entry.battleId or store.closed[entry.battleId] or store.history.confirmed[key(entry,id)] then return false end
     local ability=current.abilities[id]
     if not ability or ability.used or ability.queued then return false end
     local retry=current.retries[id] or {count=0,deadline=now+10}
     retry.count=retry.count+1;current.retries[id]=retry
-    if retry.count>3 or now>=retry.deadline then return false end
-    retry.nextAt=now+math.min(2,.5*2^(retry.count-1))
+    if slowdown then
+        retry.deadline=math.huge;retry.nextAt=now+(retry.count==1 and 5 or 10)
+        if current.startReady[id] then current.startReady[id]=retry.nextAt+10 end
+    else
+        if retry.count>3 or now>=retry.deadline then return false end
+        retry.nextAt=now+math.min(2,.5*2^(retry.count-1))
+    end
     local k=key(entry,id);store.history.marked[k]=nil
     for i=#store.history.order,1,-1 do if store.history.order[i]==k then table.remove(store.history.order,i) end end
     return true
@@ -1695,8 +1723,26 @@ end
 section('Tower','Auto Tower')
 addDropdown('Tower','Mode','TowerKind',{'Material','Challenge','Artifact'})
 do
-    local challenge=addDropdown('Tower','Challenge tier','TowerChallenge',{'Basic','Gilded','Divine','Secret','Cosmic','Transcendent','Otherworldly'})
-    local artifact=addDropdown('Tower','Artifact tower','TowerArtifact',{'A1','A2','A3','A4','A5'})
+    local function picker(label,key,choices)
+        local button
+        button=addAction('Tower',label,'SELECT',function()
+            if menu.Visible then hideMenu();return end
+            openMenu(button,choices,function(_,tier)
+                local selected={};for id,on in pairs(flags[key] or {}) do selected[id]=on end
+                selected[tier]=not selected[tier] or nil
+                setFlag(key,selected)
+            end)
+            menuData.multi=true;menuData.selected=function() return flags[key] or {} end
+            renderMenuOptions()
+        end)
+        widgets[#widgets+1]=function()
+            local chosen={};for _,tier in ipairs(choices) do if flags[key] and flags[key][tier] then chosen[#chosen+1]=tier end end
+            button.Text=#chosen>0 and table.concat(chosen,', ')..'  ▾' or 'Select towers  ▾'
+        end
+        return button
+    end
+    local challenge=picker('Challenge towers','TowerChallenges',{'Basic','Gilded','Divine','Secret','Cosmic','Transcendent','Otherworldly'})
+    local artifact=picker('Artifact towers','TowerArtifacts',{'A1','A2','A3','A4','A5'})
     widgets[#widgets+1]=function()
         challenge.Parent.Visible=flags.TowerKind=='Challenge'
         artifact.Parent.Visible=flags.TowerKind=='Artifact'
@@ -1828,8 +1874,8 @@ do
         activeRuleUI.hp1.Parent.Visible=details and (flags.ActiveRuleLane==1 or flags.ActiveRuleLane=='Both lanes')
         activeRuleUI.hp2.Parent.Visible=details and (flags.ActiveRuleLane==2 or flags.ActiveRuleLane=='Both lanes')
     end)
-    activeRuleUI.bossLast=addStatus('Active Rules','Boss last request','--')
-    activeRuleUI.bossView=addStatus('Active Rules','Gate boss HP / round','No Gate boss battle')
+    activeRuleUI.bossLast=addStatus('Combat Helper','Boss last request','--')
+    activeRuleUI.bossView=addStatus('Combat Helper','Gate boss HP / round','No Gate boss battle')
     activeRuleUI.last=addStatus('Combat Helper','Last request','--')
     activeRuleUI.hp1=addStatus('Combat Helper','Battle 1 HP / round','Waiting for battle sync')
     activeRuleUI.hp2=addStatus('Combat Helper','Battle 2 HP / round','Waiting for battle sync')
@@ -2427,7 +2473,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,TowerRunning=false,TowerKind='Material',TowerChallenge='Basic',TowerArtifact='A1',TowerRetry=true,DungeonAfter='Stop',DungeonGates={Red=true},RankedRunning=false,RankedMode='Normal',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,TowerRunning=false,TowerKind='Material',TowerChallenge='Basic',TowerArtifact='A1',TowerChallenges={Basic=true},TowerArtifacts={A1=true},TowerRetry=true,DungeonAfter='Stop',DungeonGates={Red=true},RankedRunning=false,RankedMode='Normal',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -2518,9 +2564,9 @@ local function beginRun()
             log('StartRequest',{index=i,cardId=item.cardId,difficulty=item.difficulty})
             state.status='Starting '..item.cardId..' / '..item.difficulty
             task.spawn(function()
-                local response=table.pack(pcall(function()
+                local response=SoftRetry.call(function()
                     return action:InvokeServer('StartEncounter',{difficulty=item.difficulty,cardId=item.cardId})
-                end))
+                end,active,function(delay) attempt.retrying=true;state.status='Slow down; retrying in '..delay..'s' end)
                 state.pending=false;attempt.returned=true;attempt.response=response
                 log('StartResponse',response)
                 if state.alive and state.attempt==attempt then
@@ -2528,7 +2574,7 @@ local function beginRun()
                 end
             end)
             local startDeadline=os.clock()+30
-            while active() and state.pending and os.clock()<startDeadline do task.wait(.1) end
+            while active() and state.pending and (os.clock()<startDeadline or attempt.retrying) do task.wait(.1) end
             if not active() then break end
             if state.pending then stopRun('Start request still pending; stopped without sending another request.');break end
             if not attempt.started then
@@ -2648,7 +2694,7 @@ local function startSkills()
                     local before=skillRevision
                     state.skillPending=true;state.skillStatus=verb..': '..Skills.Data[item.id].name
                     log('SkillRequest',{action=verb,id=item.id,rankKnown=skillRanks~=nil,goal=item.goal})
-                    local response=table.pack(pcall(function() return skillRemote:InvokeServer(verb,item.id) end))
+                    local response=SoftRetry.call(function() return skillRemote:InvokeServer(verb,item.id) end,activeSkill,function(delay) state.skillStatus='Slow down; retrying in '..delay..'s' end)
                     state.skillPending=false
                     log('SkillResponse',response)
                     if not activeSkill() then break end
@@ -2680,7 +2726,7 @@ local function startHL()
         local sessionStarted=false
         local function callHL(verb,payload)
             state.hlPending=true
-            local response=table.pack(pcall(function() return hlRemote:InvokeServer(verb,payload) end))
+            local response=SoftRetry.call(function() return hlRemote:InvokeServer(verb,payload) end,function() return state.alive and state.hlEnabled and not state.profileLoading end,function(delay) state.hlStatus='Slow down; retrying in '..delay..'s' end)
             state.hlPending=false
             log('HigherLowerResponse',{action=verb,response=response})
             if not response[1] or response[2]~=true then
@@ -3072,8 +3118,8 @@ do
                     if state.alive then
                         local retry=ActiveRules.retryBusy(store,entry,payload.cardId,response,os.clock())
                         if retry then
-                            state.activeRuleLast='L'..payload.lane..': ability busy; waiting to retry '..payload.cardId
-                            log('ActiveRuleRetry',{payload=payload,reason='the ability is already resolving'})
+                            state.activeRuleLast='L'..payload.lane..': '..tostring(response[3])..'; waiting to retry '..payload.cardId
+                            log('ActiveRuleRetry',{payload=payload,reason=response[3]})
                         else
                             state.activeRuleLast=response[1] and (response[2]==false and 'Server rejected L'..payload.lane..' '..payload.cardId..'; see capture' or 'Request returned L'..payload.lane..': '..payload.cardId..'; see capture') or ('Request failed L'..payload.lane..': '..payload.cardId..'; no retry this battle')
                         end
@@ -3119,7 +3165,9 @@ do
             requestBusy=false;state.dungeonPending=false
             return ok,reason,view
         end
-        for attempt=1,4 do
+        local attempt=0
+        while true do
+            attempt=attempt+1
             while os.clock()<nextCall do
                 if not allowed() then return finish(nil,'Stopped') end
                 task.wait(.1)
@@ -3132,8 +3180,9 @@ do
             if response[1]~=true then return finish(nil,'Request failed; result unknown') end
             if type(response[4])=='table' then lastView=response[4] end
             if response[2]==true then return finish(true,response[3],response[4]) end
-            if response[2]==false and response[3]=='Slow down' and attempt<4 then
-                local delay=2^attempt;nextCall=os.clock()+delay
+            if response[2]==false and response[3]=='Slow down' then
+                if cleanup and not state.alive then return finish(nil,'Stopped') end
+                local delay=attempt==1 and 5 or 10;nextCall=os.clock()+delay
                 local status='Server busy; retrying in '..delay..'s'
                 if system then state.systemStatus=status else state.dungeonStatus=status end
                 log('DungeonRetry',{action=verb,delay=delay,reason='Slow down'})
@@ -3404,7 +3453,7 @@ do
                             if not active() then return end
                             state.warPending=true
                             log('WarRequest',{action='fight',boss=flags.WarBossName,attempt=retry})
-                            response=table.pack(pcall(function() return remote:InvokeServer('fight') end))
+                            response=SoftRetry.call(function() return remote:InvokeServer('fight') end,active,function(delay) state.warStatus='Slow down; retrying in '..delay..'s' end)
                             state.warPending=false;log('WarResponse',response)
                             if response[1]==true and response[2]==false and response[3]=='Slow down' and retry<3 then
                                 state.warStatus='Server busy; waiting to retry'
@@ -3546,7 +3595,7 @@ do
             if running and not state.profileLoading and not pending and phase=='idle' and os.clock()>=nextAt then
                 pending=true;phase='requesting';state.rankedStatus='Starting search'
                 local mode=flags.RankedMode=='Scaled' and 'scaled' or 'normal'
-                local response=table.pack(pcall(function() return remote:InvokeServer('play',{mode=mode}) end))
+                local response=SoftRetry.call(function() return remote:InvokeServer('play',{mode=mode}) end,function() return state.alive and running and phase=='requesting' and not state.profileLoading end,function(delay) state.rankedStatus='Slow down; retrying in '..delay..'s' end)
                 log('RankedResponse',{mode=mode,response=response})
                 pending=false;state.rankedPending=false
                 if (not response[1] or response[2]~=true) and phase=='requesting' then
@@ -3566,10 +3615,16 @@ do
     local resultRemote=net:FindFirstChild('TowerResult')
     local running=false;local pending=false;local phase='idle';local due=0
     local own;local currentBattle;local epoch=0;local handled={};local recent={}
+    local queue={};local cursor=1
     local function selected()
+        queue={};cursor=1
         local kind=flags.TowerKind=='Challenge' and 'challenge' or flags.TowerKind=='Artifact' and 'artifact' or 'material'
-        local tier=kind=='material' and 'Material' or kind=='artifact' and flags.TowerArtifact or flags.TowerChallenge
-        return kind,tier
+        local order=kind=='challenge' and {'Basic','Gilded','Divine','Secret','Cosmic','Transcendent','Otherworldly'} or kind=='artifact' and {'A1','A2','A3','A4','A5'} or {'Material'}
+        local set=kind=='challenge' and flags.TowerChallenges or flags.TowerArtifacts
+        local legacy=kind=='challenge' and flags.TowerChallenge or flags.TowerArtifact
+        if set==nil then set={[legacy or order[1]]=true} end
+        for _,tier in ipairs(order) do if kind=='material' or set[tier] then queue[#queue+1]={kind=kind,tier=tier} end end
+        return queue[1]
     end
     local function stop(reason)
         running=false;flags.TowerRunning=false;state.towerEnabled=false
@@ -3578,7 +3633,10 @@ do
     function tower.stop() stop() end
     local function outcome(info)
         if type(info)~='table' or not own or info.kind~=own.kind or info.tier~=own.tier then return end
-        if info.claimed or info.cleared or (info.done and info.won) then stop('Tower completed');phase='idle'
+        if info.claimed or info.cleared or (info.done and info.won) then
+            cursor=cursor+1
+            if queue[cursor] then own=queue[cursor];currentBattle=nil;phase='start';due=os.clock()+2;state.towerStatus='Next tower: '..own.tier
+            else stop('All selected towers completed');phase='idle' end
         elseif info.done or (info.won==false and not info.choice) then
             if flags.TowerRetry and info.reason~='left' and info.reason~='forfeit' then phase='restart';due=os.clock()+2;state.towerStatus='Lost; restarting'
             else stop('Tower run ended');phase='idle' end
@@ -3610,9 +3668,10 @@ do
     function tower.start()
         if running or pending then return end
         if not remote or not remote:IsA('RemoteFunction') or not resultRemote then stop('Tower remotes unavailable');return end
-        local kind,tier=selected();own={kind=kind,tier=tier};currentBattle=nil
+        own=selected();currentBattle=nil
+        if not own then stop('Select at least one tower');return end
         running=true;flags.TowerRunning=true;state.towerEnabled=true
-        phase='start';due=os.clock();state.towerStatus='Starting '..kind..' / '..tostring(tier)
+        phase='start';due=os.clock();state.towerStatus='Starting '..own.kind..' / '..tostring(own.tier)
     end
     task.spawn(function()
         while state.alive do
@@ -3622,7 +3681,9 @@ do
                 local payload=action=='start' and {kind=own.kind,tier=own.tier,fresh=false} or nil
                 phase='requesting';local before=epoch
                 log('TowerRequest',{action=action,payload=payload})
-                local response=table.pack(pcall(function() return remote:InvokeServer(action,payload) end))
+                local response=SoftRetry.call(function() return remote:InvokeServer(action,payload) end,
+                    function() return state.alive and running and not state.profileLoading and phase=='requesting' and epoch==before end,
+                    function(delay) state.towerStatus='Slow down; retrying in '..delay..'s';log('TowerRetry',{action=action,delay=delay}) end)
                 log('TowerResponse',{action=action,response=response})
                 pending=false;state.towerPending=false
                 if not running then
@@ -3757,6 +3818,8 @@ local function loadProfile(name,quiet)
     flags.TowerKind=(nextFlags.TowerKind=='Challenge' or nextFlags.TowerKind=='Artifact') and nextFlags.TowerKind or 'Material'
     flags.TowerChallenge=nextFlags.TowerChallenge or 'Basic'
     flags.TowerArtifact=nextFlags.TowerArtifact or 'A1'
+    flags.TowerChallenges=type(nextFlags.TowerChallenges)=='table' and nextFlags.TowerChallenges or {[flags.TowerChallenge]=true}
+    flags.TowerArtifacts=type(nextFlags.TowerArtifacts)=='table' and nextFlags.TowerArtifacts or {[flags.TowerArtifact]=true}
     flags.TowerRetry=nextFlags.TowerRetry~=false
     flags.TowerRunning=nextFlags.TowerRunning==true
     flags.RankedMode=nextFlags.RankedMode=='Scaled' and 'Scaled' or 'Normal'
