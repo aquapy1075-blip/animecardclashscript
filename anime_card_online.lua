@@ -128,6 +128,93 @@ end
 return Dungeon
 
 end)()
+local FarmRewards=(function()
+local FarmRewards={}
+function FarmRewards.new()
+    return {active=false,since=0,totals={Story={},Tower={}},battles={},order={},runs={},battleCounts={Story=0,Tower=0}}
+end
+function FarmRewards.begin(s,now)
+    s.active=true;s.since=now;s.totals={Story={},Tower={}};s.battleCounts={Story=0,Tower=0}
+end
+local function rewards(list)
+    local out={}
+    if type(list)~='table' then return out end
+    for _,r in pairs(list) do
+        if type(r)=='table' then
+            local n=tonumber(r.amount or r.n or ((r.id or r.cardId) and 1))
+            if n and n==n and n>0 and n<math.huge then
+                local id=r.id or r.tier or r.cardId or r.kind
+                if type(id)=='string' then
+                    local kind=r.kind or 'Reward'
+                    local key=kind..' / '..id..(r.variant and ' ['..tostring(r.variant)..']' or '')
+                    if kind==id then key=id end
+                    out[key]=(out[key] or 0)+n
+                end
+            end
+        end
+    end
+    return out
+end
+local function add(s,group,items)
+    if not s.active then return end
+    for id,n in pairs(items) do s.totals[group][id]=(s.totals[group][id] or 0)+n end
+end
+local function cumulative(s,run,list)
+    local all=rewards(list)
+    if not run.baselined then run.credited=all;run.baselined=true;return end
+    local delta={}
+    for id,n in pairs(all) do
+        local old=run.credited[id] or 0
+        if n>old then delta[id]=n-old;run.credited[id]=n end
+    end
+    add(s,'Tower',delta)
+end
+function FarmRewards.event(s,event)
+    if type(event)~='table' or event.type~='BattleEnd' or type(event.battleId)~='string' or s.battles[event.battleId] then return end
+    s.battles[event.battleId]=true;s.order[#s.order+1]=event.battleId
+    if #s.order>1024 then s.battles[table.remove(s.order,1)]=nil end
+    if type(event.tower)=='table' then
+        local t=event.tower;local key=tostring(t.kind)..':'..tostring(t.tier)
+        local wave=tonumber(t.wave or t.floor)
+        local run=s.runs[key]
+        if not run or run.done or (wave and run.wave and wave<run.wave) then
+            run={credited={},baselined=wave==1,wave=wave};s.runs[key]=run
+        end
+        run.wave=wave or run.wave
+        local delta=rewards(t.rewards)
+        for id,n in pairs(delta) do run.credited[id]=(run.credited[id] or 0)+n end
+        add(s,'Tower',delta)
+        if type(t.earned)=='table' then cumulative(s,run,t.earned) end
+        run.done=t.done or t.claimed or t.cleared or t.won==false
+        if s.active then s.battleCounts.Tower=s.battleCounts.Tower+1 end
+    elseif not (event.gate or event.pvp or event.ranked or event.teamWar) then
+        add(s,'Story',rewards(event.rewards))
+        if s.active then s.battleCounts.Story=s.battleCounts.Story+1 end
+    end
+end
+function FarmRewards.result(s,t)
+    if type(t)~='table' or not t.kind or not t.tier then return end
+    local key=t.kind..':'..t.tier
+    local run=s.runs[key]
+    if not run then run={credited={},baselined=false,wave=tonumber(t.wave or t.floor)};s.runs[key]=run end
+    local wave=tonumber(t.wave or t.floor)
+    if run.wave and wave and run.wave~=wave then return end
+    if type(t.earned)=='table' then cumulative(s,run,t.earned) end
+    run.done=t.done or t.claimed or t.cleared or t.won==false or run.done
+end
+function FarmRewards.text(s,now)
+    local lines={'FARM REWARDS  |  '..math.floor((now-s.since)/60)..' min','Updates every 30 seconds'}
+    for _,group in ipairs({'Story','Tower'}) do
+        lines[#lines+1]='';lines[#lines+1]=group..'  |  '..s.battleCounts[group]..' battles'
+        local keys={};for id in pairs(s.totals[group]) do keys[#keys+1]=id end;table.sort(keys)
+        if #keys==0 then lines[#lines+1]='No rewards recorded yet' end
+        for _,id in ipairs(keys) do lines[#lines+1]=id..'  +'..tostring(s.totals[group][id]) end
+    end
+    return table.concat(lines,'\n')
+end
+return FarmRewards
+
+end)()
 local AfkRuntime=(function()
 local AfkRuntime={}
 function AfkRuntime.start(ctx)
@@ -135,7 +222,18 @@ function AfkRuntime.start(ctx)
     local runtime={cpu=false,white=false,stopped=false}
     local function service(name) local ok,s=pcall(function() return ctx.game:GetService(name) end);return ok and s or nil end
     local run=service('RunService');local virtual=service('VirtualUser')
-    local overlay;local previousFPS;local previousRendering=true;local renderingChanged=false
+    local overlay;local rewardOverlay;local rewardText;local background;local previousFPS;local previousRendering=true;local renderingChanged=false
+    local rewards=FarmRewards.new()
+    local rs=service('ReplicatedStorage')
+    local shared=rs and rs:FindFirstChild('Shared')
+    local net=shared and shared:FindFirstChild('Net')
+    net=net and net:FindFirstChild('RemoteObjects')
+    if net then
+        local battle=net:FindFirstChild('BattleEvent')
+        local tower=net:FindFirstChild('TowerResult')
+        if battle then state.connections[#state.connections+1]=battle.OnClientEvent:Connect(function(event) if state.alive then FarmRewards.event(rewards,event) end end) end
+        if tower then state.connections[#state.connections+1]=tower.OnClientEvent:Connect(function(info) if state.alive then FarmRewards.result(rewards,info) end end) end
+    end
     local warned={};local lastIdle=-math.huge
     local function noticeOnce(key,text)
         if warned[key] then return end;warned[key]=true
@@ -158,14 +256,25 @@ function AfkRuntime.start(ctx)
         local gui=Instance.new('ScreenGui');gui.Name='AnimeCardOnlineWhiteScreen';gui.ResetOnSpawn=false
         gui.IgnoreGuiInset=true;gui.DisplayOrder=9899;gui.Enabled=false
         local frame=Instance.new('Frame');frame.Name='WhiteBackground';frame.Size=UDim2.fromScale(1,1)
-        frame.BorderSizePixel=0;frame.BackgroundColor3=Color3.new(1,1,1);frame.Active=false;frame.Parent=gui
+        frame.BorderSizePixel=0;frame.BackgroundColor3=Color3.new(1,1,1);frame.Active=false;frame.Parent=gui;background=frame
+        local foreground=Instance.new('ScreenGui');foreground.Name='AnimeCardOnlineFarmRewards';foreground.DisplayOrder=9902;foreground.ResetOnSpawn=false;foreground.IgnoreGuiInset=true;foreground.Enabled=false;foreground.Parent=ctx.playerGui;rewardOverlay=foreground
+        local panel=Instance.new('Frame');panel.Name='FarmRewards';panel.AnchorPoint=Vector2.new(.5,.5)
+        panel.Position=UDim2.fromScale(.5,.5);panel.Size=UDim2.fromScale(.86,.7);panel.BackgroundColor3=Color3.fromRGB(16,21,32);panel.BorderSizePixel=0;panel.Parent=foreground
+        local cap=Instance.new('UISizeConstraint');cap.MaxSize=Vector2.new(760,560);cap.Parent=panel
+        local round=Instance.new('UICorner');round.CornerRadius=UDim.new(0,16);round.Parent=panel
+        local edge=Instance.new('UIStroke');edge.Color=Color3.fromRGB(66,178,188);edge.Transparency=.3;edge.Parent=panel
+        local scroll=Instance.new('ScrollingFrame');scroll.Size=UDim2.new(1,-32,1,-32);scroll.Position=UDim2.fromOffset(16,16)
+        scroll.BackgroundTransparency=1;scroll.BorderSizePixel=0;scroll.ScrollBarThickness=4;scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y;scroll.CanvasSize=UDim2.fromOffset(0,0);scroll.Parent=panel
+        rewardText=Instance.new('TextLabel');rewardText.Name='Rewards';rewardText.Size=UDim2.new(1,-10,0,0);rewardText.AutomaticSize=Enum.AutomaticSize.Y
+        rewardText.TextWrapped=true;rewardText.RichText=false;rewardText.BackgroundTransparency=1;rewardText.Font=Enum.Font.GothamMedium;rewardText.TextSize=16
+        rewardText.TextXAlignment=Enum.TextXAlignment.Left;rewardText.TextYAlignment=Enum.TextYAlignment.Top;rewardText.TextColor3=Color3.fromRGB(177,226,231);rewardText.Parent=scroll
         local exit=Instance.new('TextButton');exit.Name='ShowGame';exit.Text='Show game'
         exit.Size=UDim2.fromOffset(140,38);exit.Position=UDim2.new(1,-156,1,-54)
         exit.BackgroundColor3=Color3.fromRGB(235,238,245);exit.TextColor3=Color3.fromRGB(25,32,48)
-        exit.Font=Enum.Font.GothamMedium;exit.TextSize=14;exit.BorderSizePixel=0;exit.Parent=gui
+        exit.Font=Enum.Font.GothamMedium;exit.TextSize=14;exit.BorderSizePixel=0;exit.Parent=foreground
         local corner=Instance.new('UICorner');corner.CornerRadius=UDim.new(0,10);corner.Parent=exit
         state.connections[#state.connections+1]=exit.Activated:Connect(function()
-            if state.alive and not runtime.stopped then ctx.setFlag('WhiteScreen',false) end
+            if state.alive and not runtime.stopped then ctx.setFlag('WhiteScreen',false);ctx.setFlag('BlackScreen',false) end
         end)
         gui.Parent=ctx.playerGui;overlay=gui
     end
@@ -186,18 +295,22 @@ function AfkRuntime.start(ctx)
             elseif type(setfpscap)=='function' and previousFPS~=nil then pcall(setfpscap,previousFPS) end
             runtime.cpu=cpu
         end
-        local white=flags.WhiteScreen==true
+        local white=flags.WhiteScreen==true or flags.BlackScreen==true
+        if background then background.BackgroundColor3=flags.BlackScreen and Color3.fromRGB(0,0,0) or Color3.new(1,1,1) end
         if white~=runtime.white then
             if white then
+                FarmRewards.begin(rewards,os.clock())
                 local ok=pcall(createOverlay)
-                if ok and overlay then overlay.Enabled=true else noticeOnce('overlay','White Screen overlay could not be created.') end
+                if ok and overlay then overlay.Enabled=true;rewardOverlay.Enabled=true;background.BackgroundColor3=flags.BlackScreen and Color3.fromRGB(0,0,0) or Color3.new(1,1,1);rewardText.Text=FarmRewards.text(rewards,os.clock()) else noticeOnce('overlay','White Screen overlay could not be created.') end
                 local got,value=pcall(function() return run:Is3dRenderingEnabled() end)
                 previousRendering=true
                 if got and type(value)=='boolean' then previousRendering=value end
                 renderingChanged=pcall(function() run:Set3dRenderingEnabled(false) end)
                 if not renderingChanged then noticeOnce('render','White Screen is visible, but disabling 3D rendering is unavailable.') end
             else
+                rewards.active=false
                 if overlay then overlay.Enabled=false end
+                if rewardOverlay then rewardOverlay.Enabled=false end
                 if renderingChanged then pcall(function() run:Set3dRenderingEnabled(previousRendering) end);renderingChanged=false end
             end
             runtime.white=white
@@ -205,12 +318,22 @@ function AfkRuntime.start(ctx)
     end
     function runtime.stop()
         if runtime.stopped then return end
-        runtime.stopped=true
+        runtime.stopped=true;rewards.active=false
         if runtime.cpu and type(setfpscap)=='function' and previousFPS~=nil then pcall(setfpscap,previousFPS) end
         if renderingChanged then pcall(function() run:Set3dRenderingEnabled(previousRendering) end) end
         renderingChanged=false;runtime.cpu=false;runtime.white=false
         if overlay then pcall(function() overlay:Destroy() end);overlay=nil end
+        if rewardOverlay then pcall(function() rewardOverlay:Destroy() end);rewardOverlay=nil end
     end
+    task.spawn(function()
+        local refreshed=os.clock()
+        while state.alive and not runtime.stopped do
+            if overlay and overlay.Enabled and rewardText and os.clock()-refreshed>=30 then
+                rewardText.Text=FarmRewards.text(rewards,os.clock());refreshed=os.clock()
+            end
+            task.wait(1)
+        end
+    end)
     runtime.apply()
     return runtime
 end
@@ -2139,6 +2262,7 @@ section('Settings','AFK')
 addToggle('Settings','Anti-AFK','AntiAFK')
 addToggle('Settings','Save CPU (15 FPS)','SaveCPU')
 addToggle('Settings','White Screen','WhiteScreen')
+addToggle('Settings','Black Screen','BlackScreen')
 section('Settings','Appearance')
 addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose','Light'})
 local transparencyRow=row('Settings','Transparency')
@@ -2473,7 +2597,7 @@ net=net:WaitForChild('RemoteObjects',30)
 assert(net,'RemoteObjects not found')
 local action=net:WaitForChild('BattleAction',15)
 assert(action and action:IsA('RemoteFunction'),'BattleAction RemoteFunction not found')
-local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,DungeonRunning=false,TowerRunning=false,TowerKind='Material',TowerChallenge='Basic',TowerArtifact='A1',TowerChallenges={Basic=true},TowerArtifacts={A1=true},TowerRetry=true,DungeonAfter='Stop',DungeonGates={Red=true},RankedRunning=false,RankedMode='Normal',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
+local flags={AO_UI_Theme='Midnight',AO_UI_Transparency=15,StoryMaps={},StoryCards={},StoryModes={},StoryRepeat=false,AutoSkills={},SkillPurchaseMode='Purchase',SkillPrerequisites=false,SkillInterval=2,HLRepeat=false,StoryRunning=false,SkillRunning=false,HLRunning=false,WeatherWebhookURL='',WeatherWebhookEnabled=false,WeatherWebhookDomains={InfiniteVoid=true,DomainClash=true},ActiveRulesEnabled=false,ActiveRuleLane=1,ActiveRuleCard='SCP3008',ActiveRules={},AntiAFK=true,SaveCPU=false,WhiteScreen=false,BlackScreen=false,DungeonRunning=false,TowerRunning=false,TowerKind='Material',TowerChallenge='Basic',TowerArtifact='A1',TowerChallenges={Basic=true},TowerArtifacts={A1=true},TowerRetry=true,DungeonAfter='Stop',DungeonGates={Red=true},RankedRunning=false,RankedMode='Normal',WarRunning=false,WarBossName='Saitama',SystemRunning=false,SystemPriority={'luk','str','vit','agi','sen'}}
 for _,w in ipairs(Story.Worlds) do
     for _,id in ipairs(w.cards) do flags.StoryModes[id]={Easy=true} end
 end
@@ -3737,8 +3861,8 @@ local function setFlag(key,value)
         if value then war.start() else war.stop() end
     elseif key=='DungeonRunning' then
         if value then dungeon.start() else dungeon.stop() end
-    elseif key=='AntiAFK' or key=='SaveCPU' or key=='WhiteScreen' then
-        flags[key]=value==true;if afkRuntime then afkRuntime.apply() end
+    elseif key=='AntiAFK' or key=='SaveCPU' or key=='WhiteScreen' or key=='BlackScreen' then
+        flags[key]=value==true;if value and key=='WhiteScreen' then flags.BlackScreen=false elseif value and key=='BlackScreen' then flags.WhiteScreen=false end;if afkRuntime then afkRuntime.apply() end
     elseif key=='AutoExec' then sessionRuntime.setAutoExec(value)
     elseif key=='WeatherWebhookDomains' then flags[key]=WeatherWebhook.selection(value)
     elseif activeRules.edit(key,value) then
@@ -3800,7 +3924,8 @@ local function loadProfile(name,quiet)
     flags.HLRepeat=nextFlags.HLRepeat==true
     flags.AntiAFK=nextFlags.AntiAFK~=false
     flags.SaveCPU=nextFlags.SaveCPU==true
-    flags.WhiteScreen=nextFlags.WhiteScreen==true
+    flags.BlackScreen=nextFlags.BlackScreen==true
+    flags.WhiteScreen=nextFlags.WhiteScreen==true and not flags.BlackScreen
     flags.ActiveRules=ActiveRules.normalize(nextFlags.ActiveRules)
     flags.ActiveRulesEnabled=nextFlags.ActiveRulesEnabled==true
     flags.ActiveRuleLane=ActiveRules.lane(nextFlags.ActiveRuleLane)
