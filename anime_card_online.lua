@@ -131,7 +131,7 @@ end)()
 local FarmRewards=(function()
 local FarmRewards={}
 function FarmRewards.new()
-    return {active=false,since=0,totals={Story={},Tower={}},battles={},order={},runs={},battleCounts={Story=0,Tower=0},lanes={}}
+    return {active=false,since=0,totals={Story={},Tower={}},battles={},order={},runs={},battleCounts={Story=0,Tower=0}}
 end
 function FarmRewards.begin(s,now)
     s.active=true;s.since=now;s.totals={Story={},Tower={}};s.battleCounts={Story=0,Tower=0}
@@ -169,20 +169,9 @@ local function cumulative(s,run,list)
     end
     add(s,'Tower',delta)
 end
-function FarmRewards.snapshot(s,data)
-    if type(data)~='table' or data.active~=true or data.battleId==nil then return end
-    s.lanes[tonumber(data.lane) or 1]=data
-end
 function FarmRewards.event(s,event)
-    if type(event)~='table' or event.type~='BattleEnd' then return end
-    local snapshot=s.lanes[tonumber(event.lane) or 1]
-    local id=event.battleId or (snapshot and snapshot.battleId)
-    if id==nil then return end
-    id=tostring(id)
-    if s.battles[id] then return end
-    -- A lane snapshot supplies identity only; rewards must come from BattleEnd.
-    if snapshot and tostring(snapshot.battleId)~=id then snapshot=nil end
-    s.battles[id]=true;s.order[#s.order+1]=id
+    if type(event)~='table' or event.type~='BattleEnd' or type(event.battleId)~='string' or s.battles[event.battleId] then return end
+    s.battles[event.battleId]=true;s.order[#s.order+1]=event.battleId
     if #s.order>1024 then s.battles[table.remove(s.order,1)]=nil end
     if type(event.tower)=='table' then
         local t=event.tower;local key=tostring(t.kind)..':'..tostring(t.tier)
@@ -198,7 +187,7 @@ function FarmRewards.event(s,event)
         if type(t.earned)=='table' then cumulative(s,run,t.earned) end
         run.done=t.done or t.claimed or t.cleared or t.won==false
         if s.active then s.battleCounts.Tower=s.battleCounts.Tower+1 end
-    elseif not (event.gate or event.pvp or event.ranked or event.teamWar or (snapshot and (snapshot.gate or snapshot.tower or snapshot.pvp or snapshot.ranked or snapshot.teamWar))) then
+    elseif not (event.gate or event.pvp or event.ranked or event.teamWar) then
         add(s,'Story',rewards(event.rewards))
         if s.active then s.battleCounts.Story=s.battleCounts.Story+1 end
     end
@@ -212,9 +201,6 @@ function FarmRewards.result(s,t)
     if run.wave and wave and run.wave~=wave then return end
     if type(t.earned)=='table' then cumulative(s,run,t.earned) end
     run.done=t.done or t.claimed or t.cleared or t.won==false or run.done
-end
-function FarmRewards.summary(s)
-    return 'Story: '..s.battleCounts.Story..' battles  |  Tower: '..s.battleCounts.Tower..' battles'
 end
 function FarmRewards.text(s,now)
     local lines={'FARM REWARDS  |  '..math.floor((now-s.since)/60)..' min','Updates every 30 seconds'}
@@ -236,7 +222,7 @@ function AfkRuntime.start(ctx)
     local runtime={cpu=false,white=false,stopped=false}
     local function service(name) local ok,s=pcall(function() return ctx.game:GetService(name) end);return ok and s or nil end
     local run=service('RunService');local virtual=service('VirtualUser')
-    local overlay;local rewardOverlay;local rewardText;local rewardCount;local background;local previousFPS;local previousRendering=true;local renderingChanged=false
+    local overlay;local rewardOverlay;local rewardText;local background;local previousFPS;local previousRendering=true;local renderingChanged=false
     local rewards=FarmRewards.new()
     local rs=service('ReplicatedStorage')
     local shared=rs and rs:FindFirstChild('Shared')
@@ -245,9 +231,7 @@ function AfkRuntime.start(ctx)
     if net then
         local battle=net:FindFirstChild('BattleEvent')
         local tower=net:FindFirstChild('TowerResult')
-        local snapshots=net:FindFirstChild('BattleState')
-        if snapshots then state.connections[#state.connections+1]=snapshots.OnClientEvent:Connect(function(data) if state.alive then FarmRewards.snapshot(rewards,data) end end) end
-        if battle then state.connections[#state.connections+1]=battle.OnClientEvent:Connect(function(event) if state.alive then FarmRewards.event(rewards,event);if rewardCount then rewardCount.Text=FarmRewards.summary(rewards) end end end) end
+        if battle then state.connections[#state.connections+1]=battle.OnClientEvent:Connect(function(event) if state.alive then FarmRewards.event(rewards,event) end end) end
         if tower then state.connections[#state.connections+1]=tower.OnClientEvent:Connect(function(info) if state.alive then FarmRewards.result(rewards,info) end end) end
     end
     local warned={};local lastIdle=-math.huge
@@ -279,10 +263,7 @@ function AfkRuntime.start(ctx)
         local cap=Instance.new('UISizeConstraint');cap.MaxSize=Vector2.new(760,560);cap.Parent=panel
         local round=Instance.new('UICorner');round.CornerRadius=UDim.new(0,16);round.Parent=panel
         local edge=Instance.new('UIStroke');edge.Color=Color3.fromRGB(66,178,188);edge.Transparency=.3;edge.Parent=panel
-        rewardCount=Instance.new('TextLabel');rewardCount.Name='BattleCount';rewardCount.BackgroundTransparency=1
-        rewardCount.Position=UDim2.fromOffset(16,12);rewardCount.Size=UDim2.new(1,-32,0,28)
-        rewardCount.Font=Enum.Font.GothamMedium;rewardCount.TextSize=16;rewardCount.TextColor3=Color3.fromRGB(177,226,231);rewardCount.TextXAlignment=Enum.TextXAlignment.Left;rewardCount.Parent=panel
-        local scroll=Instance.new('ScrollingFrame');scroll.Size=UDim2.new(1,-32,1,-76);scroll.Position=UDim2.fromOffset(16,52)
+        local scroll=Instance.new('ScrollingFrame');scroll.Size=UDim2.new(1,-32,1,-32);scroll.Position=UDim2.fromOffset(16,16)
         scroll.BackgroundTransparency=1;scroll.BorderSizePixel=0;scroll.ScrollBarThickness=4;scroll.AutomaticCanvasSize=Enum.AutomaticSize.Y;scroll.CanvasSize=UDim2.fromOffset(0,0);scroll.Parent=panel
         rewardText=Instance.new('TextLabel');rewardText.Name='Rewards';rewardText.Size=UDim2.new(1,-10,0,0);rewardText.AutomaticSize=Enum.AutomaticSize.Y
         rewardText.TextWrapped=true;rewardText.RichText=false;rewardText.BackgroundTransparency=1;rewardText.Font=Enum.Font.GothamMedium;rewardText.TextSize=16
@@ -320,7 +301,7 @@ function AfkRuntime.start(ctx)
             if white then
                 FarmRewards.begin(rewards,os.clock())
                 local ok=pcall(createOverlay)
-                if ok and overlay then overlay.Enabled=true;rewardOverlay.Enabled=true;background.BackgroundColor3=flags.BlackScreen and Color3.fromRGB(0,0,0) or Color3.new(1,1,1);rewardText.Text=FarmRewards.text(rewards,os.clock());rewardCount.Text=FarmRewards.summary(rewards) else noticeOnce('overlay','White Screen overlay could not be created.') end
+                if ok and overlay then overlay.Enabled=true;rewardOverlay.Enabled=true;background.BackgroundColor3=flags.BlackScreen and Color3.fromRGB(0,0,0) or Color3.new(1,1,1);rewardText.Text=FarmRewards.text(rewards,os.clock()) else noticeOnce('overlay','White Screen overlay could not be created.') end
                 local got,value=pcall(function() return run:Is3dRenderingEnabled() end)
                 previousRendering=true
                 if got and type(value)=='boolean' then previousRendering=value end
