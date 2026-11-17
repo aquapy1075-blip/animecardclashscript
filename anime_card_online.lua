@@ -1609,7 +1609,7 @@ skin(menu,'BackgroundColor3','side')
 stroke(menu)
 local menuConnections={}
 local menuSearch=make('TextBox',menu,{Name='DropdownSearch',Position=UDim2.fromOffset(8,8),
-    Size=UDim2.new(1,-16,0,36),Text='',PlaceholderText='Search targets or maps…',ClearTextOnFocus=false,
+    Size=UDim2.new(1,-68,0,36),Text='',PlaceholderText='Search targets or maps…',ClearTextOnFocus=false,
     Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0,ZIndex=152})
 corner(menuSearch,8);skin(menuSearch,'BackgroundColor3','row');skin(menuSearch,'TextColor3','text')
 skin(menuSearch,'PlaceholderColor3','muted')
@@ -1633,6 +1633,11 @@ local function hideMenu()
     for _,child in ipairs(menuList:GetChildren()) do
         if child:IsA('GuiButton') or child:IsA('TextLabel') then child:Destroy() end
     end
+end
+do
+    local close=uiButton(menu,'×',UDim2.fromOffset(44,36))
+    close.Name='CloseDropdown';close.Position=UDim2.new(1,-52,0,8);close.ZIndex=153
+    close.Activated:Connect(hideMenu)
 end
 local function paintOption(option,label,checked)
     option.Text=label
@@ -1661,7 +1666,7 @@ local function renderMenuOptions()
             if menuData.multi then paintOption(choice,tostring(label),selected) end
             local callback=menuData.choose
             local indexValue,labelValue=index,label
-            menuConnections[#menuConnections+1]=choice.MouseButton1Click:Connect(function()
+            menuConnections[#menuConnections+1]=choice.Activated:Connect(function()
                 local data=menuData
                 if data and data.multi then
                     callback(indexValue,labelValue)
@@ -1698,7 +1703,7 @@ local function openMenu(anchor,options,choose)
         math.clamp(top,8,math.max(8,view.Y-height-8)))
     menuList.CanvasPosition=Vector2.new(0,0)
     menuSearch.Text=''
-    menuData={options=options,choose=choose}
+    menuData={options=options,choose=choose,anchor=anchor}
     renderMenuOptions()
     menu.Visible=true
     local target=menu.Size
@@ -1709,7 +1714,7 @@ local function addDropdown(tab,label,key,choices,indexed)
     local r=row(tab,label)
     local b=uiButton(r,'--  ▾',UDim2.fromOffset(180,31))
     b.Position=UDim2.new(1,-195,.5,-15)
-    b.MouseButton1Click:Connect(function()
+    b.Activated:Connect(function()
         if menu.Visible then hideMenu();return end
         openMenu(b,choices,function(index,value)
             setFlag(key,indexed and index or value)
@@ -2453,9 +2458,15 @@ end)
 local hotkey=trackUI(UIS.InputBegan:Connect(function(input,used)
     if not used and input.KeyCode==Enum.KeyCode.RightShift and state.alive then
         setWindowVisible(not window.visible)
-    elseif not used and input.UserInputType==Enum.UserInputType.MouseButton1 and menu.Visible then
-        local point=input.Position;local position=menu.AbsolutePosition;local size=menu.AbsoluteSize
-        if point.X<position.X or point.Y<position.Y or point.X>position.X+size.X or point.Y>position.Y+size.Y then hideMenu() end
+    elseif menu.Visible and (input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch) then
+        local point=input.Position
+        local function contains(object)
+            if not object then return false end
+            local position,size=object.AbsolutePosition,object.AbsoluteSize
+            return point.X>=position.X and point.Y>=position.Y and point.X<=position.X+size.X and point.Y<=position.Y+size.Y
+        end
+        -- The anchor's own Activated handler closes it; do not close then reopen on the same tap.
+        if not contains(menu) and not contains(menuData and menuData.anchor) then hideMenu() end
     end
 end))
 trackUI(root:GetPropertyChangedSignal('Enabled'):Connect(function()
