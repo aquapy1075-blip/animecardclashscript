@@ -1600,6 +1600,11 @@ local function addToggle(tab,label,key)
     return b
 end
 
+local menuDismiss=make('TextButton',root,{
+    Name='DropdownDismiss',Visible=false,Size=UDim2.fromScale(1,1),
+    Position=UDim2.fromScale(0,0),Text='',AutoButtonColor=false,
+    BackgroundTransparency=1,BorderSizePixel=0,Active=true,ZIndex=149,
+})
 local menu=make('Frame',root,{
     Visible=false,Size=UDim2.fromOffset(184,0),BorderSizePixel=0,
     BackgroundTransparency=0,ZIndex=150,
@@ -1609,7 +1614,7 @@ skin(menu,'BackgroundColor3','side')
 stroke(menu)
 local menuConnections={}
 local menuSearch=make('TextBox',menu,{Name='DropdownSearch',Position=UDim2.fromOffset(8,8),
-    Size=UDim2.new(1,-68,0,36),Text='',PlaceholderText='Search targets or maps…',ClearTextOnFocus=false,
+    Size=UDim2.new(1,-96,0,36),Text='',PlaceholderText='Search targets or maps…',ClearTextOnFocus=false,
     Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0,ZIndex=152})
 corner(menuSearch,8);skin(menuSearch,'BackgroundColor3','row');skin(menuSearch,'TextColor3','text')
 skin(menuSearch,'PlaceholderColor3','muted')
@@ -1626,7 +1631,7 @@ local function releaseOwnFocus()
     end)
 end
 local function hideMenu()
-    menu.Visible=false;menuData=nil
+    menu.Visible=false;menuDismiss.Visible=false;menuData=nil
     releaseOwnFocus()
     for _,connection in ipairs(menuConnections) do connection:Disconnect() end
     menuConnections={}
@@ -1635,8 +1640,9 @@ local function hideMenu()
     end
 end
 do
-    local close=uiButton(menu,'×',UDim2.fromOffset(44,36))
-    close.Name='CloseDropdown';close.Position=UDim2.new(1,-52,0,8);close.ZIndex=153
+    menuDismiss.Activated:Connect(hideMenu)
+    local close=uiButton(menu,'Close',UDim2.fromOffset(72,36))
+    close.Name='CloseDropdown';close.Position=UDim2.new(1,-80,0,8);close.ZIndex=153
     close.Activated:Connect(hideMenu)
 end
 local function paintOption(option,label,checked)
@@ -1705,7 +1711,7 @@ local function openMenu(anchor,options,choose)
     menuSearch.Text=''
     menuData={options=options,choose=choose,anchor=anchor}
     renderMenuOptions()
-    menu.Visible=true
+    menuDismiss.Visible=true;menu.Visible=true
     local target=menu.Size
     menu.Size=UDim2.fromOffset(width,math.max(72,height-12))
     animate(menu,{Size=target},.14)
