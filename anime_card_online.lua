@@ -3379,19 +3379,35 @@ do
             end
         end
     end
-    local sideBattles,sideClosed,sideOrder={},{},{}
+    local sideBattles,sideClosed,sideOrder,sideLanes={},{},{},{}
+    local function closeSide(id)
+        if not id then return end
+        sideBattles[id]=nil
+        for lane,current in pairs(sideLanes) do if current==id then sideLanes[lane]=nil end end
+        if not sideClosed[id] then sideClosed[id]=true;sideOrder[#sideOrder+1]=id end
+        if #sideOrder>128 then sideClosed[table.remove(sideOrder,1)]=nil end
+    end
     local sync=net:FindFirstChild('BattleState')
     if sync then state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
-        if type(data)~='table' or type(data.battleId)~='string' then return end
-        if data.active==false then sideBattles[data.battleId]=nil
-        elseif data.active==true and not data.gate and not sideClosed[data.battleId] then sideBattles[data.battleId]=true end
+        if type(data)~='table' then return end
+        local lane=tonumber(data.lane) or 1
+        local id=type(data.battleId)=='string' and data.battleId or nil
+        if data.active==false then
+            -- Native idle snapshots can contain only active=false and lane.
+            closeSide(id or sideLanes[lane])
+        elseif data.active==true and id and not sideClosed[id] then
+            -- A newer battle replaces the previous battle on this lane.
+            local previous=sideLanes[lane]
+            if previous and previous~=id then closeSide(previous) end
+            if data.gate then closeSide(id)
+            else sideLanes[lane]=id;sideBattles[id]=true end
+        end
     end) end
     if battleEvent then state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
-        if type(event)=='table' and event.type=='BattleEnd' and type(event.battleId)=='string' then
-            sideBattles[event.battleId]=nil
-            if not sideClosed[event.battleId] then sideClosed[event.battleId]=true;sideOrder[#sideOrder+1]=event.battleId end
-            if #sideOrder>128 then sideClosed[table.remove(sideOrder,1)]=nil end
-        end
+        if type(event)~='table' or event.type~='BattleEnd' then return end
+        local id=type(event.battleId)=='string' and event.battleId or nil
+        if not id and tonumber(event.lane) then id=sideLanes[tonumber(event.lane)] end
+        closeSide(id)
     end) end
     local eventRemote=net:FindFirstChild('GateEvent')
     if eventRemote and eventRemote:IsA('RemoteEvent') then
