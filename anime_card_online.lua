@@ -9,11 +9,11 @@ function SoftRetry.transient(response)
     return response[1]==true and response[2]==false and type(response[3])=='string'
         and response[3]:lower():match('^%s*slow down[%.!]?%s*$')~=nil
 end
-function SoftRetry.call(fn,active,onWait)
+function SoftRetry.call(fn,active,onWait,transient)
     local failures=0
     while active() do
         local response=table.pack(pcall(fn))
-        if not SoftRetry.transient(response) or not active() then return response end
+        if not (SoftRetry.transient(response) or (transient and transient(response))) or not active() then return response end
         failures=failures+1
         local delay=failures==1 and 5 or 10
         if onWait then onWait(delay,response[3]) end
@@ -1173,6 +1173,14 @@ end)()
 local Combat=(function()
 -- Server protocol verified from captured StartResponse and BattleEnd messages.
 local Combat = {}
+function Combat.retryableStart(response)
+    if response[1]~=true or response[2]~=false or type(response[3])~='string' then return false end
+    local reason=response[3]:lower()
+    for _,phrase in ipairs({'already in a story battle','already in battle','no free battle slot','both battle slots are full','battle slots are full'}) do
+        if reason:find(phrase,1,true) then return true end
+    end
+    return false
+end
 function Combat.new()
     return {started=false,ended=false,results={},order={}}
 end
@@ -2693,9 +2701,15 @@ end
 local function log(source,args)
     state.logs[#state.logs+1]={source=source,time=os.clock(),args=snapshot(args,0,{})}
     if #state.logs>60 then table.remove(state.logs,1) end
+    if source=='QueueStopped' or source=='QueueCompleted' or source=='QueueStarted' then
+        state.storyLifecycle=state.storyLifecycle or {}
+        state.storyLifecycle[#state.storyLifecycle+1]=state.logs[#state.logs]
+        if #state.storyLifecycle>20 then table.remove(state.storyLifecycle,1) end
+    end
 end
 local function stopRun(reason)
     state.enabled=false;state.runId=state.runId+1
+    state.storyStopReason=reason or 'Story stopped';state.status=state.storyStopReason
     if ui and ui.ClearNotifications then ui.ClearNotifications() end
     log('QueueStopped',{reason=reason,index=state.index,total=#state.queue,current=state.current})
     if reason then message(reason,'warning') end
@@ -2719,7 +2733,7 @@ local function beginRun()
     if #queue==0 then message('Select maps, targets and at least one mode per target.','warning');return end
     if ui and ui.ClearNotifications then ui.ClearNotifications() end
     log('QueueStarted',{total=#queue,repeatQueue=flags.StoryRepeat,entries=queue})
-    state.lastResult='--'
+    state.lastResult='--';state.storyStopReason=nil
     state.queue=queue;state.index=0;state.enabled=true;state.runId=state.runId+1
     local runId=state.runId
     local function active() return state.alive and state.enabled and state.runId==runId end
@@ -2752,7 +2766,10 @@ local function beginRun()
             task.spawn(function()
                 local response=SoftRetry.call(function()
                     return action:InvokeServer('StartEncounter',{difficulty=item.difficulty,cardId=item.cardId})
-                end,active,function(delay) attempt.retrying=true;state.status='Slow down; retrying in '..delay..'s' end)
+                end,active,function(delay,reason)
+                    attempt.retrying=true;state.status=tostring(reason or 'Server busy')..'; Story retries in '..delay..'s'
+                    log('StoryStartRetry',{delay=delay,reason=reason,index=i})
+                end,Combat.retryableStart)
                 state.pending=false;attempt.returned=true;attempt.response=response
                 log('StartResponse',response)
                 if state.alive and state.attempt==attempt then
@@ -2799,7 +2816,8 @@ local function beginRun()
         end
         if active() then
             state.enabled=false;state.attempt=nil
-            log('QueueCompleted',{total=#queue,last=queue[#queue]})
+            state.status='Story queue completed; Repeat is OFF';state.storyStopReason=state.status
+            log('QueueCompleted',{total=#queue,last=queue[#queue],repeatQueue=flags.StoryRepeat})
             message('Completed '..#queue..'/'..#queue..' selected fights. Last: '..queue[#queue].cardId..' / '..queue[#queue].difficulty,'success')
         end
     end)
@@ -2812,7 +2830,7 @@ state.stop=function()
     if ui then ui.Destroy() end
 end
 local function exportCapture()
-    local data=HttpService:JSONEncode({note='Local received battle payloads; no network upload',records=state.logs,run={status=state.status,lastResult=state.lastResult,enabled=state.enabled,index=state.index,total=#state.queue,current=state.current}})
+    local data=HttpService:JSONEncode({note='Local received battle payloads; no network upload',records=state.logs,storyEvents=state.storyLifecycle or {},run={stopReason=state.storyStopReason,status=state.status,lastResult=state.lastResult,enabled=state.enabled,index=state.index,total=#state.queue,current=state.current}})
     if type(setclipboard)=='function' then setclipboard(data);message('Battle capture copied.','success')
     elseif type(writefile)=='function' then writefile('AnimeCardOnline-capture.json',data);message('Saved AnimeCardOnline-capture.json','success')
     else print(data);message('Battle capture printed in console.') end
