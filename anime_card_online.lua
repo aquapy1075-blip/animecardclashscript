@@ -1961,7 +1961,7 @@ do
     end
 end
 addToggle('Dungeon','Auto Dungeon','DungeonRunning')
-addDropdown('Dungeon','While gates are closed','DungeonAfter',{'Stop','Story','War Boss'})
+addDropdown('Dungeon','While gates are closed','DungeonAfter',{'Stop','Tower','Story','War Boss'})
 do
     local boss=addDropdown('Dungeon','War Boss target','WarBossName',{'Goku','Saitama'})
     widgets[#widgets+1]=function() boss.Parent.Visible=flags.DungeonAfter=='War Boss' end
@@ -3400,7 +3400,7 @@ do
             local previous=sideLanes[lane]
             if previous and previous~=id then closeSide(previous) end
             if data.gate then closeSide(id)
-            else sideLanes[lane]=id;sideBattles[id]=true end
+            else sideLanes[lane]=id;sideBattles[id]=data.tower and 'tower' or 'other' end
         end
     end) end
     if battleEvent then state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
@@ -3409,6 +3409,10 @@ do
         if not id and tonumber(event.lane) then id=sideLanes[tonumber(event.lane)] end
         closeSide(id)
     end) end
+    local function towerBattleActive()
+        for _,kind in pairs(sideBattles) do if kind=='tower' then return true end end
+        return false
+    end
     local eventRemote=net:FindFirstChild('GateEvent')
     if eventRemote and eventRemote:IsA('RemoteEvent') then
         state.connections[#state.connections+1]=eventRemote.OnClientEvent:Connect(function(event)
@@ -3464,13 +3468,17 @@ do
                         if not waitFor(5) then break end
                         good,reason=call('state');if not good then error(reason) end
                     else
-                        if dungeon.pauseFallback then dungeon.pauseFallback() end
-                        state.dungeonStatus='Waiting for side battle before gate '..id
+                        if dungeon.pauseFallback then dungeon.pauseFallback(true) end
+                        state.dungeonStatus='Waiting for current Tower wave before gate '..id..'; Story continues'
                         if not waitFor(1) then break end
-                        while active() and (next(sideBattles) or state.pending or state.warPending or state.warBusy) do
+                        while active() and (towerBattleActive() or state.towerPending) do
                             if not waitFor(.5) then break end
                         end
                         if not active() then break end
+                        if dungeon.releaseTower then
+                            good,reason=dungeon.releaseTower()
+                            if not good then error(reason) end
+                        end
                         good,reason=call('state');if not good then error(reason) end
                         id=Dungeon.choose(config,lastView,Dungeon.selection(flags.DungeonGates),blocked,workspace:GetServerTimeNow())
                         if id then
@@ -3696,19 +3704,6 @@ do
     end
 end
 
-do
-    local sideMode
-    function dungeon.pauseFallback()
-        if state.enabled then stopRun('Gate available; waiting for current Story battle') end
-        if state.warEnabled then war.stop() end
-        sideMode=nil
-    end
-    function dungeon.fallback(mode)
-        if sideMode~=mode then dungeon.pauseFallback();sideMode=mode end
-        if mode=='Story' and not state.enabled and not state.pending then beginRun()
-        elseif mode=='War Boss' and not state.warEnabled and not state.warBusy then war.start() end
-    end
-end
 local ranked={}
 do
     local remote=net:FindFirstChild('RankedAction')
@@ -3817,7 +3812,7 @@ do
     local remote=net:FindFirstChild('TowerAction')
     local resultRemote=net:FindFirstChild('TowerResult')
     local running=false;local pending=false;local phase='idle';local due=0
-    local own;local currentBattle;local epoch=0;local handled={};local recent={}
+    local own;local currentBattle;local currentLane;local epoch=0;local handled={};local recent={};local runOpen=false
     local queue={};local cursor=1
     local function selected()
         queue={};cursor=1
@@ -3836,6 +3831,9 @@ do
     function tower.stop() stop() end
     local function outcome(info)
         if type(info)~='table' or not own or info.kind~=own.kind or info.tier~=own.tier then return end
+        if state.dungeonTowerPause and info.reason=='left' then return end
+        currentBattle=nil
+        if info.done or info.claimed or info.cleared then runOpen=false end
         if info.claimed or info.cleared or (info.done and info.won) then
             cursor=cursor+1
             if queue[cursor] then own=queue[cursor];currentBattle=nil;phase='start';due=os.clock()+2;state.towerStatus='Next tower: '..own.tier
@@ -3848,16 +3846,18 @@ do
     end
     local sync=net:FindFirstChild('BattleState')
     if sync then state.connections[#state.connections+1]=sync.OnClientEvent:Connect(function(data)
-        if not state.alive or type(data)~='table' or data.active~=true or type(data.tower)~='table' or type(data.battleId)~='string' then return end
+        if not state.alive or type(data)~='table' then return end
+        if data.active==false and currentBattle and (data.battleId==currentBattle or (not data.battleId and tonumber(data.lane)==currentLane)) then currentBattle=nil end
+        if data.active~=true or type(data.tower)~='table' or type(data.battleId)~='string' then return end
         local t=data.tower
         if own and t.kind==own.kind and t.tier==own.tier and not handled[data.battleId] then
             if currentBattle~=data.battleId then epoch=epoch+1 end
-            currentBattle=data.battleId;phase='battle'
+            runOpen=true;currentBattle=data.battleId;currentLane=tonumber(data.lane) or 1;phase='battle'
             state.towerStatus='In tower / wave '..tostring(t.wave or t.floor or '?')
         end
     end) end
     state.connections[#state.connections+1]=battleEvent.OnClientEvent:Connect(function(event)
-        if not state.alive or not running or type(event)~='table' or event.type~='BattleEnd' or type(event.tower)~='table' then return end
+        if not state.alive or not (running or runOpen) or type(event)~='table' or event.type~='BattleEnd' or type(event.tower)~='table' then return end
         if currentBattle and event.battleId~=currentBattle then return end
         if event.battleId and handled[event.battleId] then return end
         if event.battleId then handled[event.battleId]=true;recent[#recent+1]=event.battleId end
@@ -3866,8 +3866,22 @@ do
         outcome(event.tower)
     end)
     if resultRemote then state.connections[#state.connections+1]=resultRemote.OnClientEvent:Connect(function(info)
-        if state.alive and running then log('TowerResult',info);outcome(info) end
+        if state.alive and (running or runOpen) then log('TowerResult',info);outcome(info) end
     end) end
+    function dungeon.releaseTower()
+        if not runOpen then return true end
+        if pending or currentBattle then return false,'Tower battle/request still active' end
+        pending=true;state.towerPending=true
+        local response=SoftRetry.call(function() return remote:InvokeServer('leave') end,
+            function() return state.alive and state.dungeonEnabled and state.dungeonTowerPause end,
+            function(delay) state.dungeonStatus='Tower handoff busy; retrying in '..delay..'s' end)
+        pending=false;state.towerPending=false
+        log('TowerDungeonRelease',{response=response})
+        if not response[1] or response[2]~=true then return false,tostring(response[3] or 'Could not leave idle Tower run') end
+        runOpen=false;currentBattle=nil;epoch=epoch+1;phase='start';due=os.clock()
+        state.towerStatus=running and 'Paused for Dungeon; resumes when gates close' or 'OFF'
+        return true
+    end
     function tower.start()
         if running or pending then return end
         if not remote or not remote:IsA('RemoteFunction') or not resultRemote then stop('Tower remotes unavailable');return end
@@ -3878,14 +3892,14 @@ do
     end
     task.spawn(function()
         while state.alive do
-            if running and not state.profileLoading and not pending and (phase=='start' or phase=='restart' or phase=='next') and os.clock()>=due then
+            if running and not state.dungeonTowerPause and not state.profileLoading and not pending and (phase=='start' or phase=='restart' or phase=='next') and os.clock()>=due then
                 pending=true;state.towerPending=true
                 local action=phase=='next' and 'next' or 'start'
                 local payload=action=='start' and {kind=own.kind,tier=own.tier,fresh=false} or nil
                 phase='requesting';local before=epoch
                 log('TowerRequest',{action=action,payload=payload})
                 local response=SoftRetry.call(function() return remote:InvokeServer(action,payload) end,
-                    function() return state.alive and running and not state.profileLoading and phase=='requesting' and epoch==before end,
+                    function() return state.alive and running and not state.dungeonTowerPause and not state.profileLoading and phase=='requesting' and epoch==before end,
                     function(delay) state.towerStatus='Slow down; retrying in '..delay..'s';log('TowerRetry',{action=action,delay=delay}) end)
                 log('TowerResponse',{action=action,response=response})
                 pending=false;state.towerPending=false
@@ -3893,12 +3907,30 @@ do
                 elseif epoch~=before or phase~='requesting' then
                     -- A new snapshot or end packet has already advanced this request.
                 elseif response[1] and (response[2]==true or response[3]=='The wave is not over yet') then
-                    phase='battle';state.towerStatus='Waiting for tower battle'
+                    runOpen=true;phase='battle';state.towerStatus='Waiting for tower battle'
+                elseif state.dungeonTowerPause and response[1]==true and response[2]==false and response[3]=='Slow down' then
+                    phase=action=='next' and 'next' or 'start'
+                elseif state.dungeonTowerPause and response[1]~=true and response[2]=='Stopped' then
+                    phase=action=='next' and 'next' or 'start'
                 else stop(tostring(response[1] and response[3] or 'Tower request failed; outcome unknown')) end
             end
             task.wait(.25)
         end
     end)
+end
+
+-- Story and War are independent. Dungeon and Tower share the remaining battle capacity.
+function dungeon.pauseFallback(forGate)
+    state.dungeonTowerPause=forGate==true
+    if state.dungeonTowerPause and state.towerEnabled then
+        state.towerStatus='Paused after current wave for Dungeon; Story continues'
+    end
+end
+function dungeon.fallback(mode)
+    state.dungeonTowerPause=false
+    if mode=='Tower' and not state.towerEnabled and not state.towerPending then tower.start()
+    elseif mode=='Story' and not state.enabled and not state.pending then beginRun()
+    elseif mode=='War Boss' and not state.warEnabled and not state.warBusy then war.start() end
 end
 
 local sessionRuntime=SessionRuntime.start({game=game,player=player,state=state,flags=flags,env=env,notice=function(text,kind) if ui then ui.Notify(text,kind,5) end end})
@@ -4018,7 +4050,7 @@ local function loadProfile(name,quiet)
     flags.HLRunning=nextFlags.HLRunning==true
     flags.DungeonRunning=nextFlags.DungeonRunning==true
     flags.DungeonGates=Dungeon.selection(nextFlags.DungeonGates or {Red=true})
-    flags.DungeonAfter=(nextFlags.DungeonAfter=='Story' or nextFlags.DungeonAfter=='War Boss') and nextFlags.DungeonAfter or 'Stop'
+    flags.DungeonAfter=(nextFlags.DungeonAfter=='Tower' or nextFlags.DungeonAfter=='Story' or nextFlags.DungeonAfter=='War Boss') and nextFlags.DungeonAfter or 'Stop'
     flags.TowerKind=(nextFlags.TowerKind=='Challenge' or nextFlags.TowerKind=='Artifact') and nextFlags.TowerKind or 'Material'
     flags.TowerChallenge=nextFlags.TowerChallenge or 'Basic'
     flags.TowerArtifact=nextFlags.TowerArtifact or 'A1'
@@ -4114,3 +4146,4 @@ end)
 requestMonitorSync()
 message('Ready: server BattleEnd results matched by battleId.')
 if state.restoreModes then state.restoreModes=false;applyRunFlags();ui.Repaint() end
+
