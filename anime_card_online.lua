@@ -3480,9 +3480,15 @@ do
                         end
                         if not active() then break end
                         if dungeon.releaseTower then
-                            good,reason=dungeon.releaseTower()
-                            if not good then error(reason) end
+                            repeat
+                                good,reason=dungeon.releaseTower()
+                                if good==nil then
+                                    state.dungeonStatus='Waiting for Tower battle to release its lane; Story continues'
+                                    if not waitFor(5) then break end
+                                elseif not good then error(reason) end
+                            until good~=nil or not active()
                         end
+                        if not active() then break end
                         good,reason=call('state');if not good then error(reason) end
                         id=Dungeon.choose(config,lastView,Dungeon.selection(flags.DungeonGates),blocked,workspace:GetServerTimeNow())
                         if id then
@@ -3860,10 +3866,28 @@ do
         state.towerStatus=reason or 'OFF; current tower run continues'
     end
     function tower.stop() stop() end
+    do
+        local held=false;local previous
+        function tower.pauseNative(on)
+            if on==held then return end
+            local settings=net:FindFirstChild('SetBattleSettings')
+            if not settings or type(settings.FireServer)~='function' then return end
+            if on then
+                local value
+                pcall(function() value=player:GetAttribute('ContinueTowers') end)
+                previous=value~=false
+                local ok=pcall(function() settings:FireServer({continueTowers=false}) end)
+                if ok then held=true end
+            else
+                local ok=pcall(function() settings:FireServer({continueTowers=previous}) end)
+                if ok then held=false end
+            end
+        end
+        state.connections[#state.connections+1]={Disconnect=function() if held then tower.pauseNative(false) end end}
+    end
     local function outcome(info)
         if type(info)~='table' or not own or info.kind~=own.kind or info.tier~=own.tier then return end
         if state.dungeonTowerPause and info.reason=='left' then return end
-        currentBattle=nil
         if info.done or info.claimed or info.cleared then runOpen=false end
         if info.claimed or info.cleared or (info.done and info.won) then
             cursor=cursor+1
@@ -3893,6 +3917,7 @@ do
         if event.battleId and handled[event.battleId] then return end
         if event.battleId then handled[event.battleId]=true;recent[#recent+1]=event.battleId end
         if #recent>128 then handled[table.remove(recent,1)]=nil end
+        currentBattle=nil
         log('TowerBattleEnd',event)
         outcome(event.tower)
     end)
@@ -3900,14 +3925,17 @@ do
         if state.alive and (running or runOpen) then log('TowerResult',info);outcome(info) end
     end) end
     function dungeon.releaseTower()
+        if pending or currentBattle then return nil,'Tower battle/request still active' end
         if not runOpen then return true end
-        if pending or currentBattle then return false,'Tower battle/request still active' end
         pending=true;state.towerPending=true
         local response=SoftRetry.call(function() return remote:InvokeServer('leave') end,
             function() return state.alive and state.dungeonEnabled and state.dungeonTowerPause end,
             function(delay) state.dungeonStatus='Tower handoff busy; retrying in '..delay..'s' end)
         pending=false;state.towerPending=false
         log('TowerDungeonRelease',{response=response})
+        if response[1] and response[2]==false and type(response[3])=='string' and response[3]:lower():find("use the battle",1,true) and response[3]:lower():find("leave",1,true) then
+            return nil,response[3]
+        end
         if not response[1] or response[2]~=true then return false,tostring(response[3] or 'Could not leave idle Tower run') end
         runOpen=false;currentBattle=nil;epoch=epoch+1;phase='start';due=os.clock()
         state.towerStatus=running and 'Paused for Dungeon; resumes when gates close' or 'OFF'
@@ -3953,12 +3981,14 @@ end
 -- Story and War are independent. Dungeon and Tower share the remaining battle capacity.
 function dungeon.pauseFallback(forGate)
     state.dungeonTowerPause=forGate==true
+    tower.pauseNative(state.dungeonTowerPause)
     if state.dungeonTowerPause and state.towerEnabled then
         state.towerStatus='Paused after current wave for Dungeon; Story continues'
     end
 end
 function dungeon.fallback(mode)
     state.dungeonTowerPause=false
+    tower.pauseNative(false)
     if mode=='Tower' and not state.towerEnabled and not state.towerPending then tower.start()
     elseif mode=='Story' and not state.enabled and not state.pending then beginRun()
     elseif mode=='War Boss' and not state.warEnabled and not state.warBusy then war.start() end
