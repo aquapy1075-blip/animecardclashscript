@@ -3322,7 +3322,7 @@ end
 
 local dungeon={}
 do
-    local enabled=false;local generation=0;local busy=false;local remote;local config;local owned;local entering;local result;local lastView;local nextCall=0;local requestBusy=false
+    local enabled=false;local generation=0;local busy=false;local remote;local config;local owned;local entering;local result;local lastView;local nextCall=0;local requestBusy=false;local autoResumeAt=math.huge
     state.dungeonStatus='OFF';state.dungeonBusy=false;state.dungeonPending=false
     local nativeUi;local nextNativeProbe=0
     local function ask(verb,payload)
@@ -3422,6 +3422,11 @@ do
             if outcome and not result then result=outcome;log('DungeonResult',{run=owned,phase=event.phase,result=outcome}) end
             if owned and type(run)=='table' and run.id==owned.id and run.gate==owned.gate then
                 state.dungeonFloor=run.floor;state.dungeonGate=run.gate
+                local hearts=tonumber(event.hearts or run.hearts)
+                if event.phase=='heart' and hearts and hearts>0 and not result then
+                    autoResumeAt=os.clock()+2
+                    log('DungeonHeartResumeScheduled',{run=owned,hearts=hearts})
+                end
             end
         end)
     end
@@ -3483,7 +3488,7 @@ do
                         if id then
                         state.dungeonGate=id;state.dungeonStatus='Climbing gate '..id
                         local runWindow=Dungeon.windowKey(config,id,workspace:GetServerTimeNow())
-                        owned=nil;result=nil;entering=id
+                        owned=nil;result=nil;entering=id;autoResumeAt=math.huge
                         good,reason=call('enter',{gate=id})
                         if not good then owned=nil;entering=nil;error(reason) end
                         local run=lastView and lastView.dungeon
@@ -3496,10 +3501,26 @@ do
                         if not owned then error('No verified dungeon run ID returned; stopped without guessing') end
                         if not result then good,reason=call('autoplay',{on=true});if not good then error(reason) end end
                         local deadline=os.clock()+7200
-                        local pollAt=os.clock()+8;local missingRun=0
+                        local pollAt=os.clock()+8;local missingRun=0;local autoProbeAt=os.clock()+3
                         while active() and not result do
                             if owned.gate~='Red' and os.clock()>deadline then error('No matched dungeon completion after two hours') end
                             if not waitFor(1) then break end
+                            if result then break end
+                            local gateAuto
+                            pcall(function() gateAuto=player:GetAttribute('GateAuto') end)
+                            if os.clock()>=autoProbeAt and (os.clock()>=autoResumeAt or gateAuto==false) then
+                                autoProbeAt=os.clock()+5
+                                good,reason=call('state');if not good then error(reason) end
+                                local resumeRun=lastView and lastView.dungeon
+                                if active() and not result and type(resumeRun)=='table' and resumeRun.id==owned.id and resumeRun.gate==owned.gate and (tonumber(resumeRun.hearts) or 1)>0 then
+                                    if gateAuto~=true then
+                                        state.dungeonStatus='Resuming dungeon autoplay after heart loss'
+                                        good,reason=call('autoplay',{on=true});if not good then error(reason) end
+                                        log('DungeonAutoplayResumed',{run=owned,source=os.clock()>=autoResumeAt and 'heart' or 'GateAuto off'})
+                                    end
+                                    autoResumeAt=math.huge
+                                end
+                            end
                             if result then break end
                             if os.clock()>=pollAt then
                                 good,reason=call('state');if not good then error(reason) end
