@@ -44,7 +44,6 @@ function Dungeon.event(run,event)
     if type(run)~='table' or type(event)~='table' or event.type~='dungeon' or type(event.run)~='table' then return nil end
     if event.run.id~=run.id or event.run.gate~=run.gate then return nil end
     if event.phase=='cleared' then return 'win' end
-    if run.gate=='Red' and event.phase=='floor' and type(event.run.floor)=='number' and event.run.floor>100 then return 'win' end
     -- Losing one heart is not the end of the run; native autoplay continues.
     if event.phase=='down' or event.phase=='fallen' then return 'loss' end
     return nil
@@ -3497,22 +3496,33 @@ do
                         if not owned then error('No verified dungeon run ID returned; stopped without guessing') end
                         if not result then good,reason=call('autoplay',{on=true});if not good then error(reason) end end
                         local deadline=os.clock()+7200
-                        local pollAt=os.clock()+8
+                        local pollAt=os.clock()+8;local missingRun=0
                         while active() and not result do
-                            if os.clock()>deadline then error('No matched dungeon completion after two hours') end
+                            if owned.gate~='Red' and os.clock()>deadline then error('No matched dungeon completion after two hours') end
                             if not waitFor(1) then break end
                             if result then break end
                             if os.clock()>=pollAt then
                                 good,reason=call('state');if not good then error(reason) end
                                 pollAt=os.clock()+8
                                 local current=lastView and lastView.dungeon
-                                if not result and type(current)=='table' and current.id==owned.id and current.gate=='Red' and type(current.floor)=='number' and current.floor>100 then result='win' end
-                                if not result and (type(current)~='table' or current.id~=owned.id) then error('Dungeon run changed/ended without a matched result; stopped') end
+                                if not result then
+                                    if type(current)~='table' then
+                                        missingRun=missingRun+1
+                                        if missingRun>=2 then result='ended';log('DungeonRunEnded',{run=owned,source='verified state'}) end
+                                    elseif current.id~=owned.id then error('Another dungeon run replaced this run; stopped without controlling it')
+                                    else missingRun=0 end
+                                end
                             end
                         end
                         if not active() then break end
-                        good,reason=call('autoplay',{on=false});if not good then error(reason) end
-                        good,reason=call('leave');if not good then error(reason) end
+                        -- The server may already have removed a defeated/finished run.
+                        good,reason=call('state');if not good then error(reason) end
+                        local closingRun=lastView and lastView.dungeon
+                        if type(closingRun)=='table' then
+                            if closingRun.id~=owned.id then error('Another dungeon run replaced this run; not leaving it') end
+                            good,reason=call('autoplay',{on=false});if not good then error(reason) end
+                            good,reason=call('leave');if not good then error(reason) end
+                        end
                         local leaveDeadline=os.clock()+15
                         while active() and lastView and (type(lastView.dungeon)=='table' or type(lastView.run)=='table') and os.clock()<leaveDeadline do
                             if not waitFor(2) then break end
@@ -3521,7 +3531,7 @@ do
                         if not active() then break end
                         if lastView and (type(lastView.dungeon)=='table' or type(lastView.run)=='table') then error('Previous dungeon has not closed; stopped') end
                         good,reason=call('state');if not good then error(reason) end
-                        blocked[id]=runWindow
+                        blocked[id]=Dungeon.windowKey(config,id,workspace:GetServerTimeNow())
                         log('DungeonScheduledResult',{gate=id,result=result})
                         owned=nil;entering=nil;result=nil
                         end
