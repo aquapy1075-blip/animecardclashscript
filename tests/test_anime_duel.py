@@ -74,6 +74,7 @@ function Instance.new(class)
  function methods:Destroy()props.Parent=nil;props.destroyed=true end
  function methods:WaitForChild(k)return props[k] end
  obj=setmetatable({}, {__index=function(_,k)
+  if type(props[k])=='function' then return props[k] end
   if methods[k] then return methods[k] end
   if events[k] then signals[k]=signals[k] or signal();return signals[k] end
   return props[k]
@@ -600,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v4-dungeon','visible versioned build')
+assert(current.build=='studio-v5-dungeon-walk','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -975,7 +976,7 @@ end
 for path in ['Balanced','Loot','Safe']:
  run_case('Dungeon '+path+' runs 20 rooms via captured actions and event State',mock+dungeon_mock,r'''
 local app=env.AnimeDuelScript
-app.config.dungeonPath='PATH';app.start('dungeon')
+app.config.dungeonPath='PATH';app.config.dungeonWalk=false;app.start('dungeon')
 schedule(.1,dstate);drain()
 assert(starts==2 and continuations==3 and cashouts==0)
 assert(not app.dungeon.worker and app.dungeon.status=='Stopped',app.dungeon.status)
@@ -986,7 +987,7 @@ app.destroy()
 
 run_case('Dungeon cashout at room 5 then starts again',mock+dungeon_mock,r'''
 local app=env.AnimeDuelScript
-app.config.dungeonCashOut=5;app.start('dungeon');schedule(.1,dstate);drain()
+app.config.dungeonCashOut=5;app.config.dungeonWalk=false;app.start('dungeon');schedule(.1,dstate);drain()
 assert(cashouts==1 and continuations==0 and starts==2)
 local fights=0;for _,c in ipairs(dcalls)do if c[1]=='Fight' then fights=fights+1 end end
 assert(fights==5);app.destroy()
@@ -995,14 +996,14 @@ assert(fights==5);app.destroy()
 unconfirmed_dungeon=dungeon_mock.replace("dstate();return true\n elseif name=='Fight'", "return true\n elseif name=='Fight'")
 run_case('Dungeon Start without State confirmation stops without resending',mock+unconfirmed_dungeon,r'''
 local app=env.AnimeDuelScript
-app.start('dungeon');schedule(.1,dstate);drain()
+app.config.dungeonWalk=false;app.start('dungeon');schedule(.1,dstate);drain()
 assert(starts==1 and app.dungeon.status:find('not confirmed',1,true),app.dungeon.status)
 app.destroy()
 ''')
 
 run_case('Dungeon locks and profile fields are validated independently',mock+file_mock+dungeon_mock,r'''
 local app=env.AnimeDuelScript
-app.config.dungeonDifficulty='Nightmare';app.start('dungeon');schedule(.1,dstate);drain()
+app.config.dungeonDifficulty='Nightmare';app.config.dungeonWalk=false;app.start('dungeon');schedule(.1,dstate);drain()
 assert(starts==0 and app.dungeon.status:find('Locked',1,true))
 app.config.dungeonDifficulty='Hard';app.config.dungeonPath='Safe';app.config.dungeonCashOut=10
 assert(app.setAutoProfile('Dungeon'))
@@ -1013,7 +1014,7 @@ app.destroy()
 
 run_case('STOP DUNGEON does not stop Draft Run',mock+dungeon_mock,r'''
 local app=env.AnimeDuelScript
-app.start('draft');app.start('dungeon');dstate()
+app.start('draft');app.config.dungeonWalk=false;app.start('dungeon');dstate()
 schedule(.2,function()app.stop('dungeon');assert(app.enabled,'independent Stop')end)
 drain()
 assert(fightIndex==15 and not app.dungeon.worker)
@@ -1024,8 +1025,77 @@ for path in ['Balanced','Loot','Safe']:
     hurt=dungeon_mock.replace('hp[id]=.9','hp[id]=.59').replace("local wanted=path=='Loot' and 1 or (path=='Safe' and 3 or 2)","local wanted=path=='Loot' and 1 or 3")
     run_case('Dungeon '+path+' chooses correctly when average HP is under 60 percent',mock+hurt,r'''
 local app=env.AnimeDuelScript
-app.config.dungeonPath='PATH';app.start('dungeon');schedule(.1,dstate);drain()
+app.config.dungeonPath='PATH';app.config.dungeonWalk=false;app.start('dungeon');schedule(.1,dstate);drain()
 assert(starts==2 and app.dungeon.status=='Stopped',app.dungeon.status)
 if 'PATH'=='Safe' then assert(cashouts==1,'Safe banks at checkpoint while injured')end
 app.destroy()
 '''.replace('PATH',path))
+
+walk_mock=r'''
+local vectorMeta={}
+local function vec(x,y,z)return setmetatable({X=x,Y=y,Z=z},vectorMeta)end
+vectorMeta.__sub=function(a,b)return vec(a.X-b.X,a.Y-b.Y,a.Z-b.Z)end
+vectorMeta.__index=function(v,k)if k=='Magnitude' then return math.sqrt(v.X*v.X+v.Y*v.Y+v.Z*v.Z)end end
+local character={};local root={Position=vec(50,0,0),Parent=character}
+local moves={};local portalTransfers=0
+local humanoid={Health=100,MoveTo=function(_,position)
+ moves[#moves+1]=position
+ if position.X==500 and position.Z==-20 then root.Position=vec(1250,0,0);portalTransfers=portalTransfers+1
+ else root.Position=position end
+end}
+function character:FindFirstChild(name)if name=='HumanoidRootPart' then return root end end
+function character:FindFirstChildOfClass(name)if name=='Humanoid' then return humanoid end end
+player.Character=character
+local guards={}
+local function guardPosition(room)return vec(room*50+(room>=11 and 700 or 0),0,0)end
+for i=1,20 do
+ local number=i
+ local guard={Parent=true,IsA=function(_,kind)return kind=='Model'end,
+  GetAttribute=function(_,key)if key=='DungeonRoom' then return number end end,
+  FindFirstChild=function(_,key)if key=='HumanoidRootPart' then return {Position=guardPosition(number)}end end,
+  GetPivot=function()return {Position=guardPosition(number)}end}
+ guards[#guards+1]=guard
+end
+local folder={GetDescendants=function()return guards end}
+local portal={IsA=function()return false end,GetPivot=function()return {Position=vec(500,0,-20)}end}
+local area={FindFirstChild=function(_,name)if name=='NextAreaPortal' then return portal end end}
+local map={FindFirstChild=function(_,name)if name=='Area 1' then return area end end}
+Workspace.FindFirstChild=function(_,name)
+ if name=='Dungeon Guards' then return folder elseif name=='Dungeon Run' then return map end
+end
+local originalDungeon=dr.InvokeServer
+function dr:InvokeServer(name,payload)
+ if name=='Fight' then assert((root.Position-guardPosition(payload)).Magnitude<=18,'Fight must wait for guard proximity')end
+ return originalDungeon(self,name,payload)
+end
+'''
+run_case('Dungeon walks to each verified room guard and uses Area 2 portal',mock+dungeon_mock+walk_mock,r'''
+local app=env.AnimeDuelScript
+assert(app.config.dungeonWalk==true,'auto walk on by default')
+app.start('dungeon');schedule(.1,dstate);drain()
+assert(starts==2 and portalTransfers==1,'20-room route crosses the portal')
+assert(#moves>15,'movement performed before requests')
+assert(app.dungeon.status=='Stopped',app.dungeon.status)
+app.destroy()
+''')
+
+blocked_walk=walk_mock.replace('else root.Position=position end','else -- blocked by a wall\n end')
+run_case('Stop cancels blocked Dungeon movement without sending Fight for a distant room',mock+dungeon_mock+blocked_walk,r'''
+local app=env.AnimeDuelScript
+app.start('dungeon');schedule(.1,dstate)
+schedule(4,function()app.stop('dungeon')end)
+drain()
+for _,call in ipairs(dcalls)do if call[1]=='Fight' then assert(call[2]==1,'never fight room 2 while far away')end end
+assert(not app.dungeon.worker and app.dungeon.walking==nil,'movement cancelled')
+app.destroy()
+''')
+
+# Ensure sub-models with no DungeonRoom attribute cannot be selected as targets.
+missing_guard=walk_mock.replace('guards[#guards+1]=guard', 'if number~=2 then guards[#guards+1]=guard end')
+run_case('missing room guard pauses rather than walking to a different NPC',mock+dungeon_mock+missing_guard,r'''
+local app=env.AnimeDuelScript
+app.start('dungeon');schedule(.1,dstate)
+schedule(5,function()app.stop('dungeon')end);drain()
+for _,call in ipairs(dcalls)do if call[1]=='Fight' then assert(call[2]==1)end end
+app.destroy()
+''')
