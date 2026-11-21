@@ -600,7 +600,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v3-fast-boss','visible versioned build')
+assert(current.build=='studio-v4-dungeon','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -922,3 +922,110 @@ assert(statusCard.Parent.Size.Y.Offset==88,'spacious status card')
 assert(bodyRow and not bodyRow.Visible,'only selected or cooling bosses fill cooldown view')
 app.destroy()
 ''')
+
+dungeon_mock=r'''
+local de={OnClientEvent=signal()}
+local dv={coins=0,unlocked={Normal={ok=true},Hard={ok=true},Nightmare={ok=false,why='Locked'}}}
+local dcalls={};local starts=0;local continuations=0;local cashouts=0
+local function dstate()de.OnClientEvent:Fire('State',dv)end
+local dr={}
+function dr:InvokeServer(name,payload)
+ dcalls[#dcalls+1]={name,payload}
+ if name=='Start' then
+  starts=starts+1
+  if starts==2 then env.AnimeDuelScript.stop('dungeon');return true end
+  assert(#payload.team==4 and #payload.reserves==2 and payload.difficulty=='Normal')
+  local cards={};local hp={}
+  for _,id in ipairs(payload.team)do cards[#cards+1]=id;hp[id]=.9 end
+  for _,id in ipairs(payload.reserves)do cards[#cards+1]=id;hp[id]=.9 end
+  dv.run={id=starts,room=1,phase='fight',cards=cards,team=payload.team,hp=hp,fighting=false,doors={},cleared=0}
+  dstate();return true
+ elseif name=='Fight' then
+  assert(payload==dv.run.room and dv.run.phase=='fight' and not dv.run.fighting,'no duplicate Fight')
+  dv.run.fighting=true;dv.battle=true;dstate()
+  schedule(1,function()
+   local r=dv.run;r.fighting=false;dv.battle=false;r.cleared=r.room
+   de.OnClientEvent:Fire('Result',{result='Victory',room=r.room})
+   if r.room==20 then dv.last={run=r.id,reason='cleared'};dv.run=nil
+   elseif r.room%5==0 then r.phase='checkpoint';r.doors={}
+   else r.phase='doors';r.doors={{kind='FORTUNE'},{kind='TREASURE'},{kind='RECOVERY'}} end
+   dstate()
+  end)
+  return true
+ elseif name=='Door' then
+  assert(dv.run.phase=='doors')
+  local path=env.AnimeDuelScript.config.dungeonPath
+  local wanted=path=='Loot' and 1 or (path=='Safe' and 3 or 2)
+  assert(payload==wanted,'door policy '..path..': '..tostring(payload))
+  dv.run.room=dv.run.room+1;dv.run.phase='fight';dv.run.doors={};dstate();return true
+ elseif name=='Continue' then
+  assert(dv.run.phase=='checkpoint');continuations=continuations+1
+  dv.run.phase='doors';dv.run.doors={{kind='FORTUNE'},{kind='TREASURE'},{kind='RECOVERY'}};dstate();return true
+ elseif name=='CashOut' then
+  assert(dv.run.phase=='checkpoint');cashouts=cashouts+1
+  dv.last={run=dv.run.id,reason='cashout'};dv.run=nil;dstate();return true
+ end
+ error('unobserved Dungeon action '..name)
+end
+remotes.FindFirstChild=function(_,name)
+ if name=='DungeonEvent' then return de elseif name=='DungeonAction' then return dr end
+ return nil
+end
+'''
+for path in ['Balanced','Loot','Safe']:
+ run_case('Dungeon '+path+' runs 20 rooms via captured actions and event State',mock+dungeon_mock,r'''
+local app=env.AnimeDuelScript
+app.config.dungeonPath='PATH';app.start('dungeon')
+schedule(.1,dstate);drain()
+assert(starts==2 and continuations==3 and cashouts==0)
+assert(not app.dungeon.worker and app.dungeon.status=='Stopped',app.dungeon.status)
+local fights=0;for _,c in ipairs(dcalls)do if c[1]=='Fight' then fights=fights+1 end end
+assert(fights==20,'one Fight per room')
+app.destroy()
+'''.replace('PATH',path))
+
+run_case('Dungeon cashout at room 5 then starts again',mock+dungeon_mock,r'''
+local app=env.AnimeDuelScript
+app.config.dungeonCashOut=5;app.start('dungeon');schedule(.1,dstate);drain()
+assert(cashouts==1 and continuations==0 and starts==2)
+local fights=0;for _,c in ipairs(dcalls)do if c[1]=='Fight' then fights=fights+1 end end
+assert(fights==5);app.destroy()
+''')
+
+unconfirmed_dungeon=dungeon_mock.replace("dstate();return true\n elseif name=='Fight'", "return true\n elseif name=='Fight'")
+run_case('Dungeon Start without State confirmation stops without resending',mock+unconfirmed_dungeon,r'''
+local app=env.AnimeDuelScript
+app.start('dungeon');schedule(.1,dstate);drain()
+assert(starts==1 and app.dungeon.status:find('not confirmed',1,true),app.dungeon.status)
+app.destroy()
+''')
+
+run_case('Dungeon locks and profile fields are validated independently',mock+file_mock+dungeon_mock,r'''
+local app=env.AnimeDuelScript
+app.config.dungeonDifficulty='Nightmare';app.start('dungeon');schedule(.1,dstate);drain()
+assert(starts==0 and app.dungeon.status:find('Locked',1,true))
+app.config.dungeonDifficulty='Hard';app.config.dungeonPath='Safe';app.config.dungeonCashOut=10
+assert(app.setAutoProfile('Dungeon'))
+app.destroy();loadScript();app=env.AnimeDuelScript
+assert(app.config.dungeonDifficulty=='Hard' and app.config.dungeonPath=='Safe' and app.config.dungeonCashOut==10)
+app.destroy()
+''')
+
+run_case('STOP DUNGEON does not stop Draft Run',mock+dungeon_mock,r'''
+local app=env.AnimeDuelScript
+app.start('draft');app.start('dungeon');dstate()
+schedule(.2,function()app.stop('dungeon');assert(app.enabled,'independent Stop')end)
+drain()
+assert(fightIndex==15 and not app.dungeon.worker)
+app.destroy()
+''')
+
+for path in ['Balanced','Loot','Safe']:
+    hurt=dungeon_mock.replace('hp[id]=.9','hp[id]=.59').replace("local wanted=path=='Loot' and 1 or (path=='Safe' and 3 or 2)","local wanted=path=='Loot' and 1 or 3")
+    run_case('Dungeon '+path+' chooses correctly when average HP is under 60 percent',mock+hurt,r'''
+local app=env.AnimeDuelScript
+app.config.dungeonPath='PATH';app.start('dungeon');schedule(.1,dstate);drain()
+assert(starts==2 and app.dungeon.status=='Stopped',app.dungeon.status)
+if 'PATH'=='Safe' then assert(cashouts==1,'Safe banks at checkpoint while injured')end
+app.destroy()
+'''.replace('PATH',path))
