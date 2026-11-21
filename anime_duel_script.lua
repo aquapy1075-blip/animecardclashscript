@@ -36,10 +36,10 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v14-prism-ui',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v15-aco-config',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -141,6 +141,8 @@ end
 local function configSnapshot()
     local out={}
     for key,value in pairs(app.config) do out[key]=value end
+    out.savedModeSelection=true
+    if app.config.autoStart and not app.config.savedModeSelection then out[app.config.mode..'Enabled']=true end
     return out
 end
 function app.saveProfile(name)
@@ -182,7 +184,15 @@ function app.loadProfile(name)
     for _,key in ipairs({'autoReconnect','autoStart','dungeonWalk','pauseForRift','sequenceBossDungeon'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
+    local hasModes=false
+    for _,mode in ipairs({'draft','climb','story','dungeon'}) do
+        local key=mode..'Enabled'
+        app.config[key]=incoming[key]==true
+        if type(incoming[key])=='boolean' then hasModes=true end
+    end
+    app.config.savedModeSelection=hasModes
     app.profiles.current=name;addName(name);storageStatus('Loaded: '..name)
+    if app.config.autoStart and app.restoreSavedModes then app.restoreSavedModes() end
     return true
 end
 function app.deleteProfile(name)
@@ -1325,6 +1335,8 @@ local function runDungeonLoop()
 end
 
 local function stopController(ctx)
+    local mode=ctx==app.climb and 'climb' or (ctx==app.story and 'story' or (ctx==app.dungeon and 'dungeon' or 'draft'))
+    app.config[mode..'Enabled']=false;app.config.savedModeSelection=true
     ctx.enabled=false
     if ctx==app.dungeon then stopDungeonMovement() end
     ctx.status=ctx.worker and 'Stopping — current server fight continues' or 'Stopped'
@@ -1342,6 +1354,7 @@ function app.start(mode)
     local ctx=mode=='climb' and app.climb or (mode=='story' and app.story or (mode=='dungeon' and app.dungeon or app))
     if not app.alive or ctx.worker then return end
     app.config.mode=mode -- Auto Load preference only; never selects the live worker.
+    app.config[mode..'Enabled']=true;app.config.savedModeSelection=true
     ctx.stopReason=nil;ctx.lastError=nil
     ctx.enabled=true;ctx.worker=true
     task.spawn(function()
@@ -1356,6 +1369,13 @@ function app.start(mode)
         else setStatus(ctx.stopReason or 'Stopped') end
         workerContexts[thread]=nil
     end)
+end
+
+function app.restoreSavedModes()
+    if not app.config.savedModeSelection then app.start(app.config.mode);return end
+    local modes={}
+    for _,mode in ipairs({'draft','climb','story','dungeon'}) do modes[mode]=app.config[mode..'Enabled']==true end
+    for _,mode in ipairs({'draft','climb','story','dungeon'}) do if modes[mode] then app.start(mode) end end
 end
 
 -- Exact embedded Online UI library, upstream 831eaf86123661bbb2bad7d26605bde614a47262.
@@ -1430,7 +1450,7 @@ local tooltip=function() end
 local responsiveRows={}
 local themes={
     Light={bg='F2F5FC',side='E7EDF8',panel='FFFFFF',row='EAF0FA',text='14213A',muted='526781',accent='4264D9',line='D1DBED',selected='DDE8FF',selectedText='173C85',mint='087B72',gold='986014',rose='B33764',violet='7045BC'},
-    Midnight={bg='080C16',side='0D1220',panel='111A2B',row='18243B',text='EDF4FF',muted='94A9C8',accent='9B8BFF',line='263855',selected='283657',selectedText='E2F5FF',mint='62E6DB',gold='FFD399',rose='FF9EBF',violet='C0ADFF'},
+    Midnight={bg='0B0D13',side='10121B',panel='171B28',row='202638',text='F0F4FF',muted='99A9C8',accent='6D8BFF',line='303B58',selected='28476B',selectedText='D9F4FF',mint='62DCC1',gold='F3C276',rose='F28FB4',violet='BAA0FF'},
     Ocean={bg='080F16',side='0C1822',panel='102635',row='17394B',text='ECFAFF',muted='8EBACD',accent='36DBCE',line='255166',selected='164C56',selectedText='CFFFF6',mint='5CE1C2',gold='F4CC84',rose='FF9EBD',violet='B5A5FF'},
     Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267',selected='503D78',selectedText='F4E8FF',mint='70E2CC',gold='F2CA83',rose='FFA0C1',violet='C7A8FF'},
     Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454',selected='235545',selectedText='D2FFEC',mint='79E8BD',gold='F4CE86',rose='FCA3C0',violet='B7ACFF'},
@@ -1496,6 +1516,9 @@ local function gradientText(label,bright)
     if not gradient then gradient=make('UIGradient',label,{Name='OriginTextGradient',Rotation=0}) end
     local palette=themes[flags.AO_UI_Theme] or themes.Midnight
     local accent=rgb(palette.accent);local ink=rgb(palette.text);local mint=rgb(palette.mint)
+    local tones={'violet','rose','gold','accent'}
+    local sum=0;for i=1,#label.Text do sum=sum+label.Text:byte(i) end
+    accent=rgb(palette[tones[sum%4+1]])
     local light=flags.AO_UI_Theme=='Light'
     if bright and light then
         local white=Color3.fromRGB(255,255,255)
@@ -1512,8 +1535,8 @@ end
 local function newText(parent,label,size,bold)
     local l=make('TextLabel',parent,{
         BackgroundTransparency=1,Text=tostring(label),
-        Font=bold and Enum.Font.BuilderSansBold or Enum.Font.BuilderSans,
-        TextSize=size or 13,TextXAlignment=Enum.TextXAlignment.Left,
+        Font=bold and Enum.Font.GothamBold or Enum.Font.Gotham,
+        TextSize=math.max(13,(size or 13)+2),TextXAlignment=Enum.TextXAlignment.Left,
         TextTruncate=Enum.TextTruncate.AtEnd,BorderSizePixel=0,
     })
     skin(l,'TextColor3',bold and 'text' or 'muted')
@@ -1524,7 +1547,7 @@ local function uiButton(parent,caption,size)
     local b=make('TextButton',parent,{
         Text=caption,Size=size or UDim2.fromOffset(135,32),
         BackgroundTransparency=0,BorderSizePixel=0,
-        Font=Enum.Font.BuilderSansMedium,TextSize=12,AutoButtonColor=true,
+        Font=Enum.Font.GothamMedium,TextSize=14,AutoButtonColor=true,
         TextTruncate=Enum.TextTruncate.AtEnd,
     })
     corner(b,10)
@@ -1629,7 +1652,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'ANIME DUEL',19,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'AQUA  /  PRISM EDITION  /  v14',11,false)
+local smallTitle=newText(header,'AQUA  /  ACO EDITION  /  v15',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1687,7 +1710,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='AQUA  /  PRISM EDITION  /  v14'
+        smallTitle.Text='AQUA  /  ACO EDITION  /  v15'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1703,11 +1726,11 @@ local function contentParent(tab)
 end
 local function section(tab,label)
     orderCounter=orderCounter+1
-    local t=newText(contentParent(tab),string.upper(label),12,true)
-    t.Size=UDim2.new(1,0,0,30)
+    local t=newText(contentParent(tab),string.upper(label),15,true)
+    t.Size=UDim2.new(1,0,0,36)
     gradientText(t)
     t.LayoutOrder=orderCounter
-    t.TextSize=12
+    t.TextSize=16
     t.TextTruncate=Enum.TextTruncate.None
     return t
 end
@@ -1785,7 +1808,7 @@ stroke(menu)
 local menuConnections={}
 local menuSearch=make('TextBox',menu,{Name='DropdownSearch',Position=UDim2.fromOffset(8,8),
     Size=UDim2.new(1,-96,0,36),Text='',PlaceholderText='Search targets or maps…',ClearTextOnFocus=false,
-    Font=Enum.Font.BuilderSans,TextSize=13,BorderSizePixel=0,ZIndex=152})
+    Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0,ZIndex=152})
 corner(menuSearch,8);skin(menuSearch,'BackgroundColor3','row');skin(menuSearch,'TextColor3','text')
 skin(menuSearch,'PlaceholderColor3','muted')
 local menuList=make('ScrollingFrame',menu,{Name='DropdownOptions',Position=UDim2.fromOffset(6,50),
@@ -1908,7 +1931,7 @@ local function addInput(tab,label,key,placeholder)
     local box=make('TextBox',r,{
         Size=UDim2.fromOffset(180,31),Position=UDim2.new(1,-195,.5,-15),
         BackgroundTransparency=0,BorderSizePixel=0,TextSize=13,
-        Font=Enum.Font.BuilderSansMedium,PlaceholderText=placeholder or '',
+        Font=Enum.Font.GothamMedium,PlaceholderText=placeholder or '',
         ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Center,
     })
     corner(box,10)
@@ -1980,7 +2003,7 @@ end
 local delay=ctx.Delay or function(seconds,callback) task.delay(seconds,callback) end
 local tooltipBox=make('TextLabel',root,{Name='Tooltip',Visible=false,Size=UDim2.fromOffset(240,54),
     BackgroundTransparency=.06,BorderSizePixel=0,ZIndex=220,TextWrapped=true,
-    TextSize=12,Font=Enum.Font.BuilderSans,Text='',TextXAlignment=Enum.TextXAlignment.Left})
+    TextSize=12,Font=Enum.Font.Gotham,Text='',TextXAlignment=Enum.TextXAlignment.Left})
 corner(tooltipBox,10);skin(tooltipBox,'BackgroundColor3','side');skin(tooltipBox,'TextColor3','text')
 make('UIPadding',tooltipBox,{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,12)})
 tooltip=function(obj,text)
@@ -2074,13 +2097,17 @@ do
     local descriptions={Monitor='Everything in view. Every run under control.',Draft='Build a stronger team. Climb through the bosses.',Climb='Smart card choices for your next milestone.',Boss='Your targets. Their cooldowns. One control center.',Dungeon='Build your squad. Choose your route. Collect the rewards.',Config='Your setup, ready for the next session.',Settings='Make this workspace feel like yours.'}
     for _,tab in ipairs(tabNames) do
         local hero=make('Frame',tabPages[tab],{Name=tab..'Hero',LayoutOrder=-20,Size=UDim2.new(1,-2,0,110),BorderSizePixel=0})
-        corner(hero,14);skin(hero,'BackgroundColor3','panel');stroke(hero)
-        make('UIGradient',hero,{Rotation=15,Color=ColorSequence.new(Color3.fromRGB(236,224,255),Color3.fromRGB(124,176,210))})
+        corner(hero,12);stroke(hero)
+        hero.BackgroundColor3=Color3.fromRGB(255,255,255)
+        make('UIGradient',hero,{Rotation=15,Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(71,43,124)),ColorSequenceKeypoint.new(.6,Color3.fromRGB(26,88,124)),ColorSequenceKeypoint.new(1,Color3.fromRGB(20,111,101))})})
         local kicker=newText(hero,'A Q U A   /   A U T O M A T I O N',10,false)
+        kicker.TextColor3=Color3.fromRGB(172,216,240);skinned[kicker]=nil
         kicker.Position=UDim2.fromOffset(18,12);kicker.Size=UDim2.new(1,-36,0,16)
         local title=newText(hero,tab=='Dungeon' and 'Dungeon expedition' or (tab=='Monitor' and 'Your command center' or tab),26,true)
+        gradientText(title,true)
         title.Position=UDim2.fromOffset(18,33);title.Size=UDim2.new(1,-36,0,34)
         local subtitle=newText(hero,descriptions[tab],12,false)
+        subtitle.TextColor3=Color3.fromRGB(187,213,235);skinned[subtitle]=nil
         subtitle.Position=UDim2.fromOffset(18,74);subtitle.Size=UDim2.new(1,-36,0,28);subtitle.TextWrapped=true
     end
 end
@@ -2172,7 +2199,7 @@ end
 dungeonUI.current=dungeonUI.groups.Overview
 section('Dungeon','Expedition control')
 addToggle('Dungeon','Auto Dungeon','DungeonRunning')
-modeActions('Dungeon','dungeon','START DUNGEON','STOP DUNGEON')
+-- Auto Dungeon is controlled only by its toggle.
 local dungeonLive=addStatus('Dungeon','Status','Ready — Start requests the server directly')
 local dungeonProgress=addStatus('Dungeon','Room / phase','--')
 local dungeonHealth=addStatus('Dungeon','Alive / average HP','--')
@@ -2230,7 +2257,7 @@ do
     addAction('Dungeon','Owned cards','REFRESH COLLECTION',function()app.refreshDungeonCollection()end)
     local searchRow=row('Dungeon','Find a card')
     local search=make('TextBox',searchRow,{Name='DungeonCardSearch',Text='',PlaceholderText='Search card name…',ClearTextOnFocus=false,
-        Position=UDim2.new(1,-210,.5,-17),Size=UDim2.fromOffset(196,34),BorderSizePixel=0,Font=Enum.Font.BuilderSans,TextSize=12})
+        Position=UDim2.new(1,-210,.5,-17),Size=UDim2.fromOffset(196,34),BorderSizePixel=0,Font=Enum.Font.Gotham,TextSize=12})
     corner(search,8);skin(search,'BackgroundColor3','row');skin(search,'TextColor3','text');skin(search,'PlaceholderColor3','muted')
     trackUI(search:GetPropertyChangedSignal('Text'):Connect(function()picker.query=search.Text;picker.page=1;picker.revision=nil;refreshPicker()end))
     local borderButton,sortButton
@@ -2273,6 +2300,7 @@ do
         for i,t in ipairs(picker.slots) do
             local id=slots[i];local card=c.cards[id];local def=c.definitions[id]
             local name=card and card.name or (def and def.Name) or (id~='' and id or 'Empty')
+            t.title.TextSize=13
             t.title.Text=name;t.image.Image=card and card.image or (def and def.Image) or ''
             t.detail.Text=(i<=4 and ('TEAM '..i) or ('RESERVE '..(i-4)))..(i==picker.active and ' · SELECTED' or '')..(id~='' and c.ready and not card and '\nNot owned' or '')
             paintRing(t,card and card.border or (def and def.Variant),i==picker.active)
@@ -2326,8 +2354,9 @@ addAction('Config','Load on next execute','SET AUTO LOAD',function() ctx.setAuto
 addAction('Config','Disable Auto Load','CLEAR AUTO LOAD',ctx.clearAutoProfile)
 local configStatus=addStatus('Config','Storage','Ready')
 local configAuto=addStatus('Config','Auto Load','None')
+local configModes=addStatus('Config','Saved mode preferences','--')
 section('Settings','Startup and connection')
-addToggle('Settings','Start saved mode on execution','autoStart')
+addToggle('Settings','Auto Start saved modes','autoStart')
 addToggle('Settings','Auto reconnect','autoReconnect')
 addAction('Settings','Rejoin server','REJOIN',ctx.rejoinServer)
 local reconnectStatus=addStatus('Settings','Connection','Monitoring')
@@ -2663,6 +2692,9 @@ local function refreshOverview()
     end
     showStatus(configStatus,app.profiles.status)
     showStatus(configAuto,app.profiles.auto or 'OFF')
+    local preferences={}
+    for _,mode in ipairs({'draft','climb','story','dungeon'}) do preferences[#preferences+1]=mode..': '..(app.config[mode..'Enabled'] and 'ON' or 'OFF') end
+    showStatus(configModes,table.concat(preferences,' · '))
     showStatus(reconnectStatus,app.config.autoReconnect and app.reconnect.status or 'OFF')
 end
 do
@@ -2761,4 +2793,4 @@ redraw()
 setStatus('Ready — Online UI library / independent mode controls')
 monitorConnection()
 app.refreshDungeonCollection()
-if autoLoaded and app.config.autoStart then app.start() end
+if autoLoaded and app.config.autoStart then app.restoreSavedModes() end
