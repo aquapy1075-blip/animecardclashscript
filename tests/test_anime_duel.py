@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v13-rift-live-priority','visible versioned build')
+assert(current.build=='studio-v14-prism-ui','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -819,7 +819,7 @@ for _,obj in ipairs(objects)do
  if obj.ClassName=='TextButton' and obj.Text=='START DRAFT' then action=obj end
 end
 assert(sidebar and window.ClassName=='CanvasGroup' and slider and gradient,'exact Online library components')
-assert(action.Position.X.Scale==1 and action.Position.X.Offset==-195,'reference right-side action placement')
+assert(action.Position.X.Scale==0 and action.Size.X.Scale==.64,'paired primary action placement')
 assert(action.Parent.Size.Y.Offset==49,'reference compact row height')
 Workspace.CurrentCamera.ViewportSize=Vector2.new(390,844)
 Workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Fire()
@@ -1451,4 +1451,38 @@ schedule(32,function()
 end)
 schedule(34,function()assert(#calls>0,'matched Rift end resumes Draft');app.stop('draft')end)
 drain();app.destroy()
+''')
+
+run_case('Prism Dungeon workspaces isolate team, collection, history and configuration on mobile',mock,r'''
+local app=env.AnimeDuelScript
+local function find(name)for _,o in ipairs(objects)do if o.Name==name then return o end end;error(name)end
+local names={'Overview','Team','Cards','History','Settings'}
+for _,name in ipairs(names)do
+ find('DungeonNav'..name).Activated:Fire()
+ for _,other in ipairs(names)do assert(find('DungeonGroup'..other).Visible==(name==other),'only selected workspace visible')end
+end
+assert(find('DungeonTeamSlots').Parent==find('DungeonGroupTeam'))
+assert(find('DungeonOwnedCards').Parent==find('DungeonGroupCards'))
+assert(find('dungeonActionBar').Parent==find('DungeonGroupOverview'))
+assert(find('DungeonHero').Parent.Name=='Dungeon')
+Workspace.CurrentCamera.ViewportSize=Vector2.new(390,844)
+Workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Fire()
+find('DungeonNavTeam').Activated:Fire()
+assert(find('DungeonGroupTeam').Visible and not app.uiError,tostring(app.uiError))
+app.destroy()
+''')
+
+run_case('Prism fonts and moving gradient text suspend when hidden and disconnect on unload',mock+r'''
+local heartbeat=signal();services.RunService={Heartbeat=heartbeat}
+''',r'''
+local app=env.AnimeDuelScript
+local title,gradient
+for _,o in ipairs(objects)do if o.Text=='ANIME DUEL' then title=o;gradient=o:FindFirstChild('OriginTextGradient')end end
+assert(title and title.Font==Enum.Font.BuilderSansBold)
+heartbeat:Fire(.1);assert(gradient.Offset,'animation moves gradient')
+local prior=gradient.Offset
+app.Root.Enabled=false;heartbeat:Fire(.1);assert(gradient.Offset==prior,'hidden UI does no animation work')
+app.Root.Enabled=true;heartbeat:Fire(.1);assert(gradient.Offset~=prior)
+app.destroy()
+local after=gradient.Offset;heartbeat:Fire(.1);assert(gradient.Offset==after,'animation disconnected')
 ''')
