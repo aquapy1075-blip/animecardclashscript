@@ -36,7 +36,7 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v13-rift-live-priority',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v14-prism-ui',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
@@ -1430,7 +1430,7 @@ local tooltip=function() end
 local responsiveRows={}
 local themes={
     Light={bg='F2F5FC',side='E7EDF8',panel='FFFFFF',row='EAF0FA',text='14213A',muted='526781',accent='4264D9',line='D1DBED',selected='DDE8FF',selectedText='173C85',mint='087B72',gold='986014',rose='B33764',violet='7045BC'},
-    Midnight={bg='0B0D13',side='10121B',panel='171B28',row='202638',text='F0F4FF',muted='99A9C8',accent='6D8BFF',line='303B58',selected='28476B',selectedText='D9F4FF',mint='62DCC1',gold='F3C276',rose='F28FB4',violet='BAA0FF'},
+    Midnight={bg='080C16',side='0D1220',panel='111A2B',row='18243B',text='EDF4FF',muted='94A9C8',accent='9B8BFF',line='263855',selected='283657',selectedText='E2F5FF',mint='62E6DB',gold='FFD399',rose='FF9EBF',violet='C0ADFF'},
     Ocean={bg='080F16',side='0C1822',panel='102635',row='17394B',text='ECFAFF',muted='8EBACD',accent='36DBCE',line='255166',selected='164C56',selectedText='CFFFF6',mint='5CE1C2',gold='F4CC84',rose='FF9EBD',violet='B5A5FF'},
     Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267',selected='503D78',selectedText='F4E8FF',mint='70E2CC',gold='F2CA83',rose='FFA0C1',violet='C7A8FF'},
     Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454',selected='235545',selectedText='D2FFEC',mint='79E8BD',gold='F4CE86',rose='FCA3C0',violet='B7ACFF'},
@@ -1512,7 +1512,7 @@ end
 local function newText(parent,label,size,bold)
     local l=make('TextLabel',parent,{
         BackgroundTransparency=1,Text=tostring(label),
-        Font=bold and Enum.Font.GothamBold or Enum.Font.Gotham,
+        Font=bold and Enum.Font.BuilderSansBold or Enum.Font.BuilderSans,
         TextSize=size or 13,TextXAlignment=Enum.TextXAlignment.Left,
         TextTruncate=Enum.TextTruncate.AtEnd,BorderSizePixel=0,
     })
@@ -1524,7 +1524,7 @@ local function uiButton(parent,caption,size)
     local b=make('TextButton',parent,{
         Text=caption,Size=size or UDim2.fromOffset(135,32),
         BackgroundTransparency=0,BorderSizePixel=0,
-        Font=Enum.Font.GothamMedium,TextSize=12,AutoButtonColor=true,
+        Font=Enum.Font.BuilderSansMedium,TextSize=12,AutoButtonColor=true,
         TextTruncate=Enum.TextTruncate.AtEnd,
     })
     corner(b,10)
@@ -1626,10 +1626,10 @@ corner(iconTile,10)
 skin(iconTile,'BackgroundColor3','accent')
 local gameIconImage=make('ImageLabel',iconTile,{Name='GameIcon',BackgroundTransparency=1,Size=UDim2.fromScale(1,1),Image=state.gameIcon or '',ScaleType=Enum.ScaleType.Crop})
 corner(gameIconImage,10)
-local bigTitle=newText(header,'Anime Card Duel',17,true)
+local bigTitle=newText(header,'ANIME DUEL',19,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'made by aquacodex · Studio v13 · Rift Detection',11,false)
+local smallTitle=newText(header,'AQUA  /  PRISM EDITION  /  v14',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1687,7 +1687,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='made by aquacodex · Studio v13 · Rift Detection'
+        smallTitle.Text='AQUA  /  PRISM EDITION  /  v14'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1697,26 +1697,30 @@ end
 local widgets={}
 local statusLabels={}
 local orderCounter=0
+local dungeonUI={groups={},buttons={},active='Overview',current=nil}
+local function contentParent(tab)
+    return tab=='Dungeon' and dungeonUI.current or tabPages[tab]
+end
 local function section(tab,label)
     orderCounter=orderCounter+1
-    local t=newText(tabPages[tab],string.upper(label),12,true)
+    local t=newText(contentParent(tab),string.upper(label),12,true)
     t.Size=UDim2.new(1,0,0,30)
     gradientText(t)
     t.LayoutOrder=orderCounter
-    local sectionRoles={'violet','mint','gold','rose'}
-    gradientText(t)
+    t.TextSize=12
+    t.TextTruncate=Enum.TextTruncate.None
     return t
 end
 local function row(tab,label)
     orderCounter=orderCounter+1
-    local parent=tabPages[tab]
+    local parent=contentParent(tab)
     local r=make('Frame',parent,{
         Size=UDim2.new(1,-2,0,49),BorderSizePixel=0,
         LayoutOrder=orderCounter,
     })
     corner(r,10)
     skin(r,'BackgroundColor3','panel')
-    local glow=make('UIGradient',r,{Rotation=15,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(165,185,225))})
+    local glow=make('UIGradient',r,{Rotation=15,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(195,211,245))})
     stroke(r)
     local nameLabel=newText(r,label,13,true)
     nameLabel.Position=UDim2.fromOffset(14,0)
@@ -1755,6 +1759,17 @@ local function addToggle(tab,label,key)
     return b
 end
 
+local function modeActions(tab,mode,startCaption,stopCaption)
+    orderCounter=orderCounter+1
+    local bar=make('Frame',contentParent(tab),{Name=mode..'ActionBar',LayoutOrder=orderCounter,BackgroundTransparency=1,Size=UDim2.new(1,-2,0,49)})
+    local start=uiButton(bar,startCaption,UDim2.new(.64,-4,1,0));start.Position=UDim2.fromOffset(0,0)
+    skin(start,'BackgroundColor3','accent');skin(start,'TextColor3','bg')
+    local stop=uiButton(bar,stopCaption,UDim2.new(.36,-4,1,0));stop.Position=UDim2.new(.64,4,0,0)
+    skin(stop,'TextColor3','rose')
+    trackUI(start.MouseButton1Click:Connect(function()ctx.app.start(mode)end))
+    trackUI(stop.MouseButton1Click:Connect(function()ctx.app.stop(mode)end))
+end
+
 local menuDismiss=make('TextButton',root,{
     Name='DropdownDismiss',Visible=false,Size=UDim2.fromScale(1,1),
     Position=UDim2.fromScale(0,0),Text='',AutoButtonColor=false,
@@ -1770,7 +1785,7 @@ stroke(menu)
 local menuConnections={}
 local menuSearch=make('TextBox',menu,{Name='DropdownSearch',Position=UDim2.fromOffset(8,8),
     Size=UDim2.new(1,-96,0,36),Text='',PlaceholderText='Search targets or maps…',ClearTextOnFocus=false,
-    Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0,ZIndex=152})
+    Font=Enum.Font.BuilderSans,TextSize=13,BorderSizePixel=0,ZIndex=152})
 corner(menuSearch,8);skin(menuSearch,'BackgroundColor3','row');skin(menuSearch,'TextColor3','text')
 skin(menuSearch,'PlaceholderColor3','muted')
 local menuList=make('ScrollingFrame',menu,{Name='DropdownOptions',Position=UDim2.fromOffset(6,50),
@@ -1893,7 +1908,7 @@ local function addInput(tab,label,key,placeholder)
     local box=make('TextBox',r,{
         Size=UDim2.fromOffset(180,31),Position=UDim2.new(1,-195,.5,-15),
         BackgroundTransparency=0,BorderSizePixel=0,TextSize=13,
-        Font=Enum.Font.GothamMedium,PlaceholderText=placeholder or '',
+        Font=Enum.Font.BuilderSansMedium,PlaceholderText=placeholder or '',
         ClearTextOnFocus=false,TextXAlignment=Enum.TextXAlignment.Center,
     })
     corner(box,10)
@@ -1965,7 +1980,7 @@ end
 local delay=ctx.Delay or function(seconds,callback) task.delay(seconds,callback) end
 local tooltipBox=make('TextLabel',root,{Name='Tooltip',Visible=false,Size=UDim2.fromOffset(240,54),
     BackgroundTransparency=.06,BorderSizePixel=0,ZIndex=220,TextWrapped=true,
-    TextSize=12,Font=Enum.Font.Gotham,Text='',TextXAlignment=Enum.TextXAlignment.Left})
+    TextSize=12,Font=Enum.Font.BuilderSans,Text='',TextXAlignment=Enum.TextXAlignment.Left})
 corner(tooltipBox,10);skin(tooltipBox,'BackgroundColor3','side');skin(tooltipBox,'TextColor3','text')
 make('UIPadding',tooltipBox,{PaddingLeft=UDim.new(0,12),PaddingRight=UDim.new(0,12)})
 tooltip=function(obj,text)
@@ -2055,6 +2070,20 @@ local function clearNotifications()
     toast.queue={};toast.active=false;toast.item=nil
     toastBox.Visible=false
 end
+do
+    local descriptions={Monitor='Everything in view. Every run under control.',Draft='Build a stronger team. Climb through the bosses.',Climb='Smart card choices for your next milestone.',Boss='Your targets. Their cooldowns. One control center.',Dungeon='Build your squad. Choose your route. Collect the rewards.',Config='Your setup, ready for the next session.',Settings='Make this workspace feel like yours.'}
+    for _,tab in ipairs(tabNames) do
+        local hero=make('Frame',tabPages[tab],{Name=tab..'Hero',LayoutOrder=-20,Size=UDim2.new(1,-2,0,110),BorderSizePixel=0})
+        corner(hero,14);skin(hero,'BackgroundColor3','panel');stroke(hero)
+        make('UIGradient',hero,{Rotation=15,Color=ColorSequence.new(Color3.fromRGB(236,224,255),Color3.fromRGB(124,176,210))})
+        local kicker=newText(hero,'A Q U A   /   A U T O M A T I O N',10,false)
+        kicker.Position=UDim2.fromOffset(18,12);kicker.Size=UDim2.new(1,-36,0,16)
+        local title=newText(hero,tab=='Dungeon' and 'Dungeon expedition' or (tab=='Monitor' and 'Your command center' or tab),26,true)
+        title.Position=UDim2.fromOffset(18,33);title.Size=UDim2.new(1,-36,0,34)
+        local subtitle=newText(hero,descriptions[tab],12,false)
+        subtitle.Position=UDim2.fromOffset(18,74);subtitle.Size=UDim2.new(1,-36,0,28);subtitle.TextWrapped=true
+    end
+end
 section('Monitor','Live control center')
 local draftStatus=addStatus('Monitor','Draft Run','Ready')
 local climbStatus=addStatus('Monitor','Draft Climb','Ready')
@@ -2063,8 +2092,7 @@ local scoreStatus=addStatus('Monitor','Draft wins / losses / clears','0 / 0 / 0'
 local requestStatus=addStatus('Monitor','Story start requests','0')
 section('Draft','Auto Draft Run')
 addToggle('Draft','Auto Draft','DraftRunning')
-addAction('Draft','Start Draft Run','START DRAFT',function() ctx.app.start('draft') end)
-addAction('Draft','Stop Draft Run','STOP DRAFT',function() ctx.app.stop('draft') end)
+modeActions('Draft','draft','START DRAFT','STOP DRAFT')
 local draftLive=addStatus('Draft','Status','Ready')
 local draftRun=addStatus('Draft','Run / boss','--')
 local draftRecovery=addStatus('Draft','Recovery','--')
@@ -2076,8 +2104,7 @@ addInput('Draft','Action delay (seconds)','delay','0.8')
 addInput('Draft','Fight timeout (seconds)','timeout','180')
 section('Climb','Auto Draft Climb')
 addToggle('Climb','Auto pick / restart','ClimbRunning')
-addAction('Climb','Start Climb controller','START CLIMB',function() ctx.app.start('climb') end)
-addAction('Climb','Stop Climb controller','STOP CLIMB',function() ctx.app.stop('climb') end)
+modeActions('Climb','climb','START CLIMB','STOP CLIMB')
 local climbLive=addStatus('Climb','Status','Ready')
 local climbProgress=addStatus('Climb','Run / floor','--')
 local climbTeam=addStatus('Climb','Team','--')
@@ -2112,8 +2139,7 @@ widgets[#widgets+1]=function()
 end
 addDropdown('Boss','Difficulty','storyDifficulty',{'Easy','Medium','Hard','Nightmare'})
 addToggle('Boss','Auto Start Fight','BossRunning')
-addAction('Boss','Start requests','START BOSS',function() ctx.app.start('story') end)
-addAction('Boss','Stop requests','STOP BOSS',function() ctx.app.stop('story') end)
+modeActions('Boss','story','START BOSS','STOP BOSS')
 local bossLive=addStatus('Boss','Status','Ready')
 local bossSummary=addStatus('Boss','Selected targets','--')
 addStatus('Boss','Attempt interval','1.5s / server cooldowns respected')
@@ -2122,17 +2148,36 @@ local cooldownLabels={}
 for _,boss in ipairs(ctx.storyBosses) do
     cooldownLabels[boss.id]=addStatus('Boss',boss.name..(boss.secret and ' [SECRET]' or ''),'--')
 end
-section('Dungeon','Auto Dungeon')
-addToggle('Dungeon','Pause script autos for native Rift','pauseForRift')
-addToggle('Dungeon','Ready Story Boss before next Dungeon room','sequenceBossDungeon')
-local priorityLive=addStatus('Dungeon','Battle priority','Ready')
+do
+    local tabs={'Overview','Team','Cards','History','Settings'}
+    local navigation=make('Frame',tabPages.Dungeon,{Name='DungeonNavigation',LayoutOrder=-10,Size=UDim2.new(1,-2,0,42),BackgroundTransparency=1})
+    for i,name in ipairs(tabs) do
+        local panel=make('Frame',tabPages.Dungeon,{Name='DungeonGroup'..name,LayoutOrder=i,Size=UDim2.new(1,0,0,0),AutomaticSize=Enum.AutomaticSize.Y,BackgroundTransparency=1,Visible=name=='Overview'})
+        make('UIListLayout',panel,{Padding=UDim.new(0,9),SortOrder=Enum.SortOrder.LayoutOrder})
+        dungeonUI.groups[name]=panel
+        local button=uiButton(navigation,name,UDim2.new(.2,-5,1,0));button.Name='DungeonNav'..name
+        button.Position=UDim2.new((i-1)*.2,0,0,0);button.TextSize=11
+        dungeonUI.buttons[name]=button
+        trackUI(button.Activated:Connect(function()
+            dungeonUI.active=name
+            for key,group in pairs(dungeonUI.groups) do group.Visible=key==name end
+            for key,control in pairs(dungeonUI.buttons) do skin(control,'BackgroundColor3',key==name and 'selected' or 'row') end
+            tabPages.Dungeon.CanvasPosition=Vector2.new(0,0)
+        end))
+    end
+    widgets[#widgets+1]=function()
+        for key,button in pairs(dungeonUI.buttons) do skin(button,'BackgroundColor3',key==dungeonUI.active and 'selected' or 'row') end
+    end
+end
+dungeonUI.current=dungeonUI.groups.Overview
+section('Dungeon','Expedition control')
 addToggle('Dungeon','Auto Dungeon','DungeonRunning')
-addToggle('Dungeon','Teleport to Dungeon NPC / guards','dungeonWalk')
-addAction('Dungeon','Start controller','START DUNGEON',function() ctx.app.start('dungeon') end)
-addAction('Dungeon','Stop controller','STOP DUNGEON',function() ctx.app.stop('dungeon') end)
+modeActions('Dungeon','dungeon','START DUNGEON','STOP DUNGEON')
 local dungeonLive=addStatus('Dungeon','Status','Ready — Start requests the server directly')
 local dungeonProgress=addStatus('Dungeon','Room / phase','--')
 local dungeonHealth=addStatus('Dungeon','Alive / average HP','--')
+dungeonUI.current=dungeonUI.groups.Settings
+section('Dungeon','Route & difficulty')
 addDropdown('Dungeon','Difficulty','dungeonDifficulty',{'Normal','Hard','Nightmare'})
 local pathButton
 pathButton=addAction('Dungeon','Path','Balanced  ▾',function()
@@ -2145,11 +2190,11 @@ addDropdown('Dungeon','Cash out at room','dungeonCashOut',{5,10,15,20})
 do
     local app=ctx.app
     local picker={query='',border='All',sort='Power',page=1,active=1,revision=nil,tiles={},slots={}}
-    section('Dungeon','Your Dungeon team')
+    dungeonUI.current=dungeonUI.groups.Cards
     local collectionStatus=addStatus('Dungeon','Collection','Loading your collection…')
     local function panel(name,height)
         orderCounter=orderCounter+1
-        return make('Frame',tabPages.Dungeon,{Name=name,LayoutOrder=orderCounter,Size=UDim2.new(1,-2,0,height),BackgroundTransparency=1,BorderSizePixel=0})
+        return make('Frame',contentParent('Dungeon'),{Name=name,LayoutOrder=orderCounter,Size=UDim2.new(1,-2,0,height),BackgroundTransparency=1,BorderSizePixel=0})
     end
     local function grid(parent,height)
         make('UIGridLayout',parent,{CellSize=UDim2.new(1/3,-6,0,height),CellPadding=UDim2.fromOffset(8,8),SortOrder=Enum.SortOrder.LayoutOrder})
@@ -2168,6 +2213,8 @@ do
         local colors={Basic=Color3.fromRGB(126,142,168),Grey=Color3.fromRGB(126,142,168),Gold=Color3.fromRGB(255,203,92),Rainbow=Color3.fromRGB(86,228,225),Secret=Color3.fromRGB(208,124,255)}
         t.ring.Color=colors[border] or colors.Basic;t.ring.Thickness=selected and 2 or 1
     end
+    dungeonUI.current=dungeonUI.groups.Team
+    section('Dungeon','01 / Main squad     02 / Reserves')
     local slotPanel=panel('DungeonTeamSlots',248);grid(slotPanel,120)
     local refreshPicker
     for i=1,6 do
@@ -2178,10 +2225,12 @@ do
     addAction('Dungeon','Selected slot','CLEAR SLOT',function()
         app.setDungeonSlot(picker.active,nil);picker.revision=nil;refreshPicker()
     end)
+    dungeonUI.current=dungeonUI.groups.Cards
+    section('Dungeon','Your collection')
     addAction('Dungeon','Owned cards','REFRESH COLLECTION',function()app.refreshDungeonCollection()end)
     local searchRow=row('Dungeon','Find a card')
     local search=make('TextBox',searchRow,{Name='DungeonCardSearch',Text='',PlaceholderText='Search card name…',ClearTextOnFocus=false,
-        Position=UDim2.new(1,-210,.5,-17),Size=UDim2.fromOffset(196,34),BorderSizePixel=0,Font=Enum.Font.Gotham,TextSize=12})
+        Position=UDim2.new(1,-210,.5,-17),Size=UDim2.fromOffset(196,34),BorderSizePixel=0,Font=Enum.Font.BuilderSans,TextSize=12})
     corner(search,8);skin(search,'BackgroundColor3','row');skin(search,'TextColor3','text');skin(search,'PlaceholderColor3','muted')
     trackUI(search:GetPropertyChangedSignal('Text'):Connect(function()picker.query=search.Text;picker.page=1;picker.revision=nil;refreshPicker()end))
     local borderButton,sortButton
@@ -2250,8 +2299,15 @@ do
     refreshPicker()
 end
 
+dungeonUI.current=dungeonUI.groups.Settings
+section('Dungeon','Automation & priorities')
+addToggle('Dungeon','Pause autos for native Rift','pauseForRift')
+addToggle('Dungeon','Prioritize ready Story Boss','sequenceBossDungeon')
+addToggle('Dungeon','Teleport to Dungeon guards','dungeonWalk')
+local priorityLive=addStatus('Dungeon','Battle priority','Ready')
 addStatus('Dungeon','Checkpoint policy','Withdraw when in trouble; Safest also banks early when injured')
 addStatus('Dungeon','Guard positioning','Enter run, then teleport to the current guard before requests.')
+dungeonUI.current=dungeonUI.groups.History
 section('Dungeon','Last 10 runs · time tracked this session')
 local dungeonHistory={}
 for i=1,10 do dungeonHistory[i]=addStatus('Dungeon','Run #'..i,i==1 and 'No completed runs yet' or '--') end
@@ -2599,12 +2655,37 @@ local function refreshOverview()
         label.Parent.Visible=item~=nil or i==1
         if item then
             local seconds=math.floor(item.seconds)
+            local lines=math.max(2,math.ceil(#item.rewards/math.max(20,math.floor(label.AbsoluteSize.X/7)))+1)
+            label.Parent.Size=UDim2.new(1,-2,0,50+lines*18)
+            label.Size=UDim2.new(1,-32,0,lines*18)
             showStatus(label,tostring(item.difficulty or '?')..' · '..tostring(item.reason)..' · '..string.format('%02d:%02d',math.floor(seconds/60),seconds%60)..' · '..tostring(item.cleared or '?')..' rooms\n'..item.rewards)
         else showStatus(label,'No completed runs yet') end
     end
     showStatus(configStatus,app.profiles.status)
     showStatus(configAuto,app.profiles.auto or 'OFF')
     showStatus(reconnectStatus,app.config.autoReconnect and app.reconnect.status or 'OFF')
+end
+do
+    local ok,service=pcall(function()return game:GetService('RunService')end)
+    if ok and service and service.Heartbeat then
+        local elapsed=0
+        trackUI(service.Heartbeat:Connect(function(dt)
+            elapsed=elapsed+(tonumber(dt) or 0)
+            if elapsed<.08 then return end
+            elapsed=0
+            if not lifecycle.alive or not root.Enabled or window.minimized then return end
+            local phase=os.clock()*.35
+            for label in pairs(textGradients) do
+                if label.Parent then
+                    local gradient=label:FindFirstChild('OriginTextGradient')
+                    if gradient then
+                        gradient.Offset=Vector2.new(math.sin(phase)*.28,0)
+                        gradient.Rotation=math.sin(phase*.6)*16
+                    end
+                end
+            end
+        end))
+    end
 end
 repaintControls()
 refreshOverview()
