@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v7-dungeon-teleport','visible versioned build')
+assert(current.build=='studio-v8-dungeon-enter-history','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -941,7 +941,10 @@ function dr:InvokeServer(name,payload)
   for _,id in ipairs(payload.reserves)do cards[#cards+1]=id;hp[id]=.9 end
   dv.run={id=starts,room=1,phase='fight',cards=cards,team=payload.team,hp=hp,fighting=false,doors={},cleared=0}
   dstate();return true
+ elseif name=='Enter' then
+  assert(dv.run and payload==nil,'Enter uses nil payload');dv.entered=dv.run.id;return true
  elseif name=='Fight' then
+  assert(dv.entered==dv.run.id,'Enter must precede Fight')
   assert(payload==dv.run.room and dv.run.phase=='fight' and not dv.run.fighting,'no duplicate Fight')
   dv.run.fighting=true;dv.battle=true;dstate()
   schedule(1,function()
@@ -993,7 +996,7 @@ local fights=0;for _,c in ipairs(dcalls)do if c[1]=='Fight' then fights=fights+1
 assert(fights==5);app.destroy()
 ''')
 
-unconfirmed_dungeon=dungeon_mock.replace("dstate();return true\n elseif name=='Fight'", "return true\n elseif name=='Fight'")
+unconfirmed_dungeon=dungeon_mock.replace("dstate();return true\n elseif name=='Enter'", "return true\n elseif name=='Enter'")
 run_case('Dungeon Start without State confirmation stops without resending',mock+unconfirmed_dungeon,r'''
 local app=env.AnimeDuelScript
 app.config.dungeonWalk=false;app.start('dungeon');drain()
@@ -1130,5 +1133,37 @@ app.start('dungeon');drain()
 assert(starts==1,'no repeat of rejected bootstrap')
 assert(app.dungeon.status:find('Selected card not owned',1,true),app.dungeon.status)
 assert(not app.dungeon.worker)
+app.destroy()
+''')
+
+run_case('Dungeon Enter rejection stops before teleport or Fight',mock+dungeon_mock+r'''
+local original=dr.InvokeServer
+function dr:InvokeServer(name,payload)
+ if name=='Enter' then return false,'Entry unavailable' end
+ return original(self,name,payload)
+end
+''',r'''
+local app=env.AnimeDuelScript;app.config.dungeonWalk=false
+app.start('dungeon');drain()
+assert(app.dungeon.status:find('Entry unavailable',1,true),app.dungeon.status)
+for _,c in ipairs(dcalls) do assert(c[1]~='Fight') end
+app.destroy()
+''')
+
+run_case('Dungeon history retains ten runs with deduplicated server rewards and elapsed time',mock+dungeon_mock,r'''
+local app=env.AnimeDuelScript
+for i=1,12 do
+ dv.run={id='h'..i,diff='Normal',room=1};dstate()
+ schedule(2,function()
+  dv.last={run='h'..i,diff='Normal',reason='cleared',cleared=20,coins=42,items={potion=2},chests={plunder=1},cards={{name='Elf Mage'}}}
+  dv.run=nil;dstate();dstate()
+ end)
+ drain()
+end
+assert(#app.dungeon.history==10)
+local latest=app.dungeon.history[1]
+assert(latest.run=='h12' and app.dungeon.history[10].run=='h3')
+assert(latest.seconds>=2 and latest.reason=='cleared' and latest.cleared==20)
+for _,text in ipairs({'42 Shards','potion x2','plunder x1','Elf Mage'}) do assert(latest.rewards:find(text,1,true),latest.rewards) end
 app.destroy()
 ''')
