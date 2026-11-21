@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v10-dungeon-resume','visible versioned build')
+assert(current.build=='studio-v11-dungeon-card-picker','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -1237,5 +1237,87 @@ local app=env.AnimeDuelScript;app.config.dungeonWalk=false
 app.start('dungeon');drain()
 assert(rejectedStarts==1 and resumeEnters==1)
 assert(app.dungeon.status:find('no active run State',1,true),app.dungeon.status)
+app.destroy()
+''')
+
+collection_mock=r'''
+local cardModule={}
+local cardDefs={};local owned={}
+for i=1,20 do
+ local id='card_'..i
+ cardDefs[id]={Name='Hero '..i,Variant=i%2==0 and 'Gold' or 'Basic',Image='rbxassetid://'..i,Damage=i*100,Health=i*50}
+ owned[id]=i==20 and 0 or i
+end
+cardDefs.card_1.Name='Elf Mage';cardDefs.card_2.Name='Elf Mage'
+local shared={FindFirstChild=function(_,name)if name=='CardDefinitions' then return cardModule end end}
+RS.FindFirstChild=function(_,name)if name=='Shared' then return shared end end
+local function require(module)assert(module==cardModule);return cardDefs end
+local snapshot={Cards=owned};local snapshotCalls=0
+local sr={InvokeServer=function()snapshotCalls=snapshotCalls+1;return snapshot end}
+local ce={OnClientEvent=signal()}
+remotes.FindFirstChild=function(_,name)
+ if name=='GetSnapshot' then return sr elseif name=='StateChanged' then return ce end
+end
+local function uiObject(name)
+ for _,obj in ipairs(objects) do if obj.Name==name and obj.Parent then return obj end end
+ error('UI object missing: '..name)
+end
+'''
+run_case('Dungeon collection uses owned snapshot quantities, card art, names and variants',mock+collection_mock,r'''
+drain()
+local app=env.AnimeDuelScript;local c=app.dungeon.collection
+assert(snapshotCalls==1 and c.ready and c.cards.card_19.count==19)
+assert(uiObject('DungeonOwnedCard1').Visible and uiObject('DungeonOwnedCard1'):FindFirstChild('CardName').Text=='Hero 19','collection response repaints grid without input')
+assert(not c.cards.card_20,'zero quantity is not owned')
+assert(c.cards.card_2.name=='Elf Mage' and c.cards.card_2.border=='Gold' and c.cards.card_2.image=='rbxassetid://2')
+local all=app.listDungeonCards('','All','Power');assert(#all==19 and all[1].id=='card_19')
+local matches=app.listDungeonCards('elf mage','Gold','Power');assert(#matches==1 and matches[1].id=='card_2')
+assert(app.listDungeonCards('','All','Quantity')[1].count==19)
+assert(not app.setDungeonSlot(1,'card_20'),'unowned rejected')
+for i=1,6 do assert(app.setDungeonSlot(i,nil))end
+for i=1,6 do assert(app.setDungeonSlot(i,'card_'..i))end
+assert(not app.setDungeonSlot(6,'card_1'),'duplicate across team/reserves rejected')
+assert(app.config.dungeonTeam=='card_1,card_2,card_3,card_4' and app.config.dungeonReserves=='card_5,card_6')
+app.destroy()
+''')
+run_case('Dungeon card picker searches live, chooses active slots and toggles selected cards without ID input',mock+collection_mock,r'''
+drain()
+local app=env.AnimeDuelScript
+for i=1,6 do app.setDungeonSlot(i,nil)end
+uiObject('DungeonSlot5').Activated:Fire()
+local search=uiObject('DungeonCardSearch');search.Text='Elf Mage';search:GetPropertyChangedSignal('Text'):Fire()
+local tile=uiObject('DungeonOwnedCard1')
+assert(tile.Visible and tile:FindFirstChild('CardName').Text=='Elf Mage')
+assert(tile:FindFirstChild('CardArt').Image=='rbxassetid://2','highest-power matching variant')
+tile.Activated:Fire()
+assert(app.getDungeonSlots()[5]=='card_2','selected reserve receives click')
+tile.Activated:Fire();assert(app.getDungeonSlots()[5]=='','second click removes card')
+search.Text='no such hero';search:GetPropertyChangedSignal('Text'):Fire()
+assert(not tile.Visible,'empty search hides stale selectable results')
+search.Text='';search:GetPropertyChangedSignal('Text'):Fire()
+assert(tile.Visible)
+ce.OnClientEvent:Fire({Cards={card_2=3}})
+assert(#app.listDungeonCards('','All','Power')==1 and app.dungeon.collection.cards.card_2.count==3)
+assert(not app.uiError,tostring(app.uiError))
+app.destroy()
+''')
+run_case('Dungeon visual selections survive saving and reloading a named profile',mock+file_mock+collection_mock,r'''
+drain();local app=env.AnimeDuelScript
+for i=1,6 do app.setDungeonSlot(i,nil)end
+for i=1,6 do app.setDungeonSlot(i,'card_'..i)end
+assert(app.saveProfile('DungeonVisual'))
+app.setDungeonSlot(1,'card_7');assert(app.loadProfile('DungeonVisual'))
+assert(app.getDungeonSlots()[1]=='card_1' and app.getDungeonSlots()[6]=='card_6')
+app.destroy()
+''')
+
+run_case('Dungeon collection retries failed loading without replacing saved selections or inferring ownership',mock+collection_mock,r'''
+snapshot={OtherData=true};drain()
+local app=env.AnimeDuelScript
+assert(not app.dungeon.collection.ready and not app.setDungeonSlot(1,'card_1'))
+local saved=app.config.dungeonTeam
+snapshot={Cards=owned};app.refreshDungeonCollection();drain()
+assert(snapshotCalls==2 and app.dungeon.collection.ready)
+assert(app.config.dungeonTeam==saved,'refresh preserves saved team')
 app.destroy()
 ''')
