@@ -36,10 +36,10 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v15-aco-config',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v16-readable-afk',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, antiAfk=true,autoReconnect=true, autoStart=false,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -96,6 +96,20 @@ local function track(signal, callback)
     table.insert(app.connections, connection)
     return connection
 end
+app.afk={status='Ready',lastInput=-math.huge}
+if player.Idled then
+    track(player.Idled,function()
+        if not app.alive or not app.config.antiAfk or os.clock()-app.afk.lastInput<60 then return end
+        app.afk.lastInput=os.clock()
+        local ok=pcall(function()
+            local virtual=game:GetService('VirtualUser')
+            virtual:CaptureController()
+            virtual:ClickButton2(Vector2.new(0,0))
+        end)
+        app.afk.status=ok and 'Active — idle input sent' or 'VirtualUser input unavailable in this executor'
+        redraw()
+    end)
+else app.afk.status='Idle signal unavailable' end
 local function setStatus(message)
     local ctx=controller()
     message=tostring(message)
@@ -181,7 +195,7 @@ function app.loadProfile(name)
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
-    for _,key in ipairs({'autoReconnect','autoStart','dungeonWalk','pauseForRift','sequenceBossDungeon'}) do
+    for _,key in ipairs({'autoReconnect','autoStart','antiAfk','dungeonWalk','pauseForRift','sequenceBossDungeon'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     local hasModes=false
@@ -1536,7 +1550,7 @@ local function newText(parent,label,size,bold)
     local l=make('TextLabel',parent,{
         BackgroundTransparency=1,Text=tostring(label),
         Font=bold and Enum.Font.GothamBold or Enum.Font.Gotham,
-        TextSize=math.max(13,(size or 13)+2),TextXAlignment=Enum.TextXAlignment.Left,
+        TextSize=bold and ((size or 14)>=22 and 24 or ((size or 14)>=16 and 18 or 14)) or 13,TextXAlignment=Enum.TextXAlignment.Left,
         TextTruncate=Enum.TextTruncate.AtEnd,BorderSizePixel=0,
     })
     skin(l,'TextColor3',bold and 'text' or 'muted')
@@ -1652,7 +1666,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'ANIME DUEL',19,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'AQUA  /  ACO EDITION  /  v15',11,false)
+local smallTitle=newText(header,'AQUA  /  ACO EDITION  /  v16',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1688,7 +1702,9 @@ local tabPages={}
 local tabNames={'Monitor','Draft','Climb','Boss','Dungeon','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
-    make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
+    tab.Name='Nav'..name;tab.TextSize=15;tab.Font=Enum.Font.GothamMedium
+    local marker=make('Frame',tab,{Name='SelectedMarker',Position=UDim2.new(0,0,.2,0),Size=UDim2.new(0,3,.6,0),BorderSizePixel=0,Visible=false})
+    corner(marker,2);skin(marker,'BackgroundColor3','accent')
     tab.LayoutOrder=i
     tab.TextXAlignment=Enum.TextXAlignment.Left
     make('UIPadding',tab,{PaddingLeft=UDim.new(0,14)})
@@ -1710,7 +1726,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='AQUA  /  ACO EDITION  /  v15'
+        smallTitle.Text='AQUA  /  ACO EDITION  /  v16'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1730,7 +1746,7 @@ local function section(tab,label)
     t.Size=UDim2.new(1,0,0,36)
     gradientText(t)
     t.LayoutOrder=orderCounter
-    t.TextSize=16
+    t.TextSize=14
     t.TextTruncate=Enum.TextTruncate.None
     return t
 end
@@ -1987,8 +2003,9 @@ repaintControls=function()
     if themeChanged or paintedTab~=selectedTab then
         paintedTab=selectedTab
         for title,b in pairs(navButtons) do
-            b.BackgroundColor3=(title==selectedTab) and color('accent') or color('side')
-            b.TextColor3=(title==selectedTab) and color('bg') or color('muted')
+            b.BackgroundColor3=(title==selectedTab) and color('selected') or color('panel')
+            b.TextColor3=(title==selectedTab) and color('selectedText') or color('text')
+            local marker=b:FindFirstChild('SelectedMarker');if marker then marker.Visible=title==selectedTab end
         end
     end
     local geometryChanged=false
@@ -2166,7 +2183,7 @@ widgets[#widgets+1]=function()
 end
 addDropdown('Boss','Difficulty','storyDifficulty',{'Easy','Medium','Hard','Nightmare'})
 addToggle('Boss','Auto Start Fight','BossRunning')
-modeActions('Boss','story','START BOSS','STOP BOSS')
+-- Story Boss is controlled only by its Auto toggle.
 local bossLive=addStatus('Boss','Status','Ready')
 local bossSummary=addStatus('Boss','Selected targets','--')
 addStatus('Boss','Attempt interval','1.5s / server cooldowns respected')
@@ -2183,7 +2200,7 @@ do
         make('UIListLayout',panel,{Padding=UDim.new(0,9),SortOrder=Enum.SortOrder.LayoutOrder})
         dungeonUI.groups[name]=panel
         local button=uiButton(navigation,name,UDim2.new(.2,-5,1,0));button.Name='DungeonNav'..name
-        button.Position=UDim2.new((i-1)*.2,0,0,0);button.TextSize=11
+        button.Position=UDim2.new((i-1)*.2,0,0,0);button.TextSize=13
         dungeonUI.buttons[name]=button
         trackUI(button.Activated:Connect(function()
             dungeonUI.active=name
@@ -2355,6 +2372,9 @@ addAction('Config','Disable Auto Load','CLEAR AUTO LOAD',ctx.clearAutoProfile)
 local configStatus=addStatus('Config','Storage','Ready')
 local configAuto=addStatus('Config','Auto Load','None')
 local configModes=addStatus('Config','Saved mode preferences','--')
+section('Settings','AFK protection')
+addToggle('Settings','Anti-AFK','antiAfk')
+local afkStatus=addStatus('Settings','Anti-AFK status','Ready')
 section('Settings','Startup and connection')
 addToggle('Settings','Auto Start saved modes','autoStart')
 addToggle('Settings','Auto reconnect','autoReconnect')
@@ -2695,6 +2715,7 @@ local function refreshOverview()
     local preferences={}
     for _,mode in ipairs({'draft','climb','story','dungeon'}) do preferences[#preferences+1]=mode..': '..(app.config[mode..'Enabled'] and 'ON' or 'OFF') end
     showStatus(configModes,table.concat(preferences,' · '))
+    showStatus(afkStatus,app.config.antiAfk and app.afk.status or 'OFF')
     showStatus(reconnectStatus,app.config.autoReconnect and app.reconnect.status or 'OFF')
 end
 do
@@ -2733,7 +2754,7 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonWalk','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonWalk','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     uiFlags.DungeonRunning=app.dungeon.enabled;uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
     local selection={}
