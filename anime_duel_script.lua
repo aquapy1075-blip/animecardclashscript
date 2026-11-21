@@ -36,19 +36,51 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='independent-controls-v2',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='update4-online-ui-v1',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', storyDifficulty='Nightmare', storyInterval=10, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', storyDifficulty='Nightmare', storyInterval=10, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
 local storyBosses={
-    {key='purple_forest',id='purple_forest_boss',name='Water Master'},
-    {key='android_games',id='android_games_boss',name='Perfect Android'},
-    {key='hollow_world',id='hollow_world_boss',name='Moonquoira'},
-    {key='purple_town',id='purple_town_boss',name='Killer Bomb'},
-    {key='toy_kingdom',id='toy_kingdom_boss',name='String Man'},
+    {key='purple_forest',id='purple_forest_boss',name='Water Master',secret=false},
+    {key='android_games',id='android_games_boss',name='Perfect Android',secret=false},
+    {key='hollow_world',id='hollow_world_boss',name='Moonquoira',secret=false},
+    {key='purple_town',id='purple_town_boss',name='Killer Bomb',secret=false},
+    {key='toy_kingdom',id='toy_kingdom_boss',name='String Man',secret=false},
+    {key='toy_kingdom_secret',id='toy_kingdom_secret',name='Ruffy 4',secret=true},
+    {key='clover_capital',id='clover_capital_boss',name='Body Devil',secret=false},
+    {key='clover_capital_secret',id='clover_capital_secret',name='Time Sage King',secret=true},
 }
+-- Read the current game's boss flags; World 6 has five stages, not four.
+local function currentStoryCatalog()
+    local ok,catalog=pcall(function()
+        local shared=RS:FindFirstChild('Shared')
+        local module=shared and shared:FindFirstChild('StoryConfig',true)
+        if not module then return nil end
+        return require(module)
+    end)
+    if not ok or type(catalog)~='table' or type(catalog.Maps)~='table' then return end
+    local list,seen={},{}
+    local function add(stage,map)
+        if type(stage)~='table' or (stage.Boss~=true and stage.Secret~=true)
+            or type(stage.Id)~='string' or seen[stage.Id] then return end
+        seen[stage.Id]=true
+        table.insert(list,{key=stage.Id:gsub('_boss$',''),id=stage.Id,
+            name=stage.Npc or stage.Id,secret=stage.Secret==true,map=map.Name or map.Id})
+    end
+    for _,map in ipairs(catalog.Maps) do
+        if type(map)=='table' then
+            for _,stage in ipairs(map.Stages or {}) do add(stage,map) end
+            add(map.Secret,map)
+        end
+    end
+    if #list>0 then storyBosses=list end
+end
+currentStoryCatalog()
+for _,boss in ipairs(storyBosses) do
+    if app.config['story_'..boss.key]==nil then app.config['story_'..boss.key]=false end
+end
 local storyDifficulties={'Easy','Medium','Hard','Nightmare'}
 local workerContexts=setmetatable({}, {__mode='k'})
 local function controller() return workerContexts[coroutine.running()] or app end
@@ -75,8 +107,8 @@ local profileDir=storage..'/profiles'
 local disk=type(readfile)=='function' and type(writefile)=='function'
 app.profiles={current='Default',auto=nil,names={},status=disk and 'Storage ready' or 'File API unavailable'}
 app.reconnect={attempts=0,lastTry=-math.huge,status='Monitoring',limit=3,interval=9}
-local ranges={farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
-local themesAllowed={Midnight=true,Emerald=true,Violet=true,Light=true}
+local ranges={windowW={600,1200},windowH={420,1000},windowX={0,1},windowY={0,1},farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
+local themesAllowed={Midnight=true,Emerald=true,Violet=true,Light=true,Ocean=true,Rose=true}
 local function profileId(name)
     if type(name)~='string' then return nil end
     name=name:match('^%s*(.-)%s*$')
@@ -120,7 +152,7 @@ function app.saveProfile(name)
     return true
 end
 function app.loadProfile(name)
-    if app.worker or app.climb.worker or app.story.worker then storageStatus('Stop Draft before loading a profile');return false end
+    if app.worker or app.climb.worker or app.story.worker then storageStatus('Stop active modes before loading a profile');return false end
     name=profileId(name)
     local data=name and readJson(profilePath(name))
     if not data or data.version~=1 or type(data.config)~='table' then
@@ -739,7 +771,7 @@ local function runStoryLoop()
             for offset=1,#selected do
                 local index=(cursor+offset-1)%#selected+1
                 local boss=selected[index]
-                local deadline=app.story.cooldowns[storyCooldownKey(boss.id,difficulty)] or 0
+                local deadline=app.story.cooldowns[storyCooldownKey(boss.id,boss.secret and 'Secret' or difficulty)] or 0
                 earliest=math.min(earliest,deadline)
                 if not chosen and deadline<=now then chosen=boss;position=index end
             end
@@ -749,6 +781,7 @@ local function runStoryLoop()
                 setStatus('Next Start attempt in '..cooldownText(app.story.nextAttemptAt-now))
             else
                 cursor=position
+                difficulty=chosen.secret and 'Secret' or difficulty
                 setStatus('Requesting '..chosen.name..' / '..difficulty)
                 local result=call(chosen.id,difficulty,nil,remote)
                 -- Pace from response receipt; includes time waiting for other requests.
@@ -805,14 +838,28 @@ function app.start(mode)
     end)
 end
 
--- Origin UI styling: same palettes, Gotham typography, rounded panels and tab layout.
+-- Online UI reference: anime-card-online/anime_card_online.lua @831eaf8.
 local palettes={
-    Midnight={bg='0D1320',side='101A2B',panel='172338',row='22334D',text='EFF5FF',muted='96ABC8',accent='8BAFFF',line='2B405D'},
-    Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454'},
-    Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267'},
-    Light={bg='F2F5FC',side='E7EDF8',panel='FFFFFF',row='EAF0FA',text='14213A',muted='526781',accent='4264D9',line='D1DBED'},
+    Light={bg='F2F5FC',side='E7EDF8',panel='FFFFFF',row='EAF0FA',text='14213A',muted='526781',accent='4264D9',line='D1DBED',selected='DDE8FF',selectedText='173C85',mint='087B72',gold='986014',rose='B33764',violet='7045BC'},
+    Midnight={bg='0B0D13',side='10121B',panel='171B28',row='202638',text='F0F4FF',muted='99A9C8',accent='6D8BFF',line='303B58',selected='28476B',selectedText='D9F4FF',mint='62DCC1',gold='F3C276',rose='F28FB4',violet='BAA0FF'},
+    Ocean={bg='080F16',side='0C1822',panel='102635',row='17394B',text='ECFAFF',muted='8EBACD',accent='36DBCE',line='255166',selected='164C56',selectedText='CFFFF6',mint='5CE1C2',gold='F4CC84',rose='FF9EBD',violet='B5A5FF'},
+    Violet={bg='171322',side='20192E',panel='2B213C',row='392C50',text='F6EFFF',muted='B8A8D4',accent='BC8AFF',line='534267',selected='503D78',selectedText='F4E8FF',mint='70E2CC',gold='F2CA83',rose='FFA0C1',violet='C7A8FF'},
+    Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454',selected='235545',selectedText='D2FFEC',mint='79E8BD',gold='F4CE86',rose='FCA3C0',violet='B7ACFF'},
+    Rose={bg='23171C',side='311D27',panel='3E2633',row='503442',text='FFEFF4',muted='D9A9BC',accent='FF8FB2',line='704859',selected='64364E',selectedText='FFE2EE',mint='7AE5CE',gold='F5CF92',rose='FFABCD',violet='C8ADFF'},
 }
 local skins={}
+local surfaces=setmetatable({}, {__mode='k'})
+local tweens=setmetatable({}, {__mode='k'})
+local TweenService
+pcall(function() TweenService=game:GetService('TweenService') end)
+if TweenService and type(TweenService.Create)~='function' then TweenService=nil end
+local function animate(obj,properties)
+    if not app.alive or not obj.Parent then return end
+    if tweens[obj] then tweens[obj]:Cancel();tweens[obj]=nil end
+    if not TweenService then for key,value in pairs(properties) do obj[key]=value end;return end
+    local tween=TweenService:Create(obj,TweenInfo.new(.16,Enum.EasingStyle.Quint,Enum.EasingDirection.Out),properties)
+    tweens[obj]=tween;tween:Play()
+end
 local function color(role)
     local hex=palettes[app.config.theme][role]
     return Color3.fromRGB(tonumber(hex:sub(1,2),16),tonumber(hex:sub(3,4),16),tonumber(hex:sub(5,6),16))
@@ -820,7 +867,10 @@ end
 local function make(class,parent,props)
     local obj=Instance.new(class)
     for k,v in pairs(props or {}) do obj[k]=v end
-    if obj:IsA('GuiObject') then obj.Selectable=false end
+    if obj:IsA('GuiObject') then
+        obj.Selectable=false
+        if obj.BackgroundTransparency<1 then surfaces[obj]=obj.BackgroundTransparency end
+    end
     obj.Parent=parent
     return obj
 end
@@ -843,38 +893,58 @@ local function button(parent,value,size)
     local obj=make('TextButton',parent,{Text=value,Size=size or UDim2.fromOffset(100,32),
         BorderSizePixel=0,Font=Enum.Font.GothamMedium,TextSize=12,AutoButtonColor=true})
     corner(obj);skin(obj,'BackgroundColor3','row');skin(obj,'TextColor3','text')
+    local outline=make('UIStroke',obj,{Thickness=1,Transparency=1});skin(outline,'Color','accent')
+    if obj.MouseEnter then track(obj.MouseEnter,function() animate(outline,{Transparency=.4}) end) end
+    if obj.MouseLeave then track(obj.MouseLeave,function() animate(outline,{Transparency=1}) end) end
     return obj
 end
 local root=make('ScreenGui',playerGui,{Name='AnimeDuelScript',ResetOnSpawn=false,
     DisplayOrder=100,IgnoreGuiInset=true,ZIndexBehavior=Enum.ZIndexBehavior.Sibling})
 app.Root=root
-local main=panel(root,{Name='Window',Position=UDim2.new(.5,-360,.5,-260),Size=UDim2.fromOffset(720,520),BorderSizePixel=0})
-skin(main,'BackgroundColor3','bg')
+local closeDropdown=function() end
+local main=make('CanvasGroup',root,{Name='Window',Position=UDim2.new(.5,-402,.5,-282),Size=UDim2.fromOffset(805,565),BorderSizePixel=0,GroupTransparency=0,Active=false,ZIndex=2})
+corner(main);skin(main,'BackgroundColor3','bg')
+local mainOutline=make('UIStroke',main,{Thickness=1,Transparency=.15});skin(mainOutline,'Color','line')
+local shadow=make('Frame',root,{Name='WindowShadow',BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=.78,BorderSizePixel=0,Active=false,ZIndex=1})
+corner(shadow);surfaces[shadow]=nil
+local accent=make('Frame',main,{Position=UDim2.fromOffset(18,0),Size=UDim2.new(1,-36,0,2),BorderSizePixel=0});skin(accent,'BackgroundColor3','accent')
+make('UIGradient',accent,{Rotation=0})
 local header=make('Frame',main,{Size=UDim2.new(1,0,0,58),BackgroundTransparency=1})
-local title=text(header,'ANIME DUEL SCRIPT',true)
-title.TextSize=17;title.Position=UDim2.fromOffset(18,11);title.Size=UDim2.new(1,-110,0,23)
-local subtitle=text(header,'INDEPENDENT CONTROLS · v2',false)
-subtitle.TextSize=10;subtitle.Position=UDim2.fromOffset(19,35);subtitle.Size=UDim2.new(1,-110,0,16)
+local icon=panel(header,{Position=UDim2.fromOffset(16,12),Size=UDim2.fromOffset(34,34),BorderSizePixel=0});skin(icon,'BackgroundColor3','accent')
+local monogram=text(icon,'AD',true);monogram.Size=UDim2.fromScale(1,1);monogram.TextXAlignment=Enum.TextXAlignment.Center;skin(monogram,'TextColor3','bg')
+local title=text(header,'ANIME CARD DUEL',true)
+title.TextSize=17;title.Position=UDim2.fromOffset(62,10);title.Size=UDim2.new(1,-260,0,23)
+local subtitle=text(header,'UPDATE 4 · made by aquacodex',false)
+subtitle.TextSize=11;subtitle.Position=UDim2.fromOffset(63,33);subtitle.Size=UDim2.new(1,-160,0,17)
+local badge=text(header,'READY',true);badge.Position=UDim2.new(1,-180,0,18);badge.Size=UDim2.fromOffset(95,22)
 local minimize=button(header,'—',UDim2.fromOffset(30,28));minimize.Position=UDim2.new(1,-76,0,15)
 local hide=button(header,'×',UDim2.fromOffset(30,28));hide.Position=UDim2.new(1,-40,0,15)
 local restore=button(root,'AD',UDim2.fromOffset(44,38));restore.Position=UDim2.fromOffset(10,110)
-local nav=make('Frame',main,{Position=UDim2.fromOffset(0,58),Size=UDim2.new(0,140,1,-58),BorderSizePixel=0})
+local nav=make('ScrollingFrame',main,{Name='Sidebar',Position=UDim2.fromOffset(0,58),Size=UDim2.new(0,174,1,-58),BorderSizePixel=0,ScrollBarThickness=0,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y})
 skin(nav,'BackgroundColor3','side')
-local body=make('Frame',main,{Position=UDim2.fromOffset(140,58),Size=UDim2.new(1,-140,1,-58),BackgroundTransparency=1})
+local navLayout=make('UIListLayout',nav,{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder,FillDirection=Enum.FillDirection.Vertical,HorizontalAlignment=Enum.HorizontalAlignment.Center})
+local navPadding=make('UIPadding',nav,{PaddingTop=UDim.new(0,18),PaddingLeft=UDim.new(0,0)})
+local body=make('Frame',main,{Position=UDim2.fromOffset(175,58),Size=UDim2.new(1,-175,1,-58),BackgroundTransparency=1,ClipsDescendants=true})
 local pages,navButtons={},{}
-local selected='Draft'
-for i,name in ipairs({'Draft','Climb','Boss','Settings','Config'}) do
-    local b=button(nav,name,UDim2.new(1,-16,0,38));b.Position=UDim2.fromOffset(8,12+(i-1)*46)
+local selected='Monitor'
+local tabNames={'Monitor','Draft','Climb','Boss','Settings','Config'}
+for i,name in ipairs(tabNames) do
+    local b=button(nav,name,UDim2.new(1,-20,0,39));b.LayoutOrder=i
+    b.TextXAlignment=Enum.TextXAlignment.Left
+    make('UIPadding',b,{PaddingLeft=UDim.new(0,14)})
+    make('UIGradient',b,{Rotation=30})
     navButtons[name]=b
     local page=make('ScrollingFrame',body,{Name=name,Size=UDim2.fromScale(1,1),Visible=name==selected,
         BackgroundTransparency=1,BorderSizePixel=0,ScrollBarThickness=4,
         CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y})
-    make('UIPadding',page,{PaddingTop=UDim.new(0,12),PaddingBottom=UDim.new(0,12),PaddingLeft=UDim.new(0,14),PaddingRight=UDim.new(0,14)})
-    make('UIListLayout',page,{Padding=UDim.new(0,8),SortOrder=Enum.SortOrder.LayoutOrder})
+    skin(page,'ScrollBarImageColor3','accent')
+    make('UIPadding',page,{PaddingTop=UDim.new(0,14),PaddingBottom=UDim.new(0,16),PaddingLeft=UDim.new(0,18),PaddingRight=UDim.new(0,19)})
+    make('UIListLayout',page,{Padding=UDim.new(0,9),SortOrder=Enum.SortOrder.LayoutOrder})
     pages[name]=page
     track(b.Activated,function()
         selected=name
         for key,p in pairs(pages) do p.Visible=key==name end
+        page.Position=UDim2.fromOffset(0,7);animate(page,{Position=UDim2.fromOffset(0,0)})
         redraw()
     end)
 end
@@ -890,6 +960,15 @@ local function status(label)
     local l=text(r,'--');l.Position=UDim2.fromOffset(12,30);l.Size=UDim2.new(1,-24,0,22)
     return l
 end
+local monitorLabels={}
+for _,name in ipairs({'Draft Run','Draft Climb','Story Boss'}) do
+    local r=row('Monitor',name,94)
+    local label=text(r,'Ready');label.Position=UDim2.fromOffset(12,31);label.Size=UDim2.new(1,-24,0,52)
+    label.TextWrapped=true;label.TextTruncate=Enum.TextTruncate.None;monitorLabels[name]=label
+end
+local updateRow=row('Monitor','Update 4 compatibility',105)
+local updateText=text(updateRow,'Clover Capital / Body Devil and Secret bosses. Live StoryConfig catalog. Draft priorities and bans retained. Independent controls for each mode.')
+updateText.Position=UDim2.fromOffset(12,31);updateText.Size=UDim2.new(1,-24,0,68);updateText.TextWrapped=true;updateText.TextTruncate=Enum.TextTruncate.None
 local controls=row('Draft','Automation',69)
 local start=button(controls,'START',UDim2.new(.5,-18,0,30));start.Position=UDim2.fromOffset(12,31)
 local stop=button(controls,'STOP DRAFT',UDim2.new(.5,-18,0,30));stop.Position=UDim2.new(.5,6,0,31)
@@ -943,7 +1022,7 @@ numberInput('Action delay, seconds (0.5–5)','delay',.5,5)
 numberInput('Fight timeout, seconds (30–600)','timeout',30,600)
 local themeRow=row('Settings','Theme',69)
 local themeButton=button(themeRow,'Midnight',UDim2.new(1,-24,0,29));themeButton.Position=UDim2.fromOffset(12,31)
-local themeNames={'Midnight','Emerald','Violet','Light'}
+local themeNames={'Midnight','Emerald','Violet','Light','Ocean','Rose'}
 track(themeButton.Activated,function()
     local i=table.find(themeNames,app.config.theme) or 1
     app.config.theme=themeNames[i%#themeNames+1];themeButton.Text=app.config.theme
@@ -959,22 +1038,54 @@ track(bossStop.Activated,function() app.stop('story') end)
 local bossStatusRow=row('Boss','Story Boss status',110)
 local bossStatusLabel=text(bossStatusRow,'Ready');bossStatusLabel.Position=UDim2.fromOffset(12,29);bossStatusLabel.Size=UDim2.new(1,-24,0,76)
 bossStatusLabel.TextWrapped=true;bossStatusLabel.TextTruncate=Enum.TextTruncate.None
-local difficultyRow=row('Boss','Difficulty',69)
+local difficultyRow=row('Boss','Difficulty · Secret bosses use Secret',69)
 local difficultyButton=button(difficultyRow,app.config.storyDifficulty,UDim2.new(1,-24,0,29));difficultyButton.Position=UDim2.fromOffset(12,31)
+local dropdownDismiss=make('TextButton',root,{Name='DropdownDismiss',Visible=false,Size=UDim2.fromScale(1,1),Text='',BackgroundTransparency=1,BorderSizePixel=0,Active=true,ZIndex=149})
+local dropdown=panel(root,{Name='DifficultyDropdown',Visible=false,Size=UDim2.fromOffset(240,220),BorderSizePixel=0,ZIndex=150})
+local dropdownSearch=make('TextBox',dropdown,{Name='DropdownSearch',Position=UDim2.fromOffset(8,8),Size=UDim2.new(1,-16,0,34),Text='',PlaceholderText='Search difficulty…',ClearTextOnFocus=false,Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0,ZIndex=151})
+corner(dropdownSearch);skin(dropdownSearch,'BackgroundColor3','row');skin(dropdownSearch,'TextColor3','text');skin(dropdownSearch,'PlaceholderColor3','muted')
+local dropdownList=make('ScrollingFrame',dropdown,{Position=UDim2.fromOffset(8,50),Size=UDim2.new(1,-16,1,-58),BackgroundTransparency=1,CanvasSize=UDim2.new(),AutomaticCanvasSize=Enum.AutomaticSize.Y,ScrollBarThickness=3,BorderSizePixel=0,ZIndex=151})
+make('UIListLayout',dropdownList,{Padding=UDim.new(0,5),SortOrder=Enum.SortOrder.LayoutOrder})
+local dropdownOptions={}
+closeDropdown=function() dropdown.Visible=false;dropdownDismiss.Visible=false end
+for i,difficulty in ipairs(storyDifficulties) do
+    local b=button(dropdownList,difficulty,UDim2.new(1,0,0,32));b.LayoutOrder=i;b.ZIndex=152
+    dropdownOptions[difficulty]=b
+    track(b.Activated,function() app.config.storyDifficulty=difficulty;closeDropdown();redraw() end)
+end
+track(dropdownSearch:GetPropertyChangedSignal('Text'),function()
+    local query=dropdownSearch.Text:lower()
+    for name,b in pairs(dropdownOptions) do b.Visible=query=='' or name:lower():find(query,1,true)~=nil end
+end)
+track(dropdownDismiss.Activated,closeDropdown)
 track(difficultyButton.Activated,function()
-    local i=table.find(storyDifficulties,app.config.storyDifficulty) or 4
-    app.config.storyDifficulty=storyDifficulties[i%#storyDifficulties+1];redraw()
+    if dropdown.Visible then closeDropdown();return end
+    local view=Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
+    dropdown.Position=UDim2.fromOffset(math.clamp(difficultyButton.AbsolutePosition.X,8,math.max(8,view.X-248)),
+        math.clamp(difficultyButton.AbsolutePosition.Y+difficultyButton.AbsoluteSize.Y+6,8,math.max(8,view.Y-228)))
+    dropdownSearch.Text=''
+    for _,b in pairs(dropdownOptions) do b.Visible=true end
+    dropdown.Visible=true;dropdownDismiss.Visible=true
 end)
 local bossToggles={}
+local bossRows={}
+local filterRow=row('Boss','Search boss / world',69)
+local bossSearch=make('TextBox',filterRow,{Name='BossSearch',Position=UDim2.fromOffset(12,31),Size=UDim2.new(1,-24,0,29),Text='',PlaceholderText='Type a boss or world name…',ClearTextOnFocus=false,Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0})
+corner(bossSearch);skin(bossSearch,'BackgroundColor3','row');skin(bossSearch,'TextColor3','text');skin(bossSearch,'PlaceholderColor3','muted')
+track(bossSearch:GetPropertyChangedSignal('Text'),function()
+    local query=bossSearch.Text:lower()
+    for _,entry in ipairs(bossRows) do entry.row.Visible=query=='' or entry.search:find(query,1,true)~=nil end
+end)
 for _,boss in ipairs(storyBosses) do
-    local r=row('Boss',boss.name,69)
+    local r=row('Boss',boss.name..(boss.secret and ' · SECRET' or ''),69)
+    table.insert(bossRows,{row=r,search=(boss.name..' '..boss.id..' '..(boss.map or '')):lower()})
     local b=button(r,'',UDim2.new(1,-24,0,29));b.Position=UDim2.fromOffset(12,31)
     local key='story_'..boss.key;bossToggles[key]=b
     track(b.Activated,function() app.config[key]=not app.config[key];redraw() end)
 end
-local bossHelpRow=row('Boss','Start Fight only',90)
-local bossHelp=text(bossHelpRow,'Start attempts are spaced 10s apart. Server cooldowns are tracked per boss and difficulty. STOP BOSS stops requests; the current fight continues.')
-bossHelp.Position=UDim2.fromOffset(12,29);bossHelp.Size=UDim2.new(1,-24,0,56);bossHelp.TextWrapped=true
+local bossHelpRow=row('Boss','Start Fight only',110)
+local bossHelp=text(bossHelpRow,'Start attempts are spaced 10s apart. Server cooldowns are tracked per boss and difficulty. Secret bosses use Secret. STOP BOSS stops requests; the current fight continues.')
+bossHelp.Position=UDim2.fromOffset(12,29);bossHelp.Size=UDim2.new(1,-24,0,76);bossHelp.TextWrapped=true
 local function settingToggle(label,key)
     local r=row('Settings',label,69)
     local b=button(r,'',UDim2.new(1,-24,0,29));b.Position=UDim2.fromOffset(12,31)
@@ -995,7 +1106,7 @@ local profileRow=row('Config','Profile name (letters, digits, _ or -)',69)
 local profileBox=make('TextBox',profileRow,{Position=UDim2.fromOffset(12,31),Size=UDim2.new(1,-24,0,29),Text=app.profiles.current,
     ClearTextOnFocus=false,Font=Enum.Font.Gotham,TextSize=13,BorderSizePixel=0})
 corner(profileBox);skin(profileBox,'BackgroundColor3','row');skin(profileBox,'TextColor3','text')
-for _,entry in ipairs({{'Save settings','SAVE','saveProfile'},{'Load settings (stop Draft first)','LOAD','loadProfile'},
+for _,entry in ipairs({{'Save settings','SAVE','saveProfile'},{'Load settings (stop active modes first)','LOAD','loadProfile'},
     {'Delete profile','DELETE','deleteProfile'},{'Save and use on next execution','SET AUTO LOAD','setAutoProfile'},
     {'Disable automatic profile loading','CLEAR AUTO LOAD','clearAutoProfile'}}) do
     local r=row('Config',entry[1],69)
@@ -1007,8 +1118,15 @@ local configRow=row('Config','Storage / active profile',84)
 local configLabel=text(configRow,'');configLabel.Position=UDim2.fromOffset(12,29);configLabel.Size=UDim2.new(1,-24,0,48);configLabel.TextWrapped=true
 local savedRow=row('Config','Saved profiles',76)
 local savedLabel=text(savedRow,'Default');savedLabel.Position=UDim2.fromOffset(12,29);savedLabel.Size=UDim2.new(1,-24,0,40);savedLabel.TextWrapped=true
+local paintedGeometry=nil
 render=function()
     if not app.alive then return end
+    if paintedTheme~=app.config.theme then
+        paintedTheme=app.config.theme
+        for _,entry in ipairs(skins) do entry[1][entry[2]]=color(entry[3]) end
+    end
+    local geometry=table.concat({app.config.windowW,app.config.windowH,app.config.windowX,app.config.windowY},':')
+    if app.applyLayout and paintedGeometry~=geometry then paintedGeometry=geometry;app.applyLayout() end
     statusLabel.Text=(app.bosses.world or app.bosses.raid) and 'Boss priority — waiting for boss death' or app.status
     local run=app.snapshot and app.snapshot.run
     local job=app.recovery[#app.recovery]
@@ -1030,14 +1148,20 @@ render=function()
     difficultyButton.Text=app.config.storyDifficulty
     for _,boss in ipairs(storyBosses) do
         local key='story_'..boss.key
-        local remaining=(app.story.cooldowns[storyCooldownKey(boss.id,app.config.storyDifficulty)] or 0)-os.clock()
+        local remaining=(app.story.cooldowns[storyCooldownKey(boss.id,boss.secret and 'Secret' or app.config.storyDifficulty)] or 0)-os.clock()
         bossToggles[key].Text=(app.config[key] and 'ON' or 'OFF')..(remaining>0 and (' · '..cooldownText(remaining)) or '')
     end
     climbProgressLabel.Text=type(cr)=='table' and ('#'..tostring(climbId(cr))..' / Floor '..tostring(cr.floor or cr.Floor)..' / '..tostring(cr.over or cr.Over or 'active')) or 'No climb running'
     local ct=climbTeam(cr)
     climbTeamLabel.Text=type(ct)=='table' and table.concat(ct,' / ') or '--'
-    for name,b in pairs(navButtons) do b.BackgroundColor3=color(name==selected and 'accent' or 'row');b.TextColor3=color(name==selected and 'bg' or 'text') end
-    main.BackgroundTransparency=app.config.transparency/100
+    for name,b in pairs(navButtons) do b.BackgroundColor3=color(name==selected and 'selected' or 'side');b.TextColor3=color(name==selected and 'selectedText' or 'muted') end
+    local opacity=app.config.transparency/100
+    for obj,base in pairs(surfaces) do if obj.Parent then obj.BackgroundTransparency=base+(1-base)*opacity end end
+    local running=(app.enabled and 1 or 0)+(app.climb.enabled and 1 or 0)+(app.story.enabled and 1 or 0)
+    badge.Text=running>0 and (running..' ACTIVE') or 'READY'
+    monitorLabels['Draft Run'].Text=app.status
+    monitorLabels['Draft Climb'].Text=app.climb.status
+    monitorLabels['Story Boss'].Text=app.story.status
     reconnectToggle.Text=app.config.autoReconnect and 'ON' or 'OFF'
     autoStartToggle.Text=app.config.autoStart and 'ON' or 'OFF'
     reconnectLabel.Text=app.config.autoReconnect and app.reconnect.status or 'OFF'
@@ -1045,74 +1169,104 @@ render=function()
     savedLabel.Text=table.concat(app.profiles.names,', ')
     for key,box in pairs(configInputs) do if not box:IsFocused() then box.Text=tostring(app.config[key]) end end
     themeButton.Text=app.config.theme
-    if paintedTheme~=app.config.theme then
-        paintedTheme=app.config.theme
-        for _,entry in ipairs(skins) do entry[1][entry[2]]=color(entry[3]) end
-    end
 end
 local minimized=false
 local compact=false
 local drag=nil
+local resizeHandle=button(main,'◢',UDim2.fromOffset(22,22));resizeHandle.Position=UDim2.new(1,-24,1,-24)
 local function layout()
     local camera=Workspace.CurrentCamera
     local view=camera and camera.ViewportSize or Vector2.new(1280,720)
-    compact=view.X<620
-    local w=math.min(720,math.max(240,view.X-16))
-    local h=math.min(520,math.max(220,view.Y-16))
+    compact=view.X<680
+    local w=math.min(app.config.windowW,math.max(240,view.X-16))
+    local h=math.min(app.config.windowH,math.max(260,view.Y-16))
     main.Size=UDim2.fromOffset(w,minimized and 58 or h)
-    local x=math.clamp(main.Position.X.Offset,8,math.max(8,view.X-w-8))
-    local y=math.clamp(main.Position.Y.Offset,8,math.max(8,view.Y-(minimized and 58 or h)-8))
-    main.Position=UDim2.fromOffset(x,y)
+    main.Position=UDim2.fromOffset(math.max(8,view.X-w-16)*app.config.windowX+8,
+        math.max(8,view.Y-(minimized and 58 or h)-16)*app.config.windowY+8)
+    shadow.Position=UDim2.fromOffset(main.Position.X.Offset+4,main.Position.Y.Offset+7)
+    shadow.Size=main.Size;shadow.Visible=main.Visible
     nav.Position=UDim2.fromOffset(0,58)
-    nav.Size=compact and UDim2.new(1,0,0,46) or UDim2.new(0,140,1,-58)
-    body.Position=UDim2.fromOffset(compact and 0 or 140,compact and 104 or 58)
-    body.Size=compact and UDim2.new(1,0,1,-104) or UDim2.new(1,-140,1,-58)
-    nav.Visible=not minimized;body.Visible=not minimized
-    for i,name in ipairs({'Draft','Climb','Boss','Settings','Config'}) do
-        local b=navButtons[name]
-        b.Position=compact and UDim2.new((i-1)/5,5,0,4) or UDim2.fromOffset(8,12+(i-1)*46)
-        b.Size=compact and UDim2.new(1/5,-10,0,36) or UDim2.new(1,-16,0,38)
+    nav.Size=compact and UDim2.new(1,0,0,48) or UDim2.new(0,174,1,-58)
+    nav.AutomaticCanvasSize=compact and Enum.AutomaticSize.X or Enum.AutomaticSize.Y
+    nav.ScrollingDirection=compact and Enum.ScrollingDirection.X or Enum.ScrollingDirection.Y
+    navLayout.FillDirection=compact and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical
+    navLayout.HorizontalAlignment=compact and Enum.HorizontalAlignment.Left or Enum.HorizontalAlignment.Center
+    navPadding.PaddingTop=UDim.new(0,compact and 5 or 18);navPadding.PaddingLeft=UDim.new(0,compact and 10 or 0)
+    body.Position=UDim2.fromOffset(compact and 0 or 175,compact and 106 or 58)
+    body.Size=compact and UDim2.new(1,0,1,-106) or UDim2.new(1,-175,1,-58)
+    nav.Visible=not minimized;body.Visible=not minimized;badge.Visible=not compact
+    title.Size=UDim2.new(1,compact and -150 or -260,0,23)
+    resizeHandle.Visible=not minimized and not compact
+    for _,name in ipairs(tabNames) do
+        navButtons[name].Size=compact and UDim2.fromOffset(120,38) or UDim2.new(1,-20,0,39)
     end
+end
+app.applyLayout=layout
+local function positionConfig()
+    local view=Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
+    app.config.windowX=math.clamp((main.Position.X.Offset-8)/math.max(1,view.X-main.Size.X.Offset-16),0,1)
+    app.config.windowY=math.clamp((main.Position.Y.Offset-8)/math.max(1,view.Y-main.Size.Y.Offset-16),0,1)
 end
 local cameraConnection
 local function bindCamera()
     if cameraConnection then cameraConnection:Disconnect() end
     if Workspace.CurrentCamera then cameraConnection=track(Workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'),layout) end
-    drag=nil;layout()
+    closeDropdown();drag=nil;layout()
+end
+local function visible(show)
+    closeDropdown()
+    main.Visible=show;shadow.Visible=show;drag=nil
+    if not show then
+        local focused=UIS:GetFocusedTextBox()
+        if focused and focused:IsDescendantOf(root) then focused:ReleaseFocus() end
+    end
 end
 track(Workspace:GetPropertyChangedSignal('CurrentCamera'),bindCamera)
-track(minimize.Activated,function() minimized=not minimized;layout() end)
-track(hide.Activated,function() main.Visible=false;drag=nil end)
-track(restore.Activated,function() main.Visible=not main.Visible;drag=nil end)
+track(minimize.Activated,function() closeDropdown();minimized=not minimized;layout() end)
+track(hide.Activated,function() visible(false) end)
+track(restore.Activated,function() visible(not main.Visible) end)
 track(UIS.InputBegan,function(input,processed)
-    if not processed and input.KeyCode==Enum.KeyCode.RightShift then main.Visible=not main.Visible;drag=nil end
+    if not processed and input.KeyCode==Enum.KeyCode.RightShift then visible(not main.Visible) end
 end)
 track(header.InputBegan,function(input)
     if input.UserInputType~=Enum.UserInputType.MouseButton1 and input.UserInputType~=Enum.UserInputType.Touch then return end
-    local x=input.Position.X-header.AbsolutePosition.X
-    if x>=header.AbsoluteSize.X-85 then return end
+    if input.Position.X-header.AbsolutePosition.X>=header.AbsoluteSize.X-85 then return end
     drag={input=input,at=input.Position,position=main.Position}
+end)
+track(resizeHandle.InputBegan,function(input)
+    if input.UserInputType==Enum.UserInputType.MouseButton1 or input.UserInputType==Enum.UserInputType.Touch then
+        drag={input=input,at=input.Position,size=main.Size,resize=true}
+    end
 end)
 track(UIS.InputChanged,function(input)
     if not drag or not main.Visible then return end
     if input.UserInputType==Enum.UserInputType.MouseMovement or input==drag.input then
         local delta=input.Position-drag.at
-        main.Position=UDim2.fromOffset(drag.position.X.Offset+delta.X,drag.position.Y.Offset+delta.Y)
+        if drag.resize then
+            app.config.windowW=math.clamp(drag.size.X.Offset+delta.X,600,1200)
+            app.config.windowH=math.clamp(drag.size.Y.Offset+delta.Y,420,1000)
+            layout()
+        else
+            main.Position=UDim2.fromOffset(drag.position.X.Offset+delta.X,drag.position.Y.Offset+delta.Y)
+            shadow.Position=UDim2.fromOffset(main.Position.X.Offset+4,main.Position.Y.Offset+7)
+        end
     end
 end)
 track(UIS.InputEnded,function(input)
-    if drag and (input==drag.input or input.UserInputType==Enum.UserInputType.MouseButton1) then drag=nil;layout() end
+    if drag and (input==drag.input or input.UserInputType==Enum.UserInputType.MouseButton1) then
+        positionConfig();drag=nil;layout()
+    end
 end)
 function app.destroy()
     app.stop();app.alive=false
     for _,connection in ipairs(app.connections) do connection:Disconnect() end
     table.clear(app.connections)
+    for _,tween in pairs(tweens) do tween:Cancel() end
     root:Destroy()
 end
 bindCamera()
-local view=Workspace.CurrentCamera and Workspace.CurrentCamera.ViewportSize or Vector2.new(1280,720)
-main.Position=UDim2.fromOffset(math.max(8,(view.X-main.Size.X.Offset)/2),math.max(8,(view.Y-main.Size.Y.Offset)/2))
 layout();redraw()
-setStatus('Ready — press START. Right Shift / AD hides or shows UI.')
+setStatus('Update 4 ready — choose a mode. Right Shift / AD hides or shows UI.')
 monitorConnection()
 if autoLoaded and app.config.autoStart then app.start() end
+
