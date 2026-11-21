@@ -36,7 +36,7 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v9-dungeon-enter-retry',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v10-dungeon-resume',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
@@ -950,11 +950,36 @@ local function runDungeonLoop()
     if not remote then error('DungeonAction not found.',0) end
     local waitingSince=nil
     local enteredRun=nil
-    local enterWaiting=nil
+    local function enterDungeon()
+        local started=os.clock()
+        while true do
+            setStatus('Entering Dungeon')
+            local result=call('Enter',nil,nil,remote)
+            if result.uncertain then error('Enter response lost; paused without replaying: '..tostring(result.reason),0) end
+            if result.ok then pause(1);return end
+            if not tostring(result.reason):lower():find('already teleporting',1,true) then
+                error('Enter rejected: '..tostring(result.reason),0)
+            end
+            if os.clock()-started>30 then error('Dungeon teleport has not completed after 30s; paused.',0) end
+            setStatus('Server is already teleporting you — waiting to enter Dungeon')
+            pause(1.5)
+        end
+    end
     local function mutate(name,payload,confirmed)
         local before=app.dungeon.version
         local result=call(name,payload,nil,remote)
         if not result.ok and not result.uncertain then
+            if name=='Start' and tostring(result.reason):lower():find('already have a run',1,true) then
+                setStatus('Existing Dungeon run found — returning and syncing State')
+                enterDungeon()
+                if not waitFor(function()
+                    return app.dungeon.view and type(app.dungeon.view.run)=='table'
+                end,12) then
+                    error('Entered existing Dungeon but no active run State arrived; paused without sending another Start.',0)
+                end
+                enteredRun=app.dungeon.view.run.id
+                return true
+            end
             if name=='Start' and not app.dungeon.view then
                 if not waitFor(function()return app.dungeon.view~=nil end,3) then
                     error('Start rejected: '..tostring(result.reason)..'; server did not provide Dungeon State.',0)
@@ -988,22 +1013,8 @@ local function runDungeonLoop()
             end)
             waitingSince=nil
         elseif enteredRun~=run.id and not run.fighting and not view.battle then
-            setStatus('Entering Dungeon')
-            local result=call('Enter',nil,nil,remote)
-            if result.uncertain then error('Enter response lost; paused without replaying: '..tostring(result.reason),0) end
-            if not result.ok then
-                if tostring(result.reason):lower():find('already teleporting',1,true) then
-                    if not enterWaiting or enterWaiting.id~=run.id then enterWaiting={id=run.id,at=os.clock()} end
-                    if os.clock()-enterWaiting.at>30 then error('Dungeon teleport has not completed after 30s; paused.',0) end
-                    setStatus('Server is already teleporting you — waiting to enter Dungeon')
-                    pause(1.5)
-                    continue
-                end
-                error('Enter rejected: '..tostring(result.reason),0)
-            end
-            enterWaiting=nil
+            enterDungeon()
             enteredRun=run.id
-            pause(1)
         elseif run.fighting or view.battle or run.away then
             waitingSince=waitingSince or os.clock()
             setStatus(run.away and 'Waiting for server to recover the previous fight' or ('Fighting room '..tostring(run.room)))
@@ -1348,7 +1359,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'Anime Card Duel',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'made by aquacodex · Studio v9 · Dungeon Stats',11,false)
+local smallTitle=newText(header,'made by aquacodex · Studio v10 · Dungeon Resume',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1406,7 +1417,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='made by aquacodex · Studio v9 · Dungeon Stats'
+        smallTitle.Text='made by aquacodex · Studio v10 · Dungeon Resume'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
