@@ -36,10 +36,10 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v11-dungeon-card-picker',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v12-rift-boss-priority',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -179,7 +179,7 @@ function app.loadProfile(name)
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
-    for _,key in ipairs({'autoReconnect','autoStart','dungeonWalk'}) do
+    for _,key in ipairs({'autoReconnect','autoStart','dungeonWalk','pauseForRift','sequenceBossDungeon'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     app.profiles.current=name;addName(name);storageStatus('Loaded: '..name)
@@ -295,6 +295,115 @@ local function findRemote(name)
     local ok,value=pcall(function()return remotes:FindFirstChild(name)end)
     return ok and value or nil
 end
+app.priority={status='Ready',battles={},closed={},closedOrder={},riftRecord=nil,lease=nil,lastPoll=-math.huge}
+local riftConfig
+local function loadRiftConfig()
+    if riftConfig then return riftConfig end
+    local ok,value=pcall(function()
+        local shared=RS:FindFirstChild('Shared')
+        local module=shared and shared:FindFirstChild('RiftConfig',true)
+        return module and require(module)
+    end)
+    if ok and type(value)=='table' and type(value.Status)=='function' then riftConfig=value end
+    return riftConfig
+end
+local function acceptPrioritySnapshot(snapshot)
+    if type(snapshot)~='table' then return end
+    if type(snapshot.Rifts)=='table' then app.priority.riftRecord=snapshot.Rifts.Visit end
+end
+local function closePriorityBattle(id)
+    if not id then return end
+    local p=app.priority
+    p.battles[id]=nil
+    if not p.closed[id] then
+        p.closed[id]=true;p.closedOrder[#p.closedOrder+1]=id
+        if #p.closedOrder>128 then p.closed[table.remove(p.closedOrder,1)]=nil end
+    end
+    if p.lease and p.lease.id==id then p.lease=nil end
+end
+local battleState=findRemote('BattleState')
+local battleEvent=findRemote('BattleEvent')
+app.priority.canSequence=battleState~=nil and battleEvent~=nil
+if battleState and battleState.OnClientEvent then track(battleState.OnClientEvent,function(data)
+    if type(data)~='table' then return end
+    local p=app.priority;local lane=tonumber(data.lane) or 1
+    local id=type(data.battleId)=='string' and data.battleId or nil
+    if data.active==false then
+        if id then closePriorityBattle(id)
+        else
+            local ids={};for key,b in pairs(p.battles) do if b.lane==lane then ids[#ids+1]=key end end
+            for _,key in ipairs(ids) do closePriorityBattle(key) end
+        end
+    elseif data.active==true and id and not p.closed[id] then
+        local ids={};for key,b in pairs(p.battles) do if b.lane==lane and key~=id then ids[#ids+1]=key end end
+        for _,key in ipairs(ids) do closePriorityBattle(key) end
+        p.battles[id]={lane=lane}
+    end
+    redraw()
+end) end
+if battleEvent and battleEvent.OnClientEvent then track(battleEvent.OnClientEvent,function(data)
+    if type(data)=='table' and data.type=='BattleEnd' then
+        local id=type(data.battleId)=='string' and data.battleId or nil
+        if id then closePriorityBattle(id) end
+        redraw()
+    end
+end) end
+local function riftPriority()
+    if not app.config.pauseForRift then return nil end
+    local cfg=loadRiftConfig()
+    if not cfg then return nil end
+    local ok,status=pcall(function()return cfg.Status(Workspace:GetServerTimeNow())end)
+    if not ok or type(status)~='table' then return nil end
+    if not status.open then
+        if app.priority.riftHolding and next(app.priority.battles) then return 'Waiting for the final Rift battle to finish' end
+        app.priority.riftHolding=false;return nil
+    end
+    local record=app.priority.riftRecord
+    local cleared=false
+    if type(record)=='table' then
+        local valid,value=pcall(function()return cfg.Joined(record,status.cycle)end)
+        cleared=valid and value==true and record.Clear==true
+    end
+    if cleared then
+        if app.priority.riftHolding and next(app.priority.battles) then return 'Waiting for the final Rift battle to finish' end
+        app.priority.riftHolding=false;return nil
+    end
+    app.priority.riftHolding=true
+    if os.clock()-app.priority.lastPoll>=5 and not app.requestBusy and app.refreshDungeonCollection then
+        app.priority.lastPoll=os.clock();app.refreshDungeonCollection()
+    end
+    return 'Paused for native Auto Rift — waiting for full clear or Rift close'
+end
+local function readyStoryBoss()
+    if not app.story.enabled or os.clock()<app.story.nextAttemptAt then return false end
+    for _,boss in ipairs(storyBosses) do
+        local difficulty=boss.secret and 'Secret' or app.config.storyDifficulty
+        if app.config['story_'..boss.key] and (app.story.cooldowns[boss.id..':'..difficulty] or 0)<=os.clock() then return true end
+    end
+    return false
+end
+local function priorityReason()
+    local rift=riftPriority()
+    if rift then app.priority.status=rift;return rift end
+    if app.bosses.world or app.bosses.raid then return 'Paused — waiting for World/Raid boss death' end
+    local ctx=controller();local p=app.priority
+    if app.config.sequenceBossDungeon and p.canSequence then
+        local run=app.dungeon.view and app.dungeon.view.run
+        local fighting=run and (run.fighting or (app.dungeon.view and app.dungeon.view.battle))
+        if ctx==app.story and (fighting or p.lease or next(p.battles)) then
+            p.status='Waiting for the current battle to finish before Story Boss';return p.status
+        end
+        if ctx==app.dungeon then
+            if p.lease or (not fighting and next(p.battles)) then
+                p.status='Dungeon paused — waiting for Story/other battle to finish';return p.status
+            end
+            if not fighting and readyStoryBoss() then p.status='Dungeon yielding to a ready Story Boss';return p.status end
+        end
+    end
+    p.status='Ready — Rift first, then ready Boss, then Dungeon'
+    return nil
+end
+
 -- Collection data is read from the game's snapshot; Dungeon run cards are never treated as ownership.
 app.dungeon.collection={ready=false,status='Loading your collection…',cards={},definitions={},revision=0}
 local function loadDungeonDefinitions()
@@ -309,6 +418,7 @@ local function loadDungeonDefinitions()
     c.definitions=defs;return true
 end
 local function acceptDungeonCollection(snapshot)
+    acceptPrioritySnapshot(snapshot)
     if type(snapshot)~='table' then return false end
     local owned=snapshot.Cards or snapshot.cards
     if type(owned)~='table' then return false end
@@ -467,33 +577,38 @@ function app.setBossActive(kind, active)
 end
 local function awaitPriority()
     local waiting=false
-    while app.bosses.world or app.bosses.raid do
+    while true do
         check()
-        if not waiting then
-            waiting=true
-            setStatus('Draft paused — waiting for World/Raid boss death')
-        end
-        task.wait(.1)
+        local reason=priorityReason()
+        if not reason then break end
+        waiting=true;setStatus(reason);task.wait(.1)
     end
-    check()
-    if waiting then setStatus('Bosses ended — resuming Draft') end
+    if waiting then setStatus('Priority activity ended — resuming') end
     return waiting
 end
+
 local function call(name,a,b,remote)
     check()
     if name~='State' then awaitPriority() end
     -- Only one request in flight, while each controller keeps its own lifecycle.
-    while app.requestBusy do check();task.wait(.05) end
-    check()
+    while true do
+        check()
+        if name~='State' then awaitPriority() end
+        if not app.requestBusy then break end
+        task.wait(.05)
+    end
     app.requestBusy=true
+    local storyRequest=remote and remote==findRemote('StoryFight') and app.config.sequenceBossDungeon and app.priority.canSequence
+    if storyRequest then app.priority.lease={requestedAt=os.clock()} end
     local version=app.version
     local values=table.pack(pcall(function()
         if remote then return remote:InvokeServer(name,a) end
         return action:InvokeServer(name,a,b)
     end))
     app.requestBusy=false
-    check()
     if not values[1] then
+        if storyRequest then app.priority.lease=nil end
+        check()
         return {ok=false,uncertain=true,reason=tostring(values[2])}
     end
     local rejected=values[2]==false
@@ -501,7 +616,24 @@ local function call(name,a,b,remote)
     if type(values[2])=='table' and values[2].ok==false then
         rejected=true;reason=values[2].reason or values[2].message
     end
-    if rejected then return {ok=false,reason=tostring(reason),loading=loadingRejection(reason)} end
+    if rejected then
+        if storyRequest then app.priority.lease=nil end
+        check()
+        return {ok=false,reason=tostring(reason),loading=loadingRejection(reason)}
+    end
+    if storyRequest then
+        for i=2,values.n do
+            local data=values[i]
+            if type(data)=='table' and data.active==true and type(data.battleId)=='string' then
+                if app.priority.closed[data.battleId] then app.priority.lease=nil
+                else
+                    app.priority.lease={id=data.battleId,requestedAt=os.clock()}
+                    app.priority.battles[data.battleId]={lane=tonumber(data.lane) or 1}
+                end
+                break
+            end
+        end
+    end
     if remote and remote==findRemote('DungeonAction') then
         for i=2,values.n do
             local value=values[i]
@@ -514,6 +646,7 @@ local function call(name,a,b,remote)
             if accept(v) or (type(v)=='table' and accept(v.state)) then break end
         end
     end
+    check()
     return {ok=true}
 end
 local function refresh()
@@ -656,6 +789,7 @@ local function fight(target)
     return result
 end
 local function runLoop()
+    awaitPriority()
     setStatus('Syncing Draft state')
     local initialVersion=app.version
     refresh()
@@ -818,6 +952,7 @@ local function climbMutation(name,a,b,confirmed)
     end
 end
 local function runClimbLoop()
+    awaitPriority()
     loadClimbConfig()
     app.climbStatus='Syncing climb state';refresh()
     if type(app.snapshot and app.snapshot.climb)~='table' then
@@ -913,6 +1048,7 @@ local function runStoryLoop()
     local cursor=0
     while controller().enabled do
         check()
+        awaitPriority()
         local selected={}
         for _,boss in ipairs(storyBosses) do
             if app.config['story_'..boss.key] then table.insert(selected,boss) end
@@ -1093,6 +1229,7 @@ local function runDungeonLoop()
     end
     while controller().enabled do
         check()
+        if awaitPriority() then waitingSince=nil;enteredRun=nil end
         local view=app.dungeon.view
         local run=view and view.run
         if not view or type(run)~='table' then
@@ -1128,6 +1265,10 @@ local function runDungeonLoop()
             local id,room=run.id,run.room
             if type(room)~='number' then error('Dungeon State is missing its room number.',0) end
             local function current()return app.dungeon.view and app.dungeon.view.run end
+            if awaitPriority() then
+                enteredRun=nil
+                continue
+            end
             if not approachDungeonGuard(run) then continue end
             if run.phase=='fight' then
                 setStatus('Starting room '..room)
@@ -1462,7 +1603,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'Anime Card Duel',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'made by aquacodex · Studio v11 · Card Picker',11,false)
+local smallTitle=newText(header,'made by aquacodex · Studio v12 · Battle Priority',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1520,7 +1661,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='made by aquacodex · Studio v11 · Card Picker'
+        smallTitle.Text='made by aquacodex · Studio v12 · Battle Priority'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1956,6 +2097,9 @@ for _,boss in ipairs(ctx.storyBosses) do
     cooldownLabels[boss.id]=addStatus('Boss',boss.name..(boss.secret and ' [SECRET]' or ''),'--')
 end
 section('Dungeon','Auto Dungeon')
+addToggle('Dungeon','Pause script autos for native Rift','pauseForRift')
+addToggle('Dungeon','Ready Story Boss before next Dungeon room','sequenceBossDungeon')
+local priorityLive=addStatus('Dungeon','Battle priority','Ready')
 addToggle('Dungeon','Auto Dungeon','DungeonRunning')
 addToggle('Dungeon','Teleport to Dungeon NPC / guards','dungeonWalk')
 addAction('Dungeon','Start controller','START DUNGEON',function() ctx.app.start('dungeon') end)
@@ -2419,6 +2563,7 @@ local function refreshOverview()
         showStatus(cooldownLabels[boss.id],remaining>0 and ctx.cooldownText(remaining) or 'No known cooldown')
     end
     showStatus(bossSummary,selectedCount..' selected  ·  '..readyCount..' no known CD  ·  '..coolingCount..' cooling')
+    showStatus(priorityLive,ctx.app.priority.status)
     showStatus(dungeonLive,app.dungeon.status)
     local dr=app.dungeon.view and app.dungeon.view.run
     showStatus(dungeonProgress,dr and ('Room '..tostring(dr.room)..' / '..tostring(dr.phase)) or 'No active Dungeon')
@@ -2449,7 +2594,7 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','storyDifficulty','dungeonWalk','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonWalk','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     uiFlags.DungeonRunning=app.dungeon.enabled;uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
     local selection={}
