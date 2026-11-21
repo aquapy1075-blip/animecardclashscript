@@ -36,7 +36,7 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v16-readable-afk',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v17-afk-heartbeat',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, antiAfk=true,autoReconnect=true, autoStart=false,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
@@ -96,20 +96,54 @@ local function track(signal, callback)
     table.insert(app.connections, connection)
     return connection
 end
-app.afk={status='Ready',lastInput=-math.huge}
-if player.Idled then
-    track(player.Idled,function()
-        if not app.alive or not app.config.antiAfk or os.clock()-app.afk.lastInput<60 then return end
-        app.afk.lastInput=os.clock()
-        local ok=pcall(function()
-            local virtual=game:GetService('VirtualUser')
-            virtual:CaptureController()
-            virtual:ClickButton2(Vector2.new(0,0))
-        end)
-        app.afk.status=ok and 'Active — idle input sent' or 'VirtualUser input unavailable in this executor'
-        redraw()
+app.afk={status='Ready — checks every 60s and on idle',lastInput=-math.huge,sent=0}
+local function antiAfkPulse()
+    if not app.alive or not app.config.antiAfk or os.clock()-app.afk.lastInput<60 then return end
+    app.afk.lastInput=os.clock()
+    local camera=Workspace.CurrentCamera
+    local cameraFrame=camera and camera.CFrame
+    local backend
+    local ok=pcall(function()
+        local virtual=game:GetService('VirtualUser')
+        virtual:CaptureController()
+        if type(virtual.Button2Down)=='function' and type(virtual.Button2Up)=='function' and cameraFrame then
+            virtual:Button2Down(Vector2.new(0,0),cameraFrame)
+            local release=function()virtual:Button2Up(Vector2.new(0,0),cameraFrame)end
+            app.afk.release=release
+            task.delay(.05,function()
+                if app.afk.release==release then pcall(release);app.afk.release=nil end
+            end)
+            backend='VirtualUser press/release'
+        else
+            virtual:ClickButton2(Vector2.new(0,0),cameraFrame)
+            backend='VirtualUser click'
+        end
     end)
-else app.afk.status='Idle signal unavailable' end
+    if not ok then
+        ok=pcall(function()
+            local virtual=game:GetService('VirtualInputManager')
+            virtual:SendMouseButtonEvent(0,0,1,true,game,0)
+            local release=function()virtual:SendMouseButtonEvent(0,0,1,false,game,0)end
+            app.afk.release=release
+            task.delay(.05,function()
+                if app.afk.release==release then pcall(release);app.afk.release=nil end
+            end)
+            backend='VirtualInputManager'
+        end)
+    end
+    if ok then
+        app.afk.sent=app.afk.sent+1
+        app.afk.status='Input sent #'..app.afk.sent..' / '..backend
+    else app.afk.status='Input unavailable — executor blocked both Anti-AFK methods' end
+    redraw()
+end
+if player.Idled then track(player.Idled,antiAfkPulse) end
+local function antiAfkTick()
+    if not app.alive then return end
+    antiAfkPulse()
+    task.delay(60,antiAfkTick)
+end
+task.delay(60,antiAfkTick)
 local function setStatus(message)
     local ctx=controller()
     message=tostring(message)
@@ -1666,7 +1700,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'ANIME DUEL',19,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'AQUA  /  ACO EDITION  /  v16',11,false)
+local smallTitle=newText(header,'AQUA  /  ACO EDITION  /  v17',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1726,7 +1760,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='AQUA  /  ACO EDITION  /  v16'
+        smallTitle.Text='AQUA  /  ACO EDITION  /  v17'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -2789,6 +2823,7 @@ end
 function app.destroy()
     if not app.alive then return end
     app.stop();app.alive=false;uiState.alive=false
+    if app.afk.release then pcall(app.afk.release);app.afk.release=nil end
     if ui then ui.Destroy() end
     for _,connection in ipairs(app.connections) do connection:Disconnect() end
     table.clear(app.connections)
