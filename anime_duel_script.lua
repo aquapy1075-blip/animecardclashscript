@@ -13,10 +13,10 @@ local playerGui = Players.LocalPlayer:WaitForChild('PlayerGui')
 local env = getgenv and getgenv() or _G
 local previous = env.AnimeDuelScript
 if type(previous) == 'table' and type(previous.destroy) == 'function' then
-    if previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) then
+    if previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) then
         previous.stop()
         local deadline=os.clock()+10
-        while previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) do
+        while previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) do
             if os.clock()>=deadline then
                 previous.status='Old request is still pending; wait for it to finish before upgrading.'
                 return
@@ -36,11 +36,12 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v3-fast-boss',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v4-dungeon',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
+app.dungeon={enabled=false,worker=false,status='Ready — open the Dungeon NPC to sync',version=0}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
 local storyBosses={
     {key='purple_forest',id='purple_forest_boss',name='Water Master',secret=false},
@@ -109,7 +110,7 @@ local profileDir=storage..'/profiles'
 local disk=type(readfile)=='function' and type(writefile)=='function'
 app.profiles={current='Default',auto=nil,names={},status=disk and 'Storage ready' or 'File API unavailable'}
 app.reconnect={attempts=0,lastTry=-math.huge,status='Monitoring',limit=3,interval=9}
-local ranges={windowW={600,1200},windowH={420,1000},windowX={0,1},windowY={0,1},farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
+local ranges={dungeonCashOut={5,20,true},windowW={600,1200},windowH={420,1000},windowX={0,1},windowY={0,1},farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
 local themesAllowed={Midnight=true,Emerald=true,Violet=true,Light=true,Ocean=true,Rose=true}
 local function profileId(name)
     if type(name)~='string' then return nil end
@@ -154,13 +155,16 @@ function app.saveProfile(name)
     return true
 end
 function app.loadProfile(name)
-    if app.worker or app.climb.worker or app.story.worker then storageStatus('Stop active modes before loading a profile');return false end
+    if app.worker or app.climb.worker or app.story.worker or app.dungeon.worker then storageStatus('Stop active modes before loading a profile');return false end
     name=profileId(name)
     local data=name and readJson(profilePath(name))
     if not data or data.version~=1 or type(data.config)~='table' then
         storageStatus('Profile unavailable or invalid');return false
     end
     local incoming=data.config
+    if table.find({'Normal','Hard','Nightmare'},incoming.dungeonDifficulty) then app.config.dungeonDifficulty=incoming.dungeonDifficulty end
+    if table.find({'Balanced','Loot','Safe'},incoming.dungeonPath) then app.config.dungeonPath=incoming.dungeonPath end
+    for _,key in ipairs({'dungeonTeam','dungeonReserves'}) do if type(incoming[key])=='string' then app.config[key]=incoming[key] end end
     app.config.storyInterval=1.5 -- Migrate profiles saved with the old 5-second interval.
     for key,range in pairs(ranges) do
         local v=incoming[key]
@@ -168,7 +172,7 @@ function app.loadProfile(name)
             app.config[key]=range[3] and math.floor(v) or v
         end
     end
-    if incoming.mode=='draft' or incoming.mode=='climb' or incoming.mode=='story' then app.config.mode=incoming.mode end
+    if incoming.mode=='draft' or incoming.mode=='climb' or incoming.mode=='story' or incoming.mode=='dungeon' then app.config.mode=incoming.mode end
     if table.find(storyDifficulties,incoming.storyDifficulty) then app.config.storyDifficulty=incoming.storyDifficulty end
     for _,boss in ipairs(storyBosses) do
         local key='story_'..boss.key
@@ -247,9 +251,9 @@ function app.requestReconnect(force)
     st.attempts=st.attempts+1;st.lastTry=os.clock()
     st.status='Rejoining '..st.attempts..'/'..st.limit
     -- Stop scheduling gameplay; a disconnected session cannot confirm new mutations.
-    app.enabled=false;app.climb.enabled=false;app.story.enabled=false
+    app.enabled=false;app.climb.enabled=false;app.story.enabled=false;app.dungeon.enabled=false
     app.stopReason='Connection lost — auto reconnect requested'
-    app.climb.stopReason=app.stopReason;app.story.stopReason=app.stopReason
+    app.climb.stopReason=app.stopReason;app.story.stopReason=app.stopReason;app.dungeon.stopReason=app.stopReason
     local ok=pcall(function() TeleportService:Teleport(game.PlaceId,player) end)
     if not ok then st.status='Rejoin unavailable; waiting to retry' end
     redraw();return ok
@@ -287,6 +291,23 @@ track(event.OnClientEvent, function(kind, data)
         app.resultStateVersion=app.version
     end
 end)
+local function findRemote(name)
+    local ok,value=pcall(function()return remotes:FindFirstChild(name)end)
+    return ok and value or nil
+end
+local function acceptDungeon(value)
+    if type(value)=='table' and type(value.unlocked)=='table' and value.coins~=nil then
+        app.dungeon.view=value;app.dungeon.version=app.dungeon.version+1;redraw();return true
+    end
+    return false
+end
+local dungeonEvent=findRemote('DungeonEvent')
+if dungeonEvent then
+    track(dungeonEvent.OnClientEvent,function(kind,data)
+        if kind=='State' then acceptDungeon(data)
+        elseif kind=='Result' then app.dungeon.result=data end
+    end)
+end
 local function activeRun()
     local run=app.snapshot and app.snapshot.run
     return type(run)=='table' and not run.over and run or nil
@@ -355,6 +376,12 @@ local function call(name,a,b,remote)
         rejected=true;reason=values[2].reason or values[2].message
     end
     if rejected then return {ok=false,reason=tostring(reason),loading=loadingRejection(reason)} end
+    if remote and remote==findRemote('DungeonAction') then
+        for i=2,values.n do
+            local value=values[i]
+            if acceptDungeon(value) or (type(value)=='table' and (acceptDungeon(value.state) or acceptDungeon(value.view))) then break end
+        end
+    end
     if not remote and app.version==version then
         for i=2,values.n do
             local v=values[i]
@@ -812,6 +839,116 @@ local function runStoryLoop()
     end
 end
 
+local function dungeonVitals(run)
+    local sum,alive,lowest=0,0,1
+    for _,id in ipairs(run.cards or run.team or {}) do
+        local hp=type(run.hp)=='table' and tonumber(run.hp[id])
+        if hp and hp>0 then alive=alive+1;sum=sum+hp;lowest=math.min(lowest,hp) end
+    end
+    return alive,alive>0 and sum/alive or 0,lowest
+end
+local function dungeonDoor(run,path)
+    local alive,average,lowest=dungeonVitals(run)
+    local trouble=run.trouble==true or alive<=1 or average<.35
+    local recovering=average<.6 or lowest<.35
+    local order
+    if trouble or (path~='Loot' and (recovering or (path=='Safe' and average<1))) then
+        order={'VAULT','RECOVERY','TREASURE','CURSE','ELITE','FORTUNE','EXIT'}
+        if trouble then
+            local recovery=false
+            for _,door in ipairs(run.doors or {}) do if door.kind=='RECOVERY' then recovery=true end end
+            if not recovery then for i,door in ipairs(run.doors or {}) do if door.kind=='EXIT' then return i end end end
+        end
+    elseif path=='Loot' then order={'VAULT','FORTUNE','TREASURE','CURSE','ELITE','RECOVERY','EXIT'}
+    elseif path=='Safe' or average<.7 then order={'VAULT','TREASURE','CURSE','ELITE','FORTUNE','RECOVERY','EXIT'}
+    else order={'VAULT','TREASURE','FORTUNE','CURSE','ELITE','RECOVERY','EXIT'} end
+    for _,kind in ipairs(order) do for i,door in ipairs(run.doors or {}) do if door.kind==kind then return i end end end
+    return nil
+end
+local function dungeonCards(text,count)
+    local out,seen={},{}
+    for id in tostring(text):gmatch('[%w_]+') do
+        if seen[id] then error('Duplicate Dungeon card: '..id,0) end
+        seen[id]=true;out[#out+1]=id
+    end
+    if #out~=count then error('Dungeon requires '..count..' card IDs in this field.',0) end
+    return out,seen
+end
+local function runDungeonLoop()
+    local remote=remotes:FindFirstChild('DungeonAction')
+    if not remote then error('DungeonAction not found.',0) end
+    local waitingSince=nil
+    local function mutate(name,payload,confirmed)
+        local before=app.dungeon.version
+        local result=call(name,payload,nil,remote)
+        if not result.ok and not result.uncertain then
+            setStatus(name..' rejected: '..tostring(result.reason)..' — move near the guard/door if requested')
+            pause(3);return false
+        end
+        if not waitFor(function()return app.dungeon.version>before and confirmed()end,12) then
+            error(name..' not confirmed by Dungeon State; stopped without resending.',0)
+        end
+        return true
+    end
+    while controller().enabled do
+        check()
+        local view=app.dungeon.view
+        local run=view and view.run
+        if not view then
+            setStatus('Open the Dungeon NPC once to sync State; auto will continue here')
+            pause(.5)
+        elseif type(run)~='table' then
+            local unlocked=view.unlocked and view.unlocked[app.config.dungeonDifficulty]
+            if unlocked and unlocked.ok==false then error(unlocked.why or 'Dungeon difficulty locked.',0) end
+            local team,seen=dungeonCards(app.config.dungeonTeam,4)
+            local reserves=dungeonCards(app.config.dungeonReserves,2)
+            for _,id in ipairs(reserves) do if seen[id] then error('Dungeon team/reserves must be six different cards.',0) end end
+            if view.last then setStatus('Dungeon ended — preparing the next run');pause(6) end
+            local old=view.last and view.last.run
+            setStatus('Starting Dungeon / '..app.config.dungeonDifficulty)
+            mutate('Start',{team=team,reserves=reserves,difficulty=app.config.dungeonDifficulty},function()
+                local current=app.dungeon.view and app.dungeon.view.run
+                return type(current)=='table' and current.id~=old
+            end)
+            waitingSince=nil
+        elseif run.fighting or view.battle or run.away then
+            waitingSince=waitingSince or os.clock()
+            setStatus(run.away and 'Waiting for server to recover the previous fight' or ('Fighting room '..tostring(run.room)))
+            if os.clock()-waitingSince>app.config.timeout then error('Dungeon fight State timed out; no duplicate Fight was sent.',0) end
+            pause(.5)
+        else
+            waitingSince=nil
+            local id,room=run.id,run.room
+            if type(room)~='number' then error('Dungeon State is missing its room number.',0) end
+            local function current()return app.dungeon.view and app.dungeon.view.run end
+            if run.phase=='fight' then
+                setStatus('Starting room '..room)
+                mutate('Fight',room,function()
+                    local r=current()
+                    return not r or r.id~=id or r.fighting==true or r.phase~='fight' or r.room~=room
+                end)
+            elseif run.phase=='doors' then
+                local index=dungeonDoor(run,app.config.dungeonPath)
+                if not index then error('Dungeon State has no supported door to choose.',0) end
+                setStatus('Choosing '..run.doors[index].kind..' / door '..index)
+                mutate('Door',index,function()
+                    local r=current();return not r or r.id~=id or r.room~=room or r.phase~='doors'
+                end)
+            elseif run.phase=='checkpoint' then
+                local alive,average=dungeonVitals(run)
+                local withdraw=room>=app.config.dungeonCashOut or run.trouble==true or alive<=1 or average<.35
+                    or (app.config.dungeonPath=='Safe' and (alive<3 or average<.6))
+                local actionName=withdraw and 'CashOut' or 'Continue'
+                setStatus(actionName..' at room '..room)
+                mutate(actionName,nil,function()
+                    local r=current();return not r or r.id~=id or r.phase~='checkpoint'
+                end)
+            else error('Unknown Dungeon phase: '..tostring(run.phase),0) end
+            pause(.5)
+        end
+    end
+end
+
 local function stopController(ctx)
     ctx.enabled=false
     ctx.status=ctx.worker and 'Stopping — current server fight continues' or 'Stopped'
@@ -820,12 +957,13 @@ function app.stop(mode)
     if mode=='draft' then stopController(app)
     elseif mode=='climb' then stopController(app.climb)
     elseif mode=='story' then stopController(app.story)
-    else stopController(app);stopController(app.climb);stopController(app.story) end
+    elseif mode=='dungeon' then stopController(app.dungeon)
+    else stopController(app);stopController(app.climb);stopController(app.story);stopController(app.dungeon) end
     redraw()
 end
 function app.start(mode)
-    if mode~='draft' and mode~='climb' and mode~='story' then mode=app.config.mode end
-    local ctx=mode=='climb' and app.climb or (mode=='story' and app.story or app)
+    if mode~='draft' and mode~='climb' and mode~='story' and mode~='dungeon' then mode=app.config.mode end
+    local ctx=mode=='climb' and app.climb or (mode=='story' and app.story or (mode=='dungeon' and app.dungeon or app))
     if not app.alive or ctx.worker then return end
     app.config.mode=mode -- Auto Load preference only; never selects the live worker.
     ctx.stopReason=nil;ctx.lastError=nil
@@ -833,7 +971,7 @@ function app.start(mode)
     task.spawn(function()
         local thread=coroutine.running()
         workerContexts[thread]=ctx
-        local ok,err=pcall(mode=='climb' and runClimbLoop or (mode=='story' and runStoryLoop or runLoop))
+        local ok,err=pcall(mode=='climb' and runClimbLoop or (mode=='story' and runStoryLoop or (mode=='dungeon' and runDungeonLoop or runLoop)))
         ctx.enabled=false;ctx.worker=false
         if not ok and tostring(err)~='__STOP__' then
             ctx.lastError=tostring(err)
@@ -1114,7 +1252,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'Anime Card Duel',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'made by aquacodex · Studio v3',11,false)
+local smallTitle=newText(header,'made by aquacodex · Studio v4 · Dungeon',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1147,7 +1285,7 @@ local body=make('Frame',main,{
 local selectedTab='Monitor'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Draft','Climb','Boss','Config','Settings'}
+local tabNames={'Monitor','Draft','Climb','Boss','Dungeon','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
     make('UIGradient',tab,{Rotation=30,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(155,195,240))})
@@ -1172,7 +1310,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='made by aquacodex · Studio v3'
+        smallTitle.Text='made by aquacodex · Studio v4 · Dungeon'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1607,6 +1745,26 @@ local cooldownLabels={}
 for _,boss in ipairs(ctx.storyBosses) do
     cooldownLabels[boss.id]=addStatus('Boss',boss.name..(boss.secret and ' [SECRET]' or ''),'--')
 end
+section('Dungeon','Auto Dungeon')
+addToggle('Dungeon','Auto Dungeon','DungeonRunning')
+addAction('Dungeon','Start controller','START DUNGEON',function() ctx.app.start('dungeon') end)
+addAction('Dungeon','Stop controller','STOP DUNGEON',function() ctx.app.stop('dungeon') end)
+local dungeonLive=addStatus('Dungeon','Status','Open the Dungeon NPC once to sync')
+local dungeonProgress=addStatus('Dungeon','Room / phase','--')
+local dungeonHealth=addStatus('Dungeon','Alive / average HP','--')
+addDropdown('Dungeon','Difficulty','dungeonDifficulty',{'Normal','Hard','Nightmare'})
+local pathButton
+pathButton=addAction('Dungeon','Path','Balanced  ▾',function()
+    openMenu(pathButton,{'Balanced','Most Loot','Safest'},function(index)
+        setFlag('dungeonPath',({'Balanced','Loot','Safe'})[index])
+    end)
+end)
+widgets[#widgets+1]=function()pathButton.Text=({Balanced='Balanced',Loot='Most Loot',Safe='Safest'})[flags.dungeonPath]..'  ▾'end
+addDropdown('Dungeon','Cash out at room','dungeonCashOut',{5,10,15,20})
+addInput('Dungeon','Team: four card IDs, comma-separated','dungeonTeam','card1,card2,card3,card4')
+addInput('Dungeon','Reserves: two card IDs','dungeonReserves','card5,card6')
+addStatus('Dungeon','Checkpoint policy','Withdraw when in trouble; Safest also banks early when injured')
+addStatus('Dungeon','Guard positioning','Fight uses server range checks. Move near the current guard if requested.')
 section('Config','Profiles')
 local nameBox=addInput('Config','Profile name','ProfileName','Default')
 local savedDrop
@@ -1908,7 +2066,7 @@ local function refreshOverview()
     if not lifecycle.alive or not root.Enabled or window.minimized then return end
     pumpToast()
     local app=ctx.app
-    local running=(app.enabled and 1 or 0)+(app.climb.enabled and 1 or 0)+(app.story.enabled and 1 or 0)
+    local running=(app.enabled and 1 or 0)+(app.climb.enabled and 1 or 0)+(app.story.enabled and 1 or 0)+(app.dungeon.enabled and 1 or 0)
     showStatus(sessionBadge,running>0 and (running..' ACTIVE') or 'STANDBY')
     showStatus(draftStatus,app.status);showStatus(draftLive,app.status)
     showStatus(climbStatus,app.climb.status);showStatus(climbLive,app.climb.status)
@@ -1941,6 +2099,10 @@ local function refreshOverview()
         showStatus(cooldownLabels[boss.id],remaining>0 and ctx.cooldownText(remaining) or 'No known cooldown')
     end
     showStatus(bossSummary,selectedCount..' selected  ·  '..readyCount..' no known CD  ·  '..coolingCount..' cooling')
+    showStatus(dungeonLive,app.dungeon.status)
+    local dr=app.dungeon.view and app.dungeon.view.run
+    showStatus(dungeonProgress,dr and ('Room '..tostring(dr.room)..' / '..tostring(dr.phase)) or 'No active Dungeon')
+    if dr then local alive,average=ctx.dungeonVitals(dr);showStatus(dungeonHealth,alive..' alive / '..math.floor(average*100+.5)..'% HP') else showStatus(dungeonHealth,'--') end
     showStatus(configStatus,app.profiles.status)
     showStatus(configAuto,app.profiles.auto or 'OFF')
     showStatus(reconnectStatus,app.config.autoReconnect and app.reconnect.status or 'OFF')
@@ -1959,8 +2121,8 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','storyDifficulty'}) do uiFlags[key]=app.config[key] end
-    uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
+    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    uiFlags.DungeonRunning=app.dungeon.enabled;uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
     local selection={}
     for _,boss in ipairs(storyBosses) do selection[#selection+1]=app.config['story_'..boss.key] and '1' or '0' end
     uiFlags.BossSelectionRevision=table.concat(selection)
@@ -1970,13 +2132,19 @@ end
 local function setUIFlag(key,value)
     uiFlags.InputRevision=(tonumber(uiFlags.InputRevision) or 0)+1
     if key=='ProfileName' then uiFlags.ProfileName=value;return end
-    local modes={DraftRunning='draft',ClimbRunning='climb',BossRunning='story'}
+    local modes={DraftRunning='draft',ClimbRunning='climb',BossRunning='story',DungeonRunning='dungeon'}
     if modes[key] then if value then app.start(modes[key]) else app.stop(modes[key]) end;return end
     local configKey=flagKeys[key] or key
     local range=ranges[configKey]
     if range then
         local number=tonumber(value)
         if number and number==number and number>=range[1] and number<=range[2] then app.config[configKey]=range[3] and math.floor(number) or number end
+    elseif configKey=='dungeonPath' then
+        if table.find({'Balanced','Loot','Safe'},value) then app.config.dungeonPath=value end
+    elseif configKey=='dungeonDifficulty' then
+        if table.find({'Normal','Hard','Nightmare'},value) then app.config.dungeonDifficulty=value end
+    elseif configKey=='dungeonTeam' or configKey=='dungeonReserves' then
+        app.config[configKey]=tostring(value)
     elseif configKey=='theme' then
         if themesAllowed[value] then app.config.theme=value end
     elseif configKey=='storyDifficulty' then
@@ -1995,7 +2163,7 @@ uiState.stop=function()app.destroy()end
 syncUI()
 ui=UILibrary.Create({app=app,state=uiState,profile=profileView,flags=uiFlags,playerGui=playerGui,
     Workspace=Workspace,UIS=UIS,GuiService=GuiService,env=env,setFlag=setUIFlag,
-    storyBosses=storyBosses,cooldownKey=storyCooldownKey,cooldownText=cooldownText,
+    dungeonVitals=dungeonVitals,storyBosses=storyBosses,cooldownKey=storyCooldownKey,cooldownText=cooldownText,
     saveProfile=function(name)app.saveProfile(name);redraw()end,
     loadProfile=function(name)app.loadProfile(name);redraw()end,
     deleteProfile=function(name)app.deleteProfile(name);redraw()end,
