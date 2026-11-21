@@ -36,7 +36,7 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v10-dungeon-resume',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v11-dungeon-card-picker',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
@@ -295,6 +295,104 @@ local function findRemote(name)
     local ok,value=pcall(function()return remotes:FindFirstChild(name)end)
     return ok and value or nil
 end
+-- Collection data is read from the game's snapshot; Dungeon run cards are never treated as ownership.
+app.dungeon.collection={ready=false,status='Loading your collection…',cards={},definitions={},revision=0}
+local function loadDungeonDefinitions()
+    local c=app.dungeon.collection
+    if next(c.definitions) then return true end
+    local ok,defs=pcall(function()
+        local shared=RS:FindFirstChild('Shared')
+        local module=shared and shared:FindFirstChild('CardDefinitions',true)
+        return module and require(module)
+    end)
+    if not ok or type(defs)~='table' then return false end
+    c.definitions=defs;return true
+end
+local function acceptDungeonCollection(snapshot)
+    if type(snapshot)~='table' then return false end
+    local owned=snapshot.Cards or snapshot.cards
+    if type(owned)~='table' then return false end
+    local c=app.dungeon.collection
+    if not loadDungeonDefinitions() then c.status='Card definitions unavailable; refresh when the game has loaded.';redraw();return false end
+    local cards={}
+    for id,count in pairs(owned) do
+        local def=c.definitions[id]
+        if type(id)=='string' and type(count)=='number' and count>0 and type(def)=='table' then
+            cards[id]={id=id,count=count,name=tostring(def.Name or id),image=tostring(def.Image or ''),
+                border=tostring(def.Variant or def.Border or 'Basic'),damage=tonumber(def.Damage) or 0,
+                health=tonumber(def.Health) or 0}
+        end
+    end
+    c.cards=cards;c.ready=true;c.revision=c.revision+1
+    local count=0;for _ in pairs(cards) do count=count+1 end
+    c.status=count..' owned cards · choose 4 team + 2 reserves'
+    redraw();return true
+end
+function app.refreshDungeonCollection()
+    local c=app.dungeon.collection
+    if c.loading then return end
+    local remote=findRemote('GetSnapshot')
+    if not remote then c.status='GetSnapshot unavailable; press Refresh once the game loads.';redraw();return end
+    c.loading=true;c.status='Loading your collection…';redraw()
+    task.spawn(function()
+        while app.requestBusy and app.alive do task.wait(.05) end
+        if not app.alive then c.loading=false;return end
+        app.requestBusy=true
+        local ok,snapshot=pcall(function()return remote:InvokeServer()end)
+        app.requestBusy=false;c.loading=false
+        if not app.alive then return end
+        if not ok or not acceptDungeonCollection(snapshot) then
+            c.status='Collection not ready; press Refresh to try again.'
+        end
+        redraw()
+    end)
+end
+local collectionEvent=findRemote('StateChanged')
+if collectionEvent and collectionEvent.OnClientEvent then
+    track(collectionEvent.OnClientEvent,function(snapshot)acceptDungeonCollection(snapshot)end)
+end
+function app.getDungeonSlots()
+    local slots={}
+    for _,key in ipairs({'dungeonTeam','dungeonReserves'}) do
+        local count=key=='dungeonTeam' and 4 or 2
+        local parts={}
+        for part in (tostring(app.config[key])..','):gmatch('(.-),') do parts[#parts+1]=part:match('^%s*(.-)%s*$') end
+        for i=1,count do slots[#slots+1]=parts[i] or '' end
+    end
+    return slots
+end
+function app.setDungeonSlot(index,id)
+    if type(index)~='number' or index%1~=0 or index<1 or index>6 then return false,'Choose a team or reserve slot.' end
+    id=id or ''
+    local c=app.dungeon.collection
+    if id~='' and (not c.ready or not c.cards[id]) then return false,'You do not own this card.' end
+    local slots=app.getDungeonSlots()
+    for i,selected in ipairs(slots) do if id~='' and selected==id and i~=index then return false,'This card is already in another slot.' end end
+    slots[index]=id
+    app.config.dungeonTeam=table.concat(slots,',',1,4)
+    app.config.dungeonReserves=table.concat(slots,',',5,6)
+    redraw();return true
+end
+function app.listDungeonCards(query,border,sort)
+    local list={};query=tostring(query or ''):lower()
+    for _,card in pairs(app.dungeon.collection.cards) do
+        if (not border or border=='All' or card.border==border)
+            and (query=='' or card.name:lower():find(query,1,true) or card.id:lower():find(query,1,true)) then
+            list[#list+1]=card
+        end
+    end
+    table.sort(list,function(a,b)
+        if sort=='Name' then if a.name~=b.name then return a.name<b.name end
+        elseif sort=='Quantity' then if a.count~=b.count then return a.count>b.count end
+        else
+            local x,y=a.damage+a.health/2,b.damage+b.health/2
+            if x~=y then return x>y end
+        end
+        return a.id<b.id
+    end)
+    return list
+end
+
 local function acceptDungeon(value)
     if type(value)=='table' and type(value.unlocked)=='table' and value.coins~=nil then
         local d=app.dungeon
@@ -1004,6 +1102,11 @@ local function runDungeonLoop()
             local team,seen=dungeonCards(app.config.dungeonTeam,4)
             local reserves=dungeonCards(app.config.dungeonReserves,2)
             for _,id in ipairs(reserves) do if seen[id] then error('Dungeon team/reserves must be six different cards.',0) end end
+            if app.dungeon.collection.ready then
+                for _,group in ipairs({team,reserves}) do for _,id in ipairs(group) do
+                    if not app.dungeon.collection.cards[id] then error('Dungeon card is no longer owned; update the team in the card picker.',0) end
+                end end
+            end
             if view.last then setStatus('Dungeon ended — preparing the next run');pause(1) end
             local old=view.last and view.last.run
             setStatus('Starting Dungeon / '..app.config.dungeonDifficulty)
@@ -1359,7 +1462,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'Anime Card Duel',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'made by aquacodex · Studio v10 · Dungeon Resume',11,false)
+local smallTitle=newText(header,'made by aquacodex · Studio v11 · Card Picker',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1417,7 +1520,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='made by aquacodex · Studio v10 · Dungeon Resume'
+        smallTitle.Text='made by aquacodex · Studio v11 · Card Picker'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1869,8 +1972,114 @@ pathButton=addAction('Dungeon','Path','Balanced  ▾',function()
 end)
 widgets[#widgets+1]=function()pathButton.Text=({Balanced='Balanced',Loot='Most Loot',Safe='Safest'})[flags.dungeonPath]..'  ▾'end
 addDropdown('Dungeon','Cash out at room','dungeonCashOut',{5,10,15,20})
-addInput('Dungeon','Team: four card IDs, comma-separated','dungeonTeam','card1,card2,card3,card4')
-addInput('Dungeon','Reserves: two card IDs','dungeonReserves','card5,card6')
+do
+    local app=ctx.app
+    local picker={query='',border='All',sort='Power',page=1,active=1,revision=nil,tiles={},slots={}}
+    section('Dungeon','Your Dungeon team')
+    local collectionStatus=addStatus('Dungeon','Collection','Loading your collection…')
+    local function panel(name,height)
+        orderCounter=orderCounter+1
+        return make('Frame',tabPages.Dungeon,{Name=name,LayoutOrder=orderCounter,Size=UDim2.new(1,-2,0,height),BackgroundTransparency=1,BorderSizePixel=0})
+    end
+    local function grid(parent,height)
+        make('UIGridLayout',parent,{CellSize=UDim2.new(1/3,-6,0,height),CellPadding=UDim2.fromOffset(8,8),SortOrder=Enum.SortOrder.LayoutOrder})
+    end
+    local function tile(parent,name,index)
+        local b=make('TextButton',parent,{Name=name,Text='',LayoutOrder=index,AutoButtonColor=false,BorderSizePixel=0})
+        corner(b,10);skin(b,'BackgroundColor3','row')
+        local ring=make('UIStroke',b,{Thickness=1,Color=Color3.fromRGB(110,120,145),Transparency=.15})
+        local image=make('ImageLabel',b,{Name='CardArt',BackgroundTransparency=1,Position=UDim2.fromOffset(8,8),Size=UDim2.fromOffset(42,56),ScaleType=Enum.ScaleType.Fit,Image=''})
+        local title=newText(b,'',11,true);title.Name='CardName';title.Position=UDim2.new(0,55,0,8);title.Size=UDim2.new(1,-61,0,55);title.TextWrapped=true
+        local detail=newText(b,'',10,false);detail.Name='CardDetail';detail.Position=UDim2.fromOffset(8,70);detail.Size=UDim2.new(1,-16,0,42);detail.TextWrapped=true
+        skin(title,'TextColor3','text');skin(detail,'TextColor3','muted')
+        return {button=b,image=image,title=title,detail=detail,ring=ring}
+    end
+    local function paintRing(t,border,selected)
+        local colors={Basic=Color3.fromRGB(126,142,168),Grey=Color3.fromRGB(126,142,168),Gold=Color3.fromRGB(255,203,92),Rainbow=Color3.fromRGB(86,228,225),Secret=Color3.fromRGB(208,124,255)}
+        t.ring.Color=colors[border] or colors.Basic;t.ring.Thickness=selected and 2 or 1
+    end
+    local slotPanel=panel('DungeonTeamSlots',248);grid(slotPanel,120)
+    local refreshPicker
+    for i=1,6 do
+        local index=i
+        local t=tile(slotPanel,'DungeonSlot'..i,i);picker.slots[i]=t
+        trackUI(t.button.Activated:Connect(function()picker.active=index;picker.revision=nil;refreshPicker()end))
+    end
+    addAction('Dungeon','Selected slot','CLEAR SLOT',function()
+        app.setDungeonSlot(picker.active,nil);picker.revision=nil;refreshPicker()
+    end)
+    addAction('Dungeon','Owned cards','REFRESH COLLECTION',function()app.refreshDungeonCollection()end)
+    local searchRow=row('Dungeon','Find a card')
+    local search=make('TextBox',searchRow,{Name='DungeonCardSearch',Text='',PlaceholderText='Search card name…',ClearTextOnFocus=false,
+        Position=UDim2.new(1,-210,.5,-17),Size=UDim2.fromOffset(196,34),BorderSizePixel=0,Font=Enum.Font.Gotham,TextSize=12})
+    corner(search,8);skin(search,'BackgroundColor3','row');skin(search,'TextColor3','text');skin(search,'PlaceholderColor3','muted')
+    trackUI(search:GetPropertyChangedSignal('Text'):Connect(function()picker.query=search.Text;picker.page=1;picker.revision=nil;refreshPicker()end))
+    local borderButton,sortButton
+    borderButton=addAction('Dungeon','Border filter','All  ▾',function()
+        openMenu(borderButton,{'All','Basic','Gold','Rainbow','Secret'},function(_,value)
+            picker.border=value;picker.page=1;picker.revision=nil;refreshPicker()
+        end)
+    end)
+    sortButton=addAction('Dungeon','Sort cards','Power  ▾',function()
+        openMenu(sortButton,{'Power','Name','Quantity'},function(_,value)
+            picker.sort=value;picker.page=1;picker.revision=nil;refreshPicker()
+        end)
+    end)
+    local pageStatus=addStatus('Dungeon','Available cards','--')
+    local listPanel=panel('DungeonOwnedCards',504);grid(listPanel,120)
+    for i=1,12 do
+        local t=tile(listPanel,'DungeonOwnedCard'..i,i);picker.tiles[i]=t
+        trackUI(t.button.Activated:Connect(function()
+            if not t.card then return end
+            local slots=app.getDungeonSlots();local index=table.find(slots,t.card.id)
+            if index then app.setDungeonSlot(index,nil);picker.active=index
+            else
+                local ok,reason=app.setDungeonSlot(picker.active,t.card.id)
+                if not ok then notify(reason,'warning');return end
+                slots=app.getDungeonSlots()
+                for n,id in ipairs(slots) do if id=='' then picker.active=n;break end end
+            end
+            picker.revision=nil;refreshPicker()
+        end))
+    end
+    addAction('Dungeon','Previous page','PREVIOUS',function()picker.page=math.max(1,picker.page-1);picker.revision=nil;refreshPicker()end)
+    addAction('Dungeon','Next page','NEXT',function()picker.page=picker.page+1;picker.revision=nil;refreshPicker()end)
+    refreshPicker=function()
+        local c=app.dungeon.collection
+        collectionStatus.Text=c.status
+        local revision=c.revision..'/'..app.config.dungeonTeam..'/'..app.config.dungeonReserves..'/'..picker.query..'/'..picker.border..'/'..picker.sort..'/'..picker.page..'/'..picker.active
+        if picker.revision==revision then return end
+        picker.revision=revision
+        local slots=app.getDungeonSlots()
+        for i,t in ipairs(picker.slots) do
+            local id=slots[i];local card=c.cards[id];local def=c.definitions[id]
+            local name=card and card.name or (def and def.Name) or (id~='' and id or 'Empty')
+            t.title.Text=name;t.image.Image=card and card.image or (def and def.Image) or ''
+            t.detail.Text=(i<=4 and ('TEAM '..i) or ('RESERVE '..(i-4)))..(i==picker.active and ' · SELECTED' or '')..(id~='' and c.ready and not card and '\nNot owned' or '')
+            paintRing(t,card and card.border or (def and def.Variant),i==picker.active)
+            skin(t.button,'BackgroundColor3',i==picker.active and 'selected' or 'row')
+        end
+        local cards=app.listDungeonCards(picker.query,picker.border,picker.sort)
+        local pages=math.max(1,math.ceil(#cards/12));picker.page=math.clamp(picker.page,1,pages)
+        borderButton.Text=picker.border..'  ▾';sortButton.Text=picker.sort..'  ▾'
+        pageStatus.Text=#cards..' cards · page '..picker.page..' / '..pages..'\nClick a card to equip; click it again to remove.'
+        local visible=0
+        for i,t in ipairs(picker.tiles) do
+            local card=cards[(picker.page-1)*12+i];t.card=card;t.button.Visible=card~=nil
+            if card then
+                visible=visible+1;local slot=table.find(slots,card.id)
+                t.title.Text=card.name;t.image.Image=card.image
+                t.detail.Text=card.border..' · x'..card.count..'\n'..(slot and (slot<=4 and 'TEAM '..slot or 'RESERVE '..(slot-4)) or ('DMG '..card.damage..' · HP '..card.health))
+                paintRing(t,card.border,slot~=nil)
+                skin(t.button,'BackgroundColor3',slot and 'selected' or 'row')
+            end
+        end
+        listPanel.Visible=visible>0;listPanel.Size=UDim2.new(1,-2,0,math.ceil(visible/3)*128)
+    end
+    widgets[#widgets+1]=refreshPicker
+    refreshPicker()
+end
+
 addStatus('Dungeon','Checkpoint policy','Withdraw when in trouble; Safest also banks early when injured')
 addStatus('Dungeon','Guard positioning','Enter run, then teleport to the current guard before requests.')
 section('Dungeon','Last 10 runs · time tracked this session')
@@ -2241,6 +2450,7 @@ local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_Wind
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
     for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','storyDifficulty','dungeonWalk','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     uiFlags.DungeonRunning=app.dungeon.enabled;uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
     local selection={}
     for _,boss in ipairs(storyBosses) do selection[#selection+1]=app.config['story_'..boss.key] and '1' or '0' end
@@ -2298,4 +2508,5 @@ render=function()if ui and app.alive then syncUI();ui.Repaint();ui.Refresh()end 
 redraw()
 setStatus('Ready — Online UI library / independent mode controls')
 monitorConnection()
+app.refreshDungeonCollection()
 if autoLoaded and app.config.autoStart then app.start() end
