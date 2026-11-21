@@ -36,10 +36,10 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v4-dungeon',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v5-dungeon-walk',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — open the Dungeon NPC to sync',version=0}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -179,7 +179,7 @@ function app.loadProfile(name)
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
-    for _,key in ipairs({'autoReconnect','autoStart'}) do
+    for _,key in ipairs({'autoReconnect','autoStart','dungeonWalk'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     app.profiles.current=name;addName(name);storageStatus('Loaded: '..name)
@@ -874,6 +874,96 @@ local function dungeonCards(text,count)
     if #out~=count then error('Dungeon requires '..count..' card IDs in this field.',0) end
     return out,seen
 end
+local function stopDungeonMovement()
+    local walking=app.dungeon.walking
+    app.dungeon.walking=nil
+    if walking then pcall(function()walking.humanoid:MoveTo(walking.root.Position)end) end
+end
+local function approachDungeonGuard(run)
+    if not app.config.dungeonWalk then return true end
+    local folder=Workspace:FindFirstChild('Dungeon Guards')
+    local guard
+    if folder then
+        for _,obj in ipairs(folder:GetDescendants()) do
+            if obj:IsA('Model') and obj:GetAttribute('DungeonRoom')==run.room then guard=obj;break end
+        end
+    end
+    if not guard then setStatus('Waiting for DungeonRoom '..run.room..' guard to stream in');pause(2);return false end
+    local character=player.Character
+    local root=character and character:FindFirstChild('HumanoidRootPart')
+    local humanoid=character and character:FindFirstChildOfClass('Humanoid')
+    if not root or not humanoid or humanoid.Health<=0 then setStatus('Waiting for your character to respawn');pause(1);return false end
+    local targetRoot=guard:FindFirstChild('HumanoidRootPart')
+    local target=targetRoot and targetRoot.Position or guard:GetPivot().Position
+    local function valid()
+        check()
+        local current=app.dungeon.view and app.dungeon.view.run
+        return current and current.id==run.id and current.room==run.room and current.phase==run.phase
+            and player.Character==character and humanoid.Health>0 and root.Parent~=nil and guard.Parent~=nil
+    end
+    if (root.Position-target).Magnitude<=18 then return true end
+    local function moveTo(destination,range,guardTarget,arrived)
+        local waypoints={}
+        local ok,path=pcall(function()
+            local service=game:GetService('PathfindingService')
+            local value=service:CreatePath({AgentRadius=2,AgentHeight=5,AgentCanJump=true,WaypointSpacing=5})
+            value:ComputeAsync(root.Position,destination)
+            return value
+        end)
+        if ok and path.Status==Enum.PathStatus.Success then waypoints=path:GetWaypoints() end
+        if #waypoints==0 then waypoints={{Position=destination}} end
+        app.dungeon.walking={root=root,humanoid=humanoid}
+        local totalDeadline=os.clock()+45
+        for _,waypoint in ipairs(waypoints) do
+            if not valid() then stopDungeonMovement();return false end
+            if (root.Position-guardTarget).Magnitude<=range or (arrived and arrived()) then stopDungeonMovement();return true end
+            if waypoint.Action==Enum.PathWaypointAction.Jump then humanoid.Jump=true end
+            humanoid:MoveTo(waypoint.Position)
+            local waypointDeadline=os.clock()+6
+            while (root.Position-waypoint.Position).Magnitude>3 do
+                if not valid() then stopDungeonMovement();return false end
+                if (root.Position-guardTarget).Magnitude<=range or (arrived and arrived()) then stopDungeonMovement();return true end
+                if os.clock()>waypointDeadline or os.clock()>totalDeadline then stopDungeonMovement();return false end
+                task.wait(.1)
+            end
+        end
+        stopDungeonMovement()
+        return (root.Position-guardTarget).Magnitude<=range or (arrived and arrived())
+    end
+    -- Verified map hierarchy: Area 1.NextAreaPortal is the physical route into Area 2.
+    if run.room>=11 then
+        local firstGuard
+        for _,obj in ipairs(folder:GetDescendants()) do
+            if obj:IsA('Model') and obj:GetAttribute('DungeonRoom')==10 then firstGuard=obj;break end
+        end
+        if firstGuard and (root.Position-firstGuard:GetPivot().Position).Magnitude<(root.Position-target).Magnitude then
+            local map=Workspace:FindFirstChild('Dungeon Run',true)
+            local area=map and map:FindFirstChild('Area 1')
+            local portal=area and area:FindFirstChild('NextAreaPortal',true)
+            if not portal then setStatus('Area 2 requires NextAreaPortal; waiting for portal to stream in');pause(2);return false end
+            local portalPosition=portal:IsA('BasePart') and portal.Position or portal:GetPivot().Position
+            setStatus('Walking through Area 1 → Area 2 portal')
+            moveTo(portalPosition,3,portalPosition,function()return (root.Position-target).Magnitude<(root.Position-firstGuard:GetPivot().Position).Magnitude end)
+            -- Stop walking as soon as a portal transition is visible; never walk across the void.
+            local untilAt=os.clock()+6
+            while valid() and os.clock()<untilAt do
+                if (root.Position-target).Magnitude<(root.Position-firstGuard:GetPivot().Position).Magnitude then break end
+                task.wait(.1)
+            end
+            if not valid() then return false end
+            if (root.Position-firstGuard:GetPivot().Position).Magnitude<(root.Position-target).Magnitude then
+                setStatus('Waiting for Area 2 portal transfer');pause(1);return false
+            end
+        end
+    end
+    setStatus('Walking to Room '..run.room..' guard')
+    if not moveTo(target,18,target) then
+        setStatus('Path blocked to Room '..run.room..'; recalculating before Fight')
+        pause(1);return false
+    end
+    return true
+end
+
 local function runDungeonLoop()
     local remote=remotes:FindFirstChild('DungeonAction')
     if not remote then error('DungeonAction not found.',0) end
@@ -921,6 +1011,7 @@ local function runDungeonLoop()
             local id,room=run.id,run.room
             if type(room)~='number' then error('Dungeon State is missing its room number.',0) end
             local function current()return app.dungeon.view and app.dungeon.view.run end
+            if not approachDungeonGuard(run) then continue end
             if run.phase=='fight' then
                 setStatus('Starting room '..room)
                 mutate('Fight',room,function()
@@ -951,6 +1042,7 @@ end
 
 local function stopController(ctx)
     ctx.enabled=false
+    if ctx==app.dungeon then stopDungeonMovement() end
     ctx.status=ctx.worker and 'Stopping — current server fight continues' or 'Stopped'
 end
 function app.stop(mode)
@@ -972,6 +1064,7 @@ function app.start(mode)
         local thread=coroutine.running()
         workerContexts[thread]=ctx
         local ok,err=pcall(mode=='climb' and runClimbLoop or (mode=='story' and runStoryLoop or (mode=='dungeon' and runDungeonLoop or runLoop)))
+        if ctx==app.dungeon then stopDungeonMovement() end
         ctx.enabled=false;ctx.worker=false
         if not ok and tostring(err)~='__STOP__' then
             ctx.lastError=tostring(err)
@@ -1252,7 +1345,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'Anime Card Duel',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'made by aquacodex · Studio v4 · Dungeon',11,false)
+local smallTitle=newText(header,'made by aquacodex · Studio v5 · Auto Walk',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1310,7 +1403,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='made by aquacodex · Studio v4 · Dungeon'
+        smallTitle.Text='made by aquacodex · Studio v5 · Auto Walk'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1747,6 +1840,7 @@ for _,boss in ipairs(ctx.storyBosses) do
 end
 section('Dungeon','Auto Dungeon')
 addToggle('Dungeon','Auto Dungeon','DungeonRunning')
+addToggle('Dungeon','Walk to guards / Area 2 portal','dungeonWalk')
 addAction('Dungeon','Start controller','START DUNGEON',function() ctx.app.start('dungeon') end)
 addAction('Dungeon','Stop controller','STOP DUNGEON',function() ctx.app.stop('dungeon') end)
 local dungeonLive=addStatus('Dungeon','Status','Open the Dungeon NPC once to sync')
@@ -1764,7 +1858,7 @@ addDropdown('Dungeon','Cash out at room','dungeonCashOut',{5,10,15,20})
 addInput('Dungeon','Team: four card IDs, comma-separated','dungeonTeam','card1,card2,card3,card4')
 addInput('Dungeon','Reserves: two card IDs','dungeonReserves','card5,card6')
 addStatus('Dungeon','Checkpoint policy','Withdraw when in trouble; Safest also banks early when injured')
-addStatus('Dungeon','Guard positioning','Fight uses server range checks. Move near the current guard if requested.')
+addStatus('Dungeon','Guard positioning','Follows DungeonRoom guard attributes; walks within 18 studs before requests.')
 section('Config','Profiles')
 local nameBox=addInput('Config','Profile name','ProfileName','Default')
 local savedDrop
@@ -2121,7 +2215,7 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','storyDifficulty','dungeonWalk','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonRunning=app.dungeon.enabled;uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
     local selection={}
     for _,boss in ipairs(storyBosses) do selection[#selection+1]=app.config['story_'..boss.key] and '1' or '0' end
