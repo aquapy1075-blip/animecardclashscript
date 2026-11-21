@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v16-readable-afk','visible versioned build')
+assert(current.build=='studio-v17-afk-heartbeat','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -1550,4 +1550,37 @@ app.config.antiAfk=true;assert(app.loadProfile('Afk'));assert(not app.config.ant
 app.config.antiAfk=true;services.VirtualUser.ClickButton2=function()error('unsupported')end
 idle:Fire();assert(app.afk.status:find('unavailable',1,true) and app.alive)
 app.destroy()
+''')
+
+run_case('Anti-AFK timer sends periodic input even when Idled never fires and stops after unload',afkmock,r'''
+local app=env.AnimeDuelScript
+local tick=maintenance[1]
+now=60;tick();assert(afkClicks==1,'periodic input without idle')
+app.config.antiAfk=false;now=120;tick();assert(afkClicks==1)
+app.config.antiAfk=true;now=180;tick();assert(afkClicks==2)
+app.destroy();now=240;tick();assert(afkClicks==2)
+''')
+run_case('Anti-AFK falls back when VirtualUser is blocked and releases held input on destroy',afkmock+r'''
+local presses,releases=0,0
+services.VirtualUser.ClickButton2=function()error('blocked')end
+services.VirtualInputManager={SendMouseButtonEvent=function(_,x,y,button,down)
+ if down then presses=presses+1 else releases=releases+1 end
+end}
+''',r'''
+local app=env.AnimeDuelScript
+idle:Fire();assert(presses==1 and app.afk.sent==1)
+assert(app.afk.status:find('VirtualInputManager',1,true))
+app.destroy();assert(releases==1,'unload must release input immediately')
+for _,callback in ipairs(maintenance)do callback()end
+assert(releases==1 and presses==1,'no double release or input after unload')
+''')
+run_case('Anti-AFK uses camera-aware VirtualUser press/release when available',afkmock+r'''
+local presses,releases=0,0
+Workspace.CurrentCamera.CFrame={}
+services.VirtualUser.Button2Down=function(_,position,frame)assert(frame==Workspace.CurrentCamera.CFrame);presses=presses+1 end
+services.VirtualUser.Button2Up=function()releases=releases+1 end
+''',r'''
+local app=env.AnimeDuelScript;idle:Fire()
+assert(presses==1 and afkClicks==0)
+app.destroy();assert(releases==1)
 ''')
