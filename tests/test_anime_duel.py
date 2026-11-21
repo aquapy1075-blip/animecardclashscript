@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v9-dungeon-enter-retry','visible versioned build')
+assert(current.build=='studio-v10-dungeon-resume','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -1193,5 +1193,49 @@ local app=env.AnimeDuelScript;app.config.dungeonWalk=false
 app.start('dungeon');schedule(.5,function()app.stop('dungeon')end);drain()
 assert(#attempts==1 and not app.dungeon.worker)
 for _,c in ipairs(dcalls)do assert(c[1]~='Fight')end
+app.destroy()
+''')
+
+existing_run=dungeon_mock+r'''
+local cards={'a','b','c','d','e','f'};local hp={}
+for _,id in ipairs(cards) do hp[id]=.9 end
+starts=1
+dv.run={id=1,diff='Normal',room=7,phase='fight',cards=cards,team=cards,hp=hp,fighting=false,doors={},cleared=6}
+local original=dr.InvokeServer
+local rejectedStarts=0;local resumeEnters=0
+function dr:InvokeServer(name,payload)
+ if name=='Start' and dv.run then rejectedStarts=rejectedStarts+1;return false,'You already have a run going.' end
+ if name=='Enter' then
+  resumeEnters=resumeEnters+1
+  local result=original(self,name,payload)
+  schedule(.5,dstate)
+  return result
+ end
+ return original(self,name,payload)
+end
+'''
+run_case('Dungeon discovers existing server run through Enter and resumes room 7 without starting over',mock+existing_run,r'''
+local app=env.AnimeDuelScript;app.config.dungeonWalk=false
+assert(app.dungeon.view==nil)
+app.start('dungeon');drain()
+assert(rejectedStarts==1 and resumeEnters==1,'one rejected Start followed by one Enter')
+local firstFight=nil
+for _,c in ipairs(dcalls)do if c[1]=='Fight' then firstFight=firstFight or c[2]end end
+assert(firstFight==7,'resume existing room instead of room one')
+assert(starts==2 and app.dungeon.status=='Stopped',app.dungeon.status)
+assert(#app.dungeon.history==1)
+app.destroy()
+''')
+run_case('Missing existing-run State after Enter pauses without repeating Start or Fight',mock+existing_run+r'''
+function dr:InvokeServer(name,payload)
+ if name=='Start' then rejectedStarts=rejectedStarts+1;return false,'You already have a run going.' end
+ if name=='Enter' then resumeEnters=resumeEnters+1;return true end
+ error('Must not fight without State')
+end
+''',r'''
+local app=env.AnimeDuelScript;app.config.dungeonWalk=false
+app.start('dungeon');drain()
+assert(rejectedStarts==1 and resumeEnters==1)
+assert(app.dungeon.status:find('no active run State',1,true),app.dungeon.status)
 app.destroy()
 ''')
