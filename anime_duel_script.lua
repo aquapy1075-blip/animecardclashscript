@@ -36,10 +36,10 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='online-library-ui-v2',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v3-fast-boss',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', storyDifficulty='Nightmare', storyInterval=10, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
 local storyBosses={
@@ -97,7 +97,9 @@ local function track(signal, callback)
 end
 local function setStatus(message)
     local ctx=controller()
-    ctx.status=tostring(message)
+    message=tostring(message)
+    if ctx.status==message then return end
+    ctx.status=message
     if ctx==app.climb then app.climbStatus=ctx.status end
     redraw()
 end
@@ -159,7 +161,7 @@ function app.loadProfile(name)
         storageStatus('Profile unavailable or invalid');return false
     end
     local incoming=data.config
-    app.config.storyInterval=10 -- Migrate profiles saved with the old 5-second interval.
+    app.config.storyInterval=1.5 -- Migrate profiles saved with the old 5-second interval.
     for key,range in pairs(ranges) do
         local v=incoming[key]
         if type(v)=='number' and v==v and v>=range[1] and v<=range[2] then
@@ -785,7 +787,7 @@ local function runStoryLoop()
                 setStatus('Requesting '..chosen.name..' / '..difficulty)
                 local result=call(chosen.id,difficulty,nil,remote)
                 -- Pace from response receipt; includes time waiting for other requests.
-                app.story.nextAttemptAt=os.clock()+10
+                app.story.nextAttemptAt=os.clock()+1.5
                 app.story.requests=app.story.requests+1
                 if result.uncertain then
                     error('StoryFight response lost; paused without replaying: '..tostring(result.reason),0)
@@ -799,11 +801,14 @@ local function runStoryLoop()
                     if seconds then
                         app.story.cooldowns[key]=os.clock()+seconds
                         setStatus(chosen.name..' cooldown: '..cooldownText(seconds))
-                    else setStatus(chosen.name..': '..tostring(result.reason)) end
+                    else
+                        if tostring(result.reason):lower():find('slow down',1,true) then app.story.nextAttemptAt=os.clock()+5 end
+                        setStatus(chosen.name..': '..tostring(result.reason))
+                    end
                 end
             end
         end
-        pause(1)
+        pause(.25)
     end
 end
 
@@ -1109,7 +1114,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'Anime Card Duel',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'made by aquacodex · Online UI v2',11,false)
+local smallTitle=newText(header,'made by aquacodex · Studio v3',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1167,7 +1172,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='made by aquacodex · Online UI v2'
+        smallTitle.Text='made by aquacodex · Studio v3'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1206,10 +1211,16 @@ local function row(tab,label)
 end
 local function addStatus(tab,label,initial)
     local r=row(tab,label)
-    local s=newText(r,initial or '--',12,false)
-    s.Position=UDim2.new(1,-260,0,0)
-    s.Size=UDim2.new(0,246,1,0)
-    s.TextXAlignment=Enum.TextXAlignment.Right
+    r.Size=UDim2.new(1,-2,0,88)
+    local heading=responsiveRows[r].label
+    heading.Position=UDim2.fromOffset(16,10);heading.Size=UDim2.new(1,-32,0,19)
+    local accent=make('Frame',r,{Position=UDim2.fromOffset(0,14),Size=UDim2.new(0,3,1,-28),BorderSizePixel=0})
+    corner(accent,2);skin(accent,'BackgroundColor3','accent')
+    local s=newText(r,initial or '--',13,false)
+    s.Position=UDim2.fromOffset(16,35);s.Size=UDim2.new(1,-32,0,43)
+    s.TextXAlignment=Enum.TextXAlignment.Left;s.TextYAlignment=Enum.TextYAlignment.Top
+    s.TextWrapped=true;s.TextTruncate=Enum.TextTruncate.None
+    skin(s,'TextColor3','text')
     tooltip(s,function() return s.Text end)
     statusLabels[label]=s
     responsiveRows[r].kind='status';responsiveRows[r].value=s
@@ -1529,7 +1540,7 @@ local function clearNotifications()
     toast.queue={};toast.active=false;toast.item=nil
     toastBox.Visible=false
 end
-section('Monitor','Automation overview')
+section('Monitor','Live control center')
 local draftStatus=addStatus('Monitor','Draft Run','Ready')
 local climbStatus=addStatus('Monitor','Draft Climb','Ready')
 local bossStatus=addStatus('Monitor','Story Boss','Ready')
@@ -1560,7 +1571,7 @@ addStatus('Climb','Teen Saski priority','+50%')
 addStatus('Climb','Other preferred cards','+25%')
 local nativeHint=addStatus('Climb','Combat','Enable native Auto Climb in the game')
 tooltip(nativeHint,'STOP CLIMB only stops this picker. The native game may continue advancing floors.')
-section('Boss','Story Boss selection')
+section('Boss','Boss control center')
 local selectedBosses
 selectedBosses=addAction('Boss','Bosses','SELECT  ▾',function()
     if menu.Visible then hideMenu();return end
@@ -1589,7 +1600,8 @@ addToggle('Boss','Auto Start Fight','BossRunning')
 addAction('Boss','Start requests','START BOSS',function() ctx.app.start('story') end)
 addAction('Boss','Stop requests','STOP BOSS',function() ctx.app.stop('story') end)
 local bossLive=addStatus('Boss','Status','Ready')
-addStatus('Boss','Attempt interval','10 seconds / skips known cooldowns')
+local bossSummary=addStatus('Boss','Selected targets','--')
+addStatus('Boss','Attempt interval','1.5s / server cooldowns respected')
 section('Boss','Learned server cooldowns')
 local cooldownLabels={}
 for _,boss in ipairs(ctx.storyBosses) do
@@ -1859,7 +1871,7 @@ applyResponsiveLayout=function()
             end
         else
             local contentWidth=width-40
-            r.Size=UDim2.new(1,-2,0,entry.kind=='boss' and 104 or entry.kind=='transparency' and 90 or 80)
+            r.Size=UDim2.new(1,-2,0,entry.kind=='status' and 96 or entry.kind=='boss' and 104 or entry.kind=='transparency' and 90 or 80)
             entry.label.Position=UDim2.fromOffset(12,8)
             entry.label.Size=UDim2.new(1,-24,0,22)
             if entry.kind=='boss' then
@@ -1875,7 +1887,7 @@ applyResponsiveLayout=function()
                 transparencyText.Position=UDim2.new(1,-60,0,8);transparencyText.Size=UDim2.fromOffset(46,22)
                 slider.Position=UDim2.fromOffset(14,36);slider.Size=UDim2.new(1,-28,0,38)
             elseif entry.kind=='status' then
-                entry.value.Position=UDim2.fromOffset(12,36);entry.value.Size=UDim2.new(1,-24,0,30)
+                entry.value.Position=UDim2.fromOffset(12,36);entry.value.Size=UDim2.new(1,-24,0,50)
                 entry.value.TextXAlignment=Enum.TextXAlignment.Left
             else
                 for obj in pairs(entry.children) do
@@ -1901,6 +1913,10 @@ local function refreshOverview()
     showStatus(draftStatus,app.status);showStatus(draftLive,app.status)
     showStatus(climbStatus,app.climb.status);showStatus(climbLive,app.climb.status)
     showStatus(bossStatus,app.story.status);showStatus(bossLive,app.story.status)
+    for _,entry in ipairs({{draftStatus,app.enabled},{draftLive,app.enabled},{climbStatus,app.climb.enabled},{climbLive,app.climb.enabled},{bossStatus,app.story.enabled},{bossLive,app.story.enabled}}) do
+        local value=entry[1].Text
+        skin(entry[1],'TextColor3',value:find('ERROR:',1,true) and 'rose' or (entry[2] and 'mint' or 'muted'))
+    end
     showStatus(scoreStatus,app.wins..' / '..app.losses..' / '..app.clears)
     showStatus(requestStatus,tostring(app.story.requests))
     local run=app.snapshot and app.snapshot.run
@@ -1913,10 +1929,18 @@ local function refreshOverview()
     showStatus(climbProgress,type(cr)=='table' and ('#'..tostring(cr.id or cr.Id)..' / Floor '..tostring(cr.floor or cr.Floor)) or '--')
     local team=type(cr)=='table' and (cr.team or cr.Team)
     showStatus(climbTeam,type(team)=='table' and table.concat(team,' / ') or '--')
+    local selectedCount,readyCount,coolingCount=0,0,0
     for _,boss in ipairs(ctx.storyBosses) do
         local remaining=(app.story.cooldowns[ctx.cooldownKey(boss.id,boss.secret and 'Secret' or app.config.storyDifficulty)] or 0)-os.clock()
+        local selected=app.config['story_'..boss.key]
+        cooldownLabels[boss.id].Parent.Visible=selected or remaining>0
+        if selected then
+            selectedCount=selectedCount+1
+            if remaining>0 then coolingCount=coolingCount+1 else readyCount=readyCount+1 end
+        end
         showStatus(cooldownLabels[boss.id],remaining>0 and ctx.cooldownText(remaining) or 'No known cooldown')
     end
+    showStatus(bossSummary,selectedCount..' selected  ·  '..readyCount..' no known CD  ·  '..coolingCount..' cooling')
     showStatus(configStatus,app.profiles.status)
     showStatus(configAuto,app.profiles.auto or 'OFF')
     showStatus(reconnectStatus,app.config.autoReconnect and app.reconnect.status or 'OFF')
