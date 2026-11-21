@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v11-dungeon-card-picker','visible versioned build')
+assert(current.build=='studio-v12-rift-boss-priority','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -1319,5 +1319,95 @@ local saved=app.config.dungeonTeam
 snapshot={Cards=owned};app.refreshDungeonCollection();drain()
 assert(snapshotCalls==2 and app.dungeon.collection.ready)
 assert(app.config.dungeonTeam==saved,'refresh preserves saved team')
+app.destroy()
+''')
+
+priority_mock=r'''
+local bs={OnClientEvent=signal()};local be={OnClientEvent=signal()};local sc={OnClientEvent=signal()}
+local oldFind=remotes.FindFirstChild
+local bossAttempts=0;local bossWins=0;local inBoss=false;local bossTimes={};local dungeonTimes={}
+local sr={}
+function sr:InvokeServer(id,difficulty)
+ bossAttempts=bossAttempts+1
+ assert(not dv.run or not dv.run.fighting,'finish current Dungeon room before Story request')
+ if bossAttempts==2 then return false,'Ready in 5s' end
+ if bossAttempts>=4 then return false,'Ready in 1000s' end
+ bossWins=bossWins+1;inBoss=true;bossTimes[#bossTimes+1]=now
+ local bid='story-'..bossWins
+ bs.OnClientEvent:Fire({active=true,battleId=bid,lane=1})
+ schedule(.8,function()inBoss=false;be.OnClientEvent:Fire({type='BattleEnd',battleId=bid,lane=1,won=true})end)
+ return true,nil,{active=true,battleId=bid,lane=1}
+end
+local originalDungeon=dr.InvokeServer
+function dr:InvokeServer(name,payload)
+ assert(not inBoss,'Dungeon must yield until boss BattleEnd')
+ if name=='Fight' then dungeonTimes[#dungeonTimes+1]=now end
+ local result=originalDungeon(self,name,payload)
+ if starts==2 then schedule(.2,function()env.AnimeDuelScript.stop('story')end)end
+ return result
+end
+remotes.FindFirstChild=function(self,name)
+ if name=='BattleState' then return bs elseif name=='BattleEvent' then return be elseif name=='StateChanged' then return sc elseif name=='StoryFight' then return sr end
+ return oldFind(self,name)
+end
+'''
+run_case('Dungeon yields to ready bosses, waits for matched BattleEnd, and resumes the same run',mock+dungeon_mock+priority_mock,r'''
+local app=env.AnimeDuelScript;app.config.dungeonWalk=false
+app.start('dungeon');app.start('story');drain()
+assert(bossWins==2 and #dungeonTimes==20,'two bosses and full dungeon completed')
+assert(bossTimes[2]>bossTimes[1]+5,'second boss obeys learned cooldown')
+local before,after=false,false
+for _,time in ipairs(dungeonTimes) do if time<bossTimes[2] then before=true elseif time>bossTimes[2]+.8 then after=true end end
+assert(before and after,'Dungeon fills cooldown gaps and resumes after boss')
+assert(#app.dungeon.history==1 and starts==2)
+assert(not app.story.enabled and not app.dungeon.enabled)
+app.destroy()
+''')
+
+rift_mock=r'''
+local riftModule={}
+local riftOpen=true;local cycle=10;local visit={Cycle=10,Clear=false,Shift=0}
+local cfg={Status=function()return {open=riftOpen,cycle=cycle}end,Joined=function(record,c)return record.Cycle==c and (record.Shift or 0)==0 end}
+local shared={FindFirstChild=function(_,name)if name=='RiftConfig' then return riftModule end end}
+RS.FindFirstChild=function(_,name)if name=='Shared' then return shared end end
+local function require(module)assert(module==riftModule);return cfg end
+Workspace.GetServerTimeNow=function()return now end
+local stateSync={OnClientEvent=signal()}
+local snapshotRemote={InvokeServer=function()return {Rifts={Visit=visit}}end}
+local oldFind=remotes.FindFirstChild
+remotes.FindFirstChild=function(self,name)
+ if name=='StateChanged' then return stateSync elseif name=='GetSnapshot' then return snapshotRemote end
+ return oldFind and oldFind(self,name) or nil
+end
+'''
+run_case('Rift open suspends all script mutations and preserves enabled controllers until clear',mock+dungeon_mock+priority_mock+rift_mock,r'''
+local app=env.AnimeDuelScript;app.config.dungeonWalk=false
+app.start('draft');app.start('climb');app.start('story');app.start('dungeon')
+schedule(2,function()
+ for _,c in ipairs(calls) do assert(c[1]=='State','only read-only State is allowed during Rift') end
+ assert(#dcalls==0 and bossAttempts==0,'no script mutations while Rift is reserved')
+ assert(app.enabled and app.climb.enabled and app.story.enabled and app.dungeon.enabled,'pause keeps toggles on')
+ app.stop('draft');app.stop('climb')
+ visit.Clear=true;stateSync.OnClientEvent:Fire({Rifts={Visit=visit}})
+end)
+drain()
+assert(bossWins==2 and #dungeonTimes==20,'Boss and Dungeon resume after Rift clear')
+assert(bossTimes[1]>=2)
+app.destroy()
+''')
+run_case('Rift clearance from an old cycle cannot resume autos during a new open Rift',mock+rift_mock,r'''
+local app=env.AnimeDuelScript
+visit.Cycle=9;visit.Clear=true
+app.start('draft')
+schedule(1,function()assert(#calls==0);riftOpen=false end)
+schedule(2,function()app.stop('draft')end)
+drain()
+assert(#calls>0,'Rift closing releases reservation')
+app.destroy()
+''')
+run_case('Stop cancels an auto paused for Rift without waiting for Rift to close',mock+rift_mock,r'''
+local app=env.AnimeDuelScript;app.start('draft')
+schedule(.5,function()app.stop('draft')end);drain()
+assert(#calls==0 and not app.worker and not app.enabled)
 app.destroy()
 ''')
