@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v15-aco-config','visible versioned build')
+assert(current.build=='studio-v16-readable-afk','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -685,12 +685,15 @@ assert(app.story.status:find('response lost',1,true),app.story.status)
 app.destroy()
 ''')
 
-run_case('STOP BOSS leaves both Draft and Climb workers running',concurrent+story_mock,r'''
+run_case('Boss toggle leaves both Draft and Climb workers running',concurrent+story_mock,r'''
 local app=env.AnimeDuelScript
 app.start('draft');app.start('climb');app.start('story')
 schedule(.2,function()
  for _,obj in ipairs(objects)do
-  if obj.ClassName=='TextButton' and obj.Text=='STOP BOSS' then obj.MouseButton1Click:Fire();break end
+  if obj.ClassName=='TextLabel' and obj.Text=='Auto Start Fight' then
+   for _,button in ipairs(obj.Parent:GetChildren()) do if button.ClassName=='TextButton' then button.MouseButton1Click:Fire();break end end
+   break
+  end
  end
  assert(not app.story.enabled and app.enabled and app.climb.enabled,'mode isolation')
 end)
@@ -1493,7 +1496,7 @@ for _,o in ipairs(objects)do
  assert(o.Text~='START DUNGEON' and o.Text~='STOP DUNGEON')
  if o.Text=='Auto Dungeon' then label=o end
 end
-assert(label and label.Font==Enum.Font.GothamBold and label.TextSize>=15)
+assert(label and label.Font==Enum.Font.GothamBold and label.TextSize==14)
 app.destroy()
 ''')
 run_case('Boss and Dungeon preferences both survive profile recreation and Auto Start restores both',mock+file_mock+dungeon_mock+priority_mock,r'''
@@ -1514,5 +1517,37 @@ app.stop();drain()
 assert(app.loadProfile('ManualModes'))
 assert(app.config.storyEnabled and app.config.dungeonEnabled)
 assert(not app.story.worker and not app.dungeon.worker and #dcalls==0 and bossAttempts==0)
+app.destroy()
+''')
+
+run_case('Readable UI uses toggle-only Boss and Dungeon with clear selected sidebar markers',mock,r'''
+local app=env.AnimeDuelScript;local selected=0
+for _,o in ipairs(objects)do
+ assert(o.Text~='START BOSS' and o.Text~='STOP BOSS' and o.Text~='START DUNGEON' and o.Text~='STOP DUNGEON')
+ if o.Name:match('^Nav') and o.ClassName=='TextButton' then
+  assert(o.TextSize==15 and o:FindFirstChild('SelectedMarker'))
+  if o:FindFirstChild('SelectedMarker').Visible then selected=selected+1 end
+ end
+end
+assert(selected==1)
+app.destroy()
+''')
+afkmock=mock+r'''
+local idle=signal();player.Idled=idle
+local afkClicks=0
+services.VirtualUser={CaptureController=function()end,ClickButton2=function()afkClicks=afkClicks+1 end}
+'''
+run_case('Anti-AFK responds to idle, throttles, respects toggle and disconnects on unload',afkmock,r'''
+local app=env.AnimeDuelScript
+idle:Fire();idle:Fire();assert(afkClicks==1)
+app.config.antiAfk=false;now=61;idle:Fire();assert(afkClicks==1)
+app.config.antiAfk=true;idle:Fire();assert(afkClicks==2)
+app.destroy();now=130;idle:Fire();assert(afkClicks==2)
+''')
+run_case('Anti-AFK setting persists through profiles and input failure does not stop modes',afkmock+file_mock,r'''
+local app=env.AnimeDuelScript;app.config.antiAfk=false;assert(app.saveProfile('Afk'))
+app.config.antiAfk=true;assert(app.loadProfile('Afk'));assert(not app.config.antiAfk)
+app.config.antiAfk=true;services.VirtualUser.ClickButton2=function()error('unsupported')end
+idle:Fire();assert(app.afk.status:find('unavailable',1,true) and app.alive)
 app.destroy()
 ''')
