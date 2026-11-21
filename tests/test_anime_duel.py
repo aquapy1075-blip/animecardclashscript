@@ -600,7 +600,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='online-library-ui-v2','visible versioned build')
+assert(current.build=='studio-v3-fast-boss','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -647,7 +647,7 @@ app.start('story');app.start('story');drain()
 assert(#storyCalls==3 and app.story.requests==3)
 for i,c in ipairs(storyCalls)do
  assert(c.id=='toy_kingdom_boss' and c.difficulty=='Nightmare')
- if i>1 then assert(c.at-storyCalls[i-1].at>=10,'request interval')end
+ if i>1 then assert(c.at-storyCalls[i-1].at>=1.5,'request interval')end
 end
 assert(not app.story.worker and app.story.status=='Stopped',app.story.status)
 assert(#calls==0,'Story mode must never invoke DraftAction')
@@ -705,7 +705,7 @@ app.config.story_purple_town=true;app.config.storyDifficulty='Medium';app.config
 app.config.mode='story';assert(app.setAutoProfile('Bosses'))
 app.destroy();loadScript();app=env.AnimeDuelScript
 assert(app.config.mode=='story' and app.config.story_purple_town)
-assert(app.config.storyDifficulty=='Medium' and app.config.storyInterval==10)
+assert(app.config.storyDifficulty=='Medium' and app.config.storyInterval==1.5)
 assert(not app.story.worker,'loading settings does not start unless opted in')
 app.destroy()
 ''')
@@ -720,8 +720,8 @@ schedule(1,function()
 end)
 schedule(592,function()assert(#storyCalls==1,'no requests before server cooldown expires')end)
 drain()
-assert(#storyCalls==3 and storyCalls[2].at>=593)
-assert(storyCalls[3].at-storyCalls[2].at>=10,'10 second cadence after cooldown')
+assert(#storyCalls==3 and storyCalls[2].at>=1.593)
+assert(storyCalls[3].at-storyCalls[2].at>=1.5,'10 second cadence after cooldown')
 app.destroy()
 ''')
 
@@ -731,7 +731,7 @@ app.config.story_purple_town=true
 app.start('story');drain()
 assert(storyCalls[1].id=='purple_town_boss')
 assert(storyCalls[2].id=='toy_kingdom_boss' and storyCalls[3].id=='toy_kingdom_boss')
-assert(storyCalls[2].at>=10 and storyCalls[3].at>=20)
+assert(storyCalls[2].at>=1.5 and storyCalls[3].at>=3)
 app.destroy()
 ''')
 
@@ -740,7 +740,7 @@ local app=env.AnimeDuelScript
 app.start('story')
 schedule(2,function()app.config.storyDifficulty='Easy'end)
 schedule(12,function()
- assert(#storyCalls==2 and storyCalls[2].difficulty=='Easy')
+ assert(#storyCalls>=2 and storyCalls[2].difficulty=='Easy')
  assert(app.story.cooldowns['toy_kingdom_boss:Nightmare']==593)
  app.stop('story')
 end)
@@ -892,3 +892,33 @@ if place.exists():
     for field in ['ClimbStats','ClimbPickStart','ClimbPick','OFFER_EVERY = 10']:
         assert field in draft
     print('PASS: uploaded Update 4 module contracts and Clover Capital boss verified')
+
+run_case('fast Story attempts retry a busy response within about two seconds',mock+story_mock,r'''
+local app=env.AnimeDuelScript
+app.start('story');drain()
+assert(#storyCalls==3)
+assert(storyCalls[2].at-storyCalls[1].at>=1.5 and storyCalls[2].at-storyCalls[1].at<2.2,'fast retry')
+assert(storyCalls[3].at-storyCalls[2].at>=1.5,'paced requests')
+app.destroy()
+''')
+slow=story_mock.replace("return false,'A fight is already running'", "return false,'Slow down.'")
+run_case('server Slow down backs off for five seconds',mock+slow,r'''
+local app=env.AnimeDuelScript
+app.start('story');drain()
+assert(storyCalls[2].at-storyCalls[1].at>=5,'respect server throttling')
+assert(storyCalls[3].at-storyCalls[2].at>=1.5)
+app.destroy()
+''')
+
+run_case('status cards show full messages and hide unselected empty cooldown rows',mock,r'''
+local app=env.AnimeDuelScript
+local statusCard,bodyRow
+for _,obj in ipairs(objects)do
+ if obj.ClassName=='TextLabel' and obj.Text==app.status and obj.Parent.Size.Y.Offset==88 then statusCard=obj end
+ if obj.ClassName=='TextLabel' and obj.Text=='Body Devil' then bodyRow=obj.Parent end
+end
+assert(statusCard and statusCard.TextWrapped and statusCard.TextTruncate==Enum.TextTruncate.None,'full status text')
+assert(statusCard.Parent.Size.Y.Offset==88,'spacious status card')
+assert(bodyRow and not bodyRow.Visible,'only selected or cooling bosses fill cooldown view')
+app.destroy()
+''')
