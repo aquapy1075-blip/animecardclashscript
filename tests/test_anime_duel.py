@@ -48,7 +48,7 @@ local events={Activated=true,FocusLost=true,InputBegan=true,InputChanged=true,In
 local objects={}
 local Instance={}
 function Instance.new(class)
- local props={ClassName=class,Name=class,Visible=true,Enabled=true,Text='',Position=dim(0,0,0,0),
+ local props={BackgroundTransparency=0,ClassName=class,Name=class,Visible=true,Enabled=true,Text='',Position=dim(0,0,0,0),
   Size=dim(0,0,0,0),AbsolutePosition={X=0,Y=0},AbsoluteSize={X=720,Y=58}}
  local signals={};local obj;local methods={}
  function methods:IsA(k)return k==class or k=='GuiObject' and class~='ScreenGui' and class~='UICorner' and class~='UIStroke' and class~='UIListLayout' and class~='UIPadding' end
@@ -582,7 +582,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='independent-controls-v2','visible versioned build')
+assert(current.build=='update4-online-ui-v1','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -750,3 +750,107 @@ schedule(3,function()app.start('story')end)
 schedule(5,function()assert(#storyCalls==1);assert(app.story.cooldowns['toy_kingdom_boss:Nightmare']==593);app.stop('story')end)
 drain();app.destroy()
 ''')
+
+
+run_case('Update 4 fallback includes Body Devil without changing old boss defaults',mock+story_mock,r'''
+local app=env.AnimeDuelScript
+assert(app.config.story_clover_capital==false,'new boss is opt-in')
+app.config.story_toy_kingdom=false;app.config.story_clover_capital=true
+app.start('story');drain()
+assert(#storyCalls==3)
+for _,c in ipairs(storyCalls)do assert(c.id=='clover_capital_boss' and c.difficulty=='Nightmare')end
+app.destroy()
+''')
+
+live_story=r'''
+local storyModule={}
+local catalog={Maps={{Id='clover_capital',Name='Clover Capital',Stages={
+ {Id='clover_capital_4',Npc='Flame Lioness',Stage=4,Boss=false},
+ {Id='clover_capital_boss',Npc='Body Devil',Stage=5,Boss=true}},
+ Secret={Id='clover_capital_secret',Npc='Time Sage King',Secret=true}}}}
+RS.FindFirstChild=function(_,name)
+ assert(name=='Shared')
+ return {FindFirstChild=function(_,target,recursive)assert(target=='StoryConfig' and recursive);return storyModule end}
+end
+local function require(module)assert(module==storyModule);return catalog end
+'''
+run_case('live StoryConfig uses boss flags and finds World 6 stage 5',mock+story_mock+live_story,r'''
+local app=env.AnimeDuelScript
+app.config.story_clover_capital=true
+app.start('story');drain()
+for _,c in ipairs(storyCalls)do assert(c.id=='clover_capital_boss','must not treat stage 4 as boss')end
+app.destroy()
+''')
+run_case('Secret bosses use the Secret difficulty from StoryConfig',mock+story_mock+live_story,r'''
+local app=env.AnimeDuelScript
+app.config.story_clover_capital_secret=true
+app.start('story');drain()
+for _,c in ipairs(storyCalls)do assert(c.id=='clover_capital_secret' and c.difficulty=='Secret')end
+app.destroy()
+''')
+
+run_case('Online UI sidebar adapts to mobile and search filters boss rows',mock,r'''
+local app=env.AnimeDuelScript
+local sidebar,search,window
+for _,obj in ipairs(objects)do
+ if obj.Name=='Sidebar' then sidebar=obj end
+ if obj.Name=='BossSearch' then search=obj end
+ if obj.Name=='Window' then window=obj end
+end
+assert(sidebar and search and window.ClassName=='CanvasGroup','Online UI shell')
+Workspace.CurrentCamera.ViewportSize=Vector2.new(390,844)
+Workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Fire()
+assert(sidebar.ScrollingDirection==Enum.ScrollingDirection.X,'horizontal mobile navigation')
+assert(window.Size.X.Offset<=374,'fits mobile viewport')
+search.Text='Body Devil';search:GetPropertyChangedSignal('Text'):Fire()
+local body,water
+for _,obj in ipairs(objects)do
+ if obj.ClassName=='TextLabel' and obj.Text=='Body Devil' then body=obj.Parent end
+ if obj.ClassName=='TextLabel' and obj.Text=='Water Master' then water=obj.Parent end
+end
+assert(body and body.Visible and water and not water.Visible,'boss search filter')
+app.destroy()
+''')
+
+run_case('searchable difficulty dropdown keeps selected server ID',mock,r'''
+local app=env.AnimeDuelScript
+local opener,menu,search,medium
+for _,obj in ipairs(objects)do
+ if obj.ClassName=='TextButton' and obj.Text=='Nightmare' and obj.Parent.ClassName=='Frame' then opener=obj end
+ if obj.Name=='DifficultyDropdown' then menu=obj end
+ if obj.Name=='DropdownSearch' then search=obj end
+ if obj.ClassName=='TextButton' and obj.Text=='Medium' then medium=obj end
+end
+assert(opener and menu and search and medium)
+opener.Activated:Fire();assert(menu.Visible)
+search.Text='med';search:GetPropertyChangedSignal('Text'):Fire();assert(medium.Visible)
+medium.Activated:Fire()
+assert(app.config.storyDifficulty=='Medium' and not menu.Visible)
+app.destroy()
+''')
+
+run_case('new themes and window geometry persist through profiles',mock+file_mock,r'''
+local app=env.AnimeDuelScript
+app.config.theme='Ocean';app.config.windowW=900;app.config.windowH=620
+app.config.windowX=.25;app.config.windowY=.2
+assert(app.setAutoProfile('OnlineUI'))
+app.destroy();loadScript();app=env.AnimeDuelScript
+assert(app.config.theme=='Ocean' and app.config.windowW==900 and app.config.windowH==620)
+assert(app.config.windowX==.25 and app.config.windowY==.2)
+local window
+for _,obj in ipairs(objects)do if obj.Name=='Window' and obj.Parent==app.Root then window=obj end end
+assert(window.Size.X.Offset==900 and window.Size.Y.Offset==620,'restored window layout')
+app.destroy()
+''')
+
+# Structural evidence from the uploaded Update 4 place, not guessed stage IDs.
+place=Path(__file__).resolve().parents[2]/'new_place'
+if place.exists():
+    story=(place/'118_38872.lua').read_text()
+    math_source=(place/'118_38873.lua').read_text()
+    draft=(place/'118_38832.lua').read_text()
+    assert 'clover_capital_boss' in story and 'Body Devil' in story
+    assert 'STAGES_BY_MAP = {[6] = 5}' in math_source
+    for field in ['ClimbStats','ClimbPickStart','ClimbPick','OFFER_EVERY = 10']:
+        assert field in draft
+    print('PASS: uploaded Update 4 module contracts and Clover Capital boss verified')
