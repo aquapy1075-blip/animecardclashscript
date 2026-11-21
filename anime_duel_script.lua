@@ -36,7 +36,7 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v12-rift-boss-priority',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v13-rift-live-priority',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
@@ -309,7 +309,18 @@ local function loadRiftConfig()
 end
 local function acceptPrioritySnapshot(snapshot)
     if type(snapshot)~='table' then return end
-    if type(snapshot.Rifts)=='table' then app.priority.riftRecord=snapshot.Rifts.Visit end
+    if type(snapshot.Rifts)=='table' then
+        local record=snapshot.Rifts.Visit
+        local p=app.priority
+        p.riftRecord=record
+        if type(record)=='table' then
+            local beaten={}
+            for id,won in pairs(type(record.Beaten)=='table' and record.Beaten or {}) do if won==true then beaten[#beaten+1]=tostring(id) end end
+            table.sort(beaten)
+            local signature=tostring(record.Cycle)..'/'..tostring(record.Shift or 0)..'/'..tostring(record.Clear)..'/'..table.concat(beaten,',')
+            if p.riftSignature~=signature then p.riftSignature=signature;p.riftProgressAt=os.clock() end
+        end
+    end
 end
 local function closePriorityBattle(id)
     if not id then return end
@@ -337,7 +348,10 @@ if battleState and battleState.OnClientEvent then track(battleState.OnClientEven
     elseif data.active==true and id and not p.closed[id] then
         local ids={};for key,b in pairs(p.battles) do if b.lane==lane and key~=id then ids[#ids+1]=key end end
         for _,key in ipairs(ids) do closePriorityBattle(key) end
-        p.battles[id]={lane=lane}
+        local prior=p.battles[id]
+        local isRift=data.mode=='rift' or data.source=='rift' or data.rift==true or type(data.rift)=='table' or (prior and prior.rift)
+        p.battles[id]={lane=lane,rift=isRift==true}
+        if isRift then p.riftProgressAt=os.clock() end
     end
     redraw()
 end) end
@@ -350,30 +364,42 @@ if battleEvent and battleEvent.OnClientEvent then track(battleEvent.OnClientEven
 end) end
 local function riftPriority()
     if not app.config.pauseForRift then return nil end
+    local p=app.priority
+    for _,battle in pairs(p.battles) do
+        if battle.rift then return 'Paused — native Rift battle is active' end
+    end
     local cfg=loadRiftConfig()
     if not cfg then return nil end
     local ok,status=pcall(function()return cfg.Status(Workspace:GetServerTimeNow())end)
     if not ok or type(status)~='table' then return nil end
-    if not status.open then
-        if app.priority.riftHolding and next(app.priority.battles) then return 'Waiting for the final Rift battle to finish' end
-        app.priority.riftHolding=false;return nil
+    if not status.open then p.riftWindow=nil;p.riftWasOpen=false;return nil end
+    local window=tostring(status.cycle)..'/'..tostring(status.startedAt)
+    if p.riftWindow~=window then
+        -- A schedule is only an opportunity to join, never proof of an active Rift.
+        p.riftWindow=window
+        p.riftEntryUntil=(status.joinable==true or p.riftWasOpen==false) and (os.clock()+12) or os.clock()
     end
-    local record=app.priority.riftRecord
-    local cleared=false
+    p.riftWasOpen=true
+    if os.clock()-p.lastPoll>=5 and not app.requestBusy and app.refreshDungeonCollection then
+        p.lastPoll=os.clock();app.refreshDungeonCollection()
+    end
+    local record=p.riftRecord
+    local joined=false
     if type(record)=='table' then
         local valid,value=pcall(function()return cfg.Joined(record,status.cycle)end)
-        cleared=valid and value==true and record.Clear==true
+        joined=valid and value==true
     end
-    if cleared then
-        if app.priority.riftHolding and next(app.priority.battles) then return 'Waiting for the final Rift battle to finish' end
-        app.priority.riftHolding=false;return nil
+    if joined and record.Clear==true then return nil end
+    if joined and p.riftProgressAt and os.clock()-p.riftProgressAt<30 then
+        return 'Paused — waiting for native Rift progress (idle limit 30s)'
     end
-    app.priority.riftHolding=true
-    if os.clock()-app.priority.lastPoll>=5 and not app.requestBusy and app.refreshDungeonCollection then
-        app.priority.lastPoll=os.clock();app.refreshDungeonCollection()
+    if os.clock()<(p.riftEntryUntil or 0) then
+        return 'Giving native Auto Rift time to join — '..math.ceil(p.riftEntryUntil-os.clock())..'s'
     end
-    return 'Paused for native Auto Rift — waiting for full clear or Rift close'
+    -- No join or fresh progress: release the autos even if the scheduled window remains open.
+    return nil
 end
+
 local function readyStoryBoss()
     if not app.story.enabled or os.clock()<app.story.nextAttemptAt then return false end
     for _,boss in ipairs(storyBosses) do
@@ -1603,7 +1629,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'Anime Card Duel',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'made by aquacodex · Studio v12 · Battle Priority',11,false)
+local smallTitle=newText(header,'made by aquacodex · Studio v13 · Rift Detection',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1661,7 +1687,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='made by aquacodex · Studio v12 · Battle Priority'
+        smallTitle.Text='made by aquacodex · Studio v13 · Rift Detection'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
