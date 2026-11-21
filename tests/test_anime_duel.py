@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v12-rift-boss-priority','visible versioned build')
+assert(current.build=='studio-v13-rift-live-priority','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -1367,7 +1367,7 @@ app.destroy()
 rift_mock=r'''
 local riftModule={}
 local riftOpen=true;local cycle=10;local visit={Cycle=10,Clear=false,Shift=0}
-local cfg={Status=function()return {open=riftOpen,cycle=cycle}end,Joined=function(record,c)return record.Cycle==c and (record.Shift or 0)==0 end}
+local cfg={Status=function()return {open=riftOpen,cycle=cycle,joinable=true}end,Joined=function(record,c)return record.Cycle==c and (record.Shift or 0)==0 end}
 local shared={FindFirstChild=function(_,name)if name=='RiftConfig' then return riftModule end end}
 RS.FindFirstChild=function(_,name)if name=='Shared' then return shared end end
 local function require(module)assert(module==riftModule);return cfg end
@@ -1410,4 +1410,45 @@ local app=env.AnimeDuelScript;app.start('draft')
 schedule(.5,function()app.stop('draft')end);drain()
 assert(#calls==0 and not app.worker and not app.enabled)
 app.destroy()
+''')
+
+run_case('An open Rift schedule without joining never blocks autos until Rift close',mock+rift_mock,r'''
+local app=env.AnimeDuelScript
+visit={Cycle=9,Clear=false};cfg.Status=function()return {open=true,cycle=10,joinable=false}end
+app.start('draft')
+schedule(2,function()assert(#calls>0,'no current Rift: Draft proceeds immediately');app.stop('draft')end)
+drain();app.destroy()
+''')
+run_case('Native Rift entry reservation expires if auto Rift never joins',mock+rift_mock,r'''
+local app=env.AnimeDuelScript;visit={Cycle=9,Clear=false}
+app.start('draft')
+schedule(2,function()assert(#calls==0,'short entry opportunity')end)
+schedule(14,function()assert(#calls>0,'release without waiting for scheduled close');app.stop('draft')end)
+drain();app.destroy()
+''')
+run_case('Duplicate stale Rift records cannot renew a pause forever',mock+rift_mock,r'''
+local app=env.AnimeDuelScript;app.start('draft')
+schedule(2,function()assert(#calls==0)end)
+schedule(32,function()assert(#calls>0,'idle Rift reservation expired despite repeated snapshots');app.stop('draft')end)
+drain();app.destroy()
+''')
+run_case('Unrelated Story battles do not keep Rift priority after Rift is cleared',mock+dungeon_mock+priority_mock+rift_mock,r'''
+local app=env.AnimeDuelScript;visit.Clear=true
+bs.OnClientEvent:Fire({active=true,battleId='unrelated',lane=2})
+app.start('draft')
+schedule(2,function()assert(#calls>0,'Rift clearance is not blocked by non-Rift battles');app.stop('draft')end)
+drain();app.destroy()
+''')
+run_case('Confirmed active Rift battle holds priority beyond idle grace and releases on its own BattleEnd',mock+dungeon_mock+priority_mock+rift_mock,r'''
+local app=env.AnimeDuelScript;visit.Clear=true
+bs.OnClientEvent:Fire({active=true,battleId='native-rift',lane=1,mode='rift'})
+app.start('draft')
+schedule(32,function()
+ assert(#calls==0,'active Rift still owns priority')
+ be.OnClientEvent:Fire({type='BattleEnd',battleId='unrelated',won=true})
+ assert(app.priority.battles['native-rift'],'unrelated end cannot release Rift')
+ be.OnClientEvent:Fire({type='BattleEnd',battleId='native-rift',won=true})
+end)
+schedule(34,function()assert(#calls>0,'matched Rift end resumes Draft');app.stop('draft')end)
+drain();app.destroy()
 ''')
