@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v14-prism-ui','visible versioned build')
+assert(current.build=='studio-v15-aco-config','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -1463,7 +1463,7 @@ for _,name in ipairs(names)do
 end
 assert(find('DungeonTeamSlots').Parent==find('DungeonGroupTeam'))
 assert(find('DungeonOwnedCards').Parent==find('DungeonGroupCards'))
-assert(find('dungeonActionBar').Parent==find('DungeonGroupOverview'))
+for _,o in ipairs(objects)do assert(o.Name~='dungeonActionBar','Dungeon uses only a toggle')end
 assert(find('DungeonHero').Parent.Name=='Dungeon')
 Workspace.CurrentCamera.ViewportSize=Vector2.new(390,844)
 Workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Fire()
@@ -1478,11 +1478,41 @@ local heartbeat=signal();services.RunService={Heartbeat=heartbeat}
 local app=env.AnimeDuelScript
 local title,gradient
 for _,o in ipairs(objects)do if o.Text=='ANIME DUEL' then title=o;gradient=o:FindFirstChild('OriginTextGradient')end end
-assert(title and title.Font==Enum.Font.BuilderSansBold)
+assert(title and title.Font==Enum.Font.GothamBold)
 heartbeat:Fire(.1);assert(gradient.Offset,'animation moves gradient')
 local prior=gradient.Offset
 app.Root.Enabled=false;heartbeat:Fire(.1);assert(gradient.Offset==prior,'hidden UI does no animation work')
 app.Root.Enabled=true;heartbeat:Fire(.1);assert(gradient.Offset~=prior)
 app.destroy()
 local after=gradient.Offset;heartbeat:Fire(.1);assert(gradient.Offset==after,'animation disconnected')
+''')
+
+run_case('ACO Dungeon exposes one toggle with no duplicate Start and Stop controls',mock,r'''
+local app=env.AnimeDuelScript;local label
+for _,o in ipairs(objects)do
+ assert(o.Text~='START DUNGEON' and o.Text~='STOP DUNGEON')
+ if o.Text=='Auto Dungeon' then label=o end
+end
+assert(label and label.Font==Enum.Font.GothamBold and label.TextSize>=15)
+app.destroy()
+''')
+run_case('Boss and Dungeon preferences both survive profile recreation and Auto Start restores both',mock+file_mock+dungeon_mock+priority_mock,r'''
+local app=env.AnimeDuelScript
+app.start('story');app.start('dungeon');app.config.autoStart=true
+assert(app.setAutoProfile('BothModes'))
+local stored=HttpService:JSONDecode(files['AnimeDuelScript/42/profiles/BothModes.json'])
+assert(stored.config.storyEnabled and stored.config.dungeonEnabled and not stored.config.draftEnabled)
+app.destroy();drain();loadScript();app=env.AnimeDuelScript
+assert(app.story.worker and app.dungeon.worker and app.story.enabled and app.dungeon.enabled)
+assert(not app.worker and not app.climb.worker,'restore only saved modes')
+app.stop();drain();app.destroy()
+''')
+run_case('Mode preferences load without remote writes while Auto Start is off',mock+file_mock+dungeon_mock+priority_mock,r'''
+local app=env.AnimeDuelScript
+app.start('story');app.start('dungeon');assert(app.saveProfile('ManualModes'))
+app.stop();drain()
+assert(app.loadProfile('ManualModes'))
+assert(app.config.storyEnabled and app.config.dungeonEnabled)
+assert(not app.story.worker and not app.dungeon.worker and #dcalls==0 and bossAttempts==0)
+app.destroy()
 ''')
