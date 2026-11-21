@@ -905,6 +905,7 @@ Story.Worlds = {
     {name='Diamond Town',map='DiamondTown',cards={'VoidHand','EchoRookie','InkMangaka','DiamondHeart','StarLeader','PeacefulBomber'}},
     {name='Ninja Village',map='NinjaVillage',cards={'RainGod','CrowGenius','WanderingAvenger','TenTailVessel','ValleyLegend','FoxVessel'}},
     {name='Demon Lord Hall',map='DemonLordHall',cards={'HolyKnightCaptain','FlameGeneral','PrimordialButler','DestroyerPrincess','StormDragon','SlimeSovereign'}},
+    {name='Sky Palace',map='SkyPalace',cards={'HatAndClogs','FlowerCaptain','ThousandPetalNoble','AwakenedEyepatch','MonkOfNames','AwakenedOtherworldly'}},
 }
 function Story.targetOptions(selectedMaps)
     local options={}
@@ -2201,7 +2202,7 @@ skinned[heroTitle]=nil
 local heroSub=newText(hero,'Build your route. Choose each fight. Keep moving forward.',12,false)
 heroSub.Position=UDim2.fromOffset(18,44);heroSub.Size=UDim2.new(1,-36,0,20)
 heroSub.TextColor3=Color3.fromRGB(179,203,230);skinned[heroSub]=nil
-local heroCount=newText(hero,'6 WORLDS   /   36 ENCOUNTERS   /   5 DIFFICULTIES',11,true)
+local heroCount=newText(hero,'7 WORLDS   /   42 ENCOUNTERS   /   5 DIFFICULTIES',11,true)
 heroCount.Position=UDim2.fromOffset(18,76);heroCount.Size=UDim2.new(1,-36,0,18)
 gradientText(heroCount,true);skinned[heroCount]=nil
 section('Story','Story selection')
