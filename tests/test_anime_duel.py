@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v5-dungeon-walk','visible versioned build')
+assert(current.build=='studio-v7-dungeon-teleport','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -996,14 +996,14 @@ assert(fights==5);app.destroy()
 unconfirmed_dungeon=dungeon_mock.replace("dstate();return true\n elseif name=='Fight'", "return true\n elseif name=='Fight'")
 run_case('Dungeon Start without State confirmation stops without resending',mock+unconfirmed_dungeon,r'''
 local app=env.AnimeDuelScript
-app.config.dungeonWalk=false;app.start('dungeon');schedule(.1,dstate);drain()
+app.config.dungeonWalk=false;app.start('dungeon');drain()
 assert(starts==1 and app.dungeon.status:find('not confirmed',1,true),app.dungeon.status)
 app.destroy()
 ''')
 
 run_case('Dungeon locks and profile fields are validated independently',mock+file_mock+dungeon_mock,r'''
 local app=env.AnimeDuelScript
-app.config.dungeonDifficulty='Nightmare';app.config.dungeonWalk=false;app.start('dungeon');schedule(.1,dstate);drain()
+app.config.dungeonDifficulty='Nightmare';app.config.dungeonWalk=false;dstate();app.start('dungeon');drain()
 assert(starts==0 and app.dungeon.status:find('Locked',1,true))
 app.config.dungeonDifficulty='Hard';app.config.dungeonPath='Safe';app.config.dungeonCashOut=10
 assert(app.setAutoProfile('Dungeon'))
@@ -1037,6 +1037,12 @@ local function vec(x,y,z)return setmetatable({X=x,Y=y,Z=z},vectorMeta)end
 vectorMeta.__sub=function(a,b)return vec(a.X-b.X,a.Y-b.Y,a.Z-b.Z)end
 vectorMeta.__index=function(v,k)if k=='Magnitude' then return math.sqrt(v.X*v.X+v.Y*v.Y+v.Z*v.Z)end end
 local character={};local root={Position=vec(50,0,0),Parent=character}
+local teleports={};local rejectTeleport=false
+CFrame={new=function(x,y,z)return {Position=vec(x,y,z)}end}
+setmetatable(root,{__newindex=function(t,k,v)
+ if k=='CFrame' then teleports[#teleports+1]=v.Position;if not rejectTeleport then t.Position=v.Position end
+ else rawset(t,k,v)end
+end})
 local moves={};local portalTransfers=0
 local humanoid={Health=100,MoveTo=function(_,position)
  moves[#moves+1]=position
@@ -1069,18 +1075,18 @@ function dr:InvokeServer(name,payload)
  return originalDungeon(self,name,payload)
 end
 '''
-run_case('Dungeon walks to each verified room guard and uses Area 2 portal',mock+dungeon_mock+walk_mock,r'''
+run_case('Dungeon teleports to each guard across both areas before sending Fight',mock+dungeon_mock+walk_mock,r'''
 local app=env.AnimeDuelScript
-assert(app.config.dungeonWalk==true,'auto walk on by default')
+assert(app.config.dungeonWalk==true,'auto teleport on by default')
 app.start('dungeon');schedule(.1,dstate);drain()
-assert(starts==2 and portalTransfers==1,'20-room route crosses the portal')
-assert(#moves>15,'movement performed before requests')
+assert(starts==2 and portalTransfers==0,'teleport reaches all 20 rooms without walking to portal')
+assert(#teleports>15 and #moves==0,'teleports performed without MoveTo')
 assert(app.dungeon.status=='Stopped',app.dungeon.status)
 app.destroy()
 ''')
 
-blocked_walk=walk_mock.replace('else root.Position=position end','else -- blocked by a wall\n end')
-run_case('Stop cancels blocked Dungeon movement without sending Fight for a distant room',mock+dungeon_mock+blocked_walk,r'''
+blocked_walk=walk_mock+"\nrejectTeleport=true\n"
+run_case('Stop cancels rejected teleports without sending Fight for a distant room',mock+dungeon_mock+blocked_walk,r'''
 local app=env.AnimeDuelScript
 app.start('dungeon');schedule(.1,dstate)
 schedule(4,function()app.stop('dungeon')end)
@@ -1092,10 +1098,37 @@ app.destroy()
 
 # Ensure sub-models with no DungeonRoom attribute cannot be selected as targets.
 missing_guard=walk_mock.replace('guards[#guards+1]=guard', 'if number~=2 then guards[#guards+1]=guard end')
-run_case('missing room guard pauses rather than walking to a different NPC',mock+dungeon_mock+missing_guard,r'''
+run_case('missing room guard pauses instead of teleporting to a different NPC',mock+dungeon_mock+missing_guard,r'''
 local app=env.AnimeDuelScript
 app.start('dungeon');schedule(.1,dstate)
 schedule(5,function()app.stop('dungeon')end);drain()
 for _,call in ipairs(dcalls)do if call[1]=='Fight' then assert(call[2]==1)end end
+app.destroy()
+''')
+
+run_case('Dungeon starts directly without opening an NPC or receiving an initial State',mock+dungeon_mock,r'''
+local app=env.AnimeDuelScript
+app.config.dungeonWalk=false
+assert(app.dungeon.view==nil)
+app.start('dungeon');drain()
+assert(starts==2 and continuations==3,'starts, clears and repeats from server Start events')
+assert(dcalls[1][1]=='Start','first action directly starts Dungeon')
+assert(app.dungeon.status=='Stopped',app.dungeon.status)
+app.destroy()
+''')
+
+rejected_start=dungeon_mock+r'''
+local real=dr.InvokeServer
+function dr:InvokeServer(name,payload)
+ if name=='Start' then starts=starts+1;return false,'Selected card not owned' end
+ return real(self,name,payload)
+end
+'''
+run_case('rejected direct Start without State reports server reason and does not spam',mock+rejected_start,r'''
+local app=env.AnimeDuelScript
+app.start('dungeon');drain()
+assert(starts==1,'no repeat of rejected bootstrap')
+assert(app.dungeon.status:find('Selected card not owned',1,true),app.dungeon.status)
+assert(not app.dungeon.worker)
 app.destroy()
 ''')
