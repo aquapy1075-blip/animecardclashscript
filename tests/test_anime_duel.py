@@ -601,7 +601,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v8-dungeon-enter-history','visible versioned build')
+assert(current.build=='studio-v9-dungeon-enter-retry','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -1165,5 +1165,33 @@ local latest=app.dungeon.history[1]
 assert(latest.run=='h12' and app.dungeon.history[10].run=='h3')
 assert(latest.seconds>=2 and latest.reason=='cleared' and latest.cleared==20)
 for _,text in ipairs({'42 Shards','potion x2','plunder x1','Elf Mage'}) do assert(latest.rewards:find(text,1,true),latest.rewards) end
+app.destroy()
+''')
+
+enter_busy=dungeon_mock+r'''
+local original=dr.InvokeServer
+local attempts={}
+function dr:InvokeServer(name,payload)
+ if name=='Enter' then
+  attempts[#attempts+1]=os.clock()
+  if #attempts<=2 then return false,'Already teleporting.' end
+ end
+ return original(self,name,payload)
+end
+'''
+run_case('Dungeon waits and retries explicit Already teleporting rejection before fighting',mock+enter_busy,r'''
+local app=env.AnimeDuelScript;app.config.dungeonWalk=false
+app.start('dungeon');drain()
+assert(#attempts==3,'retry rejected Enter until accepted')
+assert(attempts[2]-attempts[1]>=1.5 and attempts[3]-attempts[2]>=1.5,'paced entry retries')
+assert(starts==2 and app.dungeon.status=='Stopped',app.dungeon.status)
+assert(#app.dungeon.history==1,'run completed after entry recovered')
+app.destroy()
+''')
+run_case('Stop cancels Dungeon while waiting for server teleport without starting a fight',mock+enter_busy,r'''
+local app=env.AnimeDuelScript;app.config.dungeonWalk=false
+app.start('dungeon');schedule(.5,function()app.stop('dungeon')end);drain()
+assert(#attempts==1 and not app.dungeon.worker)
+for _,c in ipairs(dcalls)do assert(c[1]~='Fight')end
 app.destroy()
 ''')
