@@ -43,15 +43,32 @@ local function dim(x,xo,y,yo)return {X={Scale=x or 0,Offset=xo or 0},Y={Scale=y 
 local UDim2={new=dim,fromOffset=function(x,y)return dim(0,x,0,y)end,fromScale=function(x,y)return dim(x,0,y,0)end}
 local UDim={new=function(s,o)return {Scale=s,Offset=o}end}
 local Vector2={new=function(x,y)return {X=x,Y=y}end}
-local Color3={fromRGB=function(r,g,b)return tostring(r)..','..g..','..b end}
-local events={Activated=true,FocusLost=true,InputBegan=true,InputChanged=true,InputEnded=true}
+local function rgb(r,g,b)
+ local c={R=r,G=g,B=b}
+ function c:Lerp(other,t)return rgb(self.R+(other.R-self.R)*t,self.G+(other.G-self.G)*t,self.B+(other.B-self.B)*t)end
+ return c
+end
+local Color3={fromRGB=rgb}
+local ColorSequence={new=function(...)return {...}end}
+local ColorSequenceKeypoint={new=function(...)return {...}end}
+local NumberSequence={new=function(...)return {...}end}
+local TweenInfo={new=function(...)return {...}end}
+local events={Destroying=true,MouseEnter=true,MouseLeave=true,MouseButton1Down=true,MouseButton1Up=true,MouseButton1Click=true,Activated=true,FocusLost=true,InputBegan=true,InputChanged=true,InputEnded=true}
 local objects={}
 local Instance={}
 function Instance.new(class)
  local props={BackgroundTransparency=0,ClassName=class,Name=class,Visible=true,Enabled=true,Text='',Position=dim(0,0,0,0),
   Size=dim(0,0,0,0),AbsolutePosition={X=0,Y=0},AbsoluteSize={X=720,Y=58}}
- local signals={};local obj;local methods={}
+ local signals={};local attributes={};local obj;local methods={}
  function methods:IsA(k)return k==class or k=='GuiObject' and class~='ScreenGui' and class~='UICorner' and class~='UIStroke' and class~='UIListLayout' and class~='UIPadding' end
+ function methods:GetChildren()
+  local out={};for _,v in ipairs(objects)do if v.Parent==obj then table.insert(out,v)end end;return out
+ end
+ function methods:FindFirstChild(name)for _,v in ipairs(methods.GetChildren())do if v.Name==name then return v end end end
+ function methods:IsDescendantOf(parent)local p=props.Parent;while p do if p==parent then return true end;p=p.Parent end;return false end
+ function methods:ReleaseFocus()end
+ function methods:SetAttribute(k,v)attributes[k]=v end
+ function methods:GetAttribute(k)return attributes[k]end
  function methods:GetPropertyChangedSignal(k) signals[k]=signals[k] or signal();return signals[k] end
  function methods:IsFocused()return false end
  function methods:Destroy()props.Parent=nil;props.destroyed=true end
@@ -67,7 +84,7 @@ local playerGui=Instance.new('PlayerGui')
 local player={UserId=42,WaitForChild=function(_,name)assert(name=='PlayerGui');return playerGui end}
 local Workspace=Instance.new('Workspace')
 Workspace.CurrentCamera=Instance.new('Camera');Workspace.CurrentCamera.ViewportSize=Vector2.new(1280,720)
-local UIS={InputBegan=signal(),InputChanged=signal(),InputEnded=signal()}
+local UIS={InputBegan=signal(),InputChanged=signal(),InputEnded=signal(),GetFocusedTextBox=function()return nil end}
 local event={OnClientEvent=signal()}
 local run=nil
 local calls={};local fightIndex=0;local startCount=0
@@ -138,19 +155,20 @@ local app=env.AnimeDuelScript
 assert(app and not app.enabled and not app.worker,'must load disabled')
 assert(#calls==0,'loading UI must not call remotes')
 local function findButton(caption)
- for _,obj in ipairs(objects) do if obj.ClassName=='TextButton' and obj.Text==caption then return obj end end
+ for _,obj in ipairs(objects) do if obj.ClassName=='TextButton' and obj.Parent and obj.Text:gsub('^%d+%s+',''):gsub('%s*▾$','')==caption then return obj end end
  error('missing button '..caption)
 end
 assert(findButton('START DRAFT') and findButton('STOP DRAFT'),'start and stop controls')
 assert(not app.logs,'no retained log buffer')
 assert(findButton('Config'),'Config tab')
-findButton('Settings').Activated:Fire()
+findButton('Settings').MouseButton1Click:Fire()
 findButton('Midnight').Activated:Fire()
+findButton('Emerald').Activated:Fire()
 assert(app.config.theme=='Emerald','theme cycle')
 Workspace.CurrentCamera.ViewportSize=Vector2.new(390,844)
 Workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Fire()
 assert(app.Root.Parent==playerGui,'UI owned by PlayerGui')
-findButton('START DRAFT').Activated:Fire()
+findButton('START DRAFT').MouseButton1Click:Fire()
 app.start() -- double start must be ignored
 assert(#pending==1,'only one worker')
 drain()
@@ -582,7 +600,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='update4-online-ui-v1','visible versioned build')
+assert(current.build=='online-library-ui-v2','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -595,7 +613,7 @@ app.start('draft');app.start('climb')
 schedule(.2,function()
  local found=false
  for _,obj in ipairs(objects)do
-  if obj.ClassName=='TextButton' and obj.Text=='CAPTION' then obj.Activated:Fire();found=true;break end
+  if obj.ClassName=='TextButton' and obj.Text=='CAPTION' then obj.MouseButton1Click:Fire();found=true;break end
  end
  assert(found,'missing distinct Stop button')
  if 'MODE'=='draft' then
@@ -671,7 +689,7 @@ local app=env.AnimeDuelScript
 app.start('draft');app.start('climb');app.start('story')
 schedule(.2,function()
  for _,obj in ipairs(objects)do
-  if obj.ClassName=='TextButton' and obj.Text=='STOP BOSS' then obj.Activated:Fire();break end
+  if obj.ClassName=='TextButton' and obj.Text=='STOP BOSS' then obj.MouseButton1Click:Fire();break end
  end
  assert(not app.story.enabled and app.enabled and app.climb.enabled,'mode isolation')
 end)
@@ -789,42 +807,62 @@ for _,c in ipairs(storyCalls)do assert(c.id=='clover_capital_secret' and c.diffi
 app.destroy()
 ''')
 
-run_case('Online UI sidebar adapts to mobile and search filters boss rows',mock,r'''
+run_case('exact Online library keeps inline rows, gradients, slider and mobile sidebar',mock,r'''
 local app=env.AnimeDuelScript
-local sidebar,search,window
+local sidebar,window,slider,gradient,action
 for _,obj in ipairs(objects)do
  if obj.Name=='Sidebar' then sidebar=obj end
- if obj.Name=='BossSearch' then search=obj end
  if obj.Name=='Window' then window=obj end
+ if obj.Name=='TransparencySlider' then slider=obj end
+ if obj.Name=='OriginTextGradient' then gradient=obj end
+ if obj.ClassName=='TextButton' and obj.Text=='START DRAFT' then action=obj end
 end
-assert(sidebar and search and window.ClassName=='CanvasGroup','Online UI shell')
+assert(sidebar and window.ClassName=='CanvasGroup' and slider and gradient,'exact Online library components')
+assert(action.Position.X.Scale==1 and action.Position.X.Offset==-195,'reference right-side action placement')
+assert(action.Parent.Size.Y.Offset==49,'reference compact row height')
 Workspace.CurrentCamera.ViewportSize=Vector2.new(390,844)
 Workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Fire()
 assert(sidebar.ScrollingDirection==Enum.ScrollingDirection.X,'horizontal mobile navigation')
 assert(window.Size.X.Offset<=374,'fits mobile viewport')
-search.Text='Body Devil';search:GetPropertyChangedSignal('Text'):Fire()
-local body,water
-for _,obj in ipairs(objects)do
- if obj.ClassName=='TextLabel' and obj.Text=='Body Devil' then body=obj.Parent end
- if obj.ClassName=='TextLabel' and obj.Text=='Water Master' then water=obj.Parent end
-end
-assert(body and body.Visible and water and not water.Visible,'boss search filter')
 app.destroy()
 ''')
 
-run_case('searchable difficulty dropdown keeps selected server ID',mock,r'''
+run_case('reference searchable multi-select changes boss selection without starting a mode',mock,r'''
 local app=env.AnimeDuelScript
-local opener,menu,search,medium
+local picker,search,menu
 for _,obj in ipairs(objects)do
- if obj.ClassName=='TextButton' and obj.Text=='Nightmare' and obj.Parent.ClassName=='Frame' then opener=obj end
- if obj.Name=='DifficultyDropdown' then menu=obj end
+ if obj.ClassName=='TextButton' and obj.Text=='1 selected  ▾' then picker=obj end
  if obj.Name=='DropdownSearch' then search=obj end
- if obj.ClassName=='TextButton' and obj.Text=='Medium' then medium=obj end
+ if obj.Name=='DropdownMenu' then menu=obj end
 end
-assert(opener and menu and search and medium)
+assert(picker and search and menu)
+picker.MouseButton1Click:Fire();assert(menu.Visible)
+search.Text='Body Devil';search:GetPropertyChangedSignal('Text'):Fire()
+local body
+for _,obj in ipairs(objects)do
+ if obj.ClassName=='TextButton' and obj.Parent and obj.Text=='Body Devil' then body=obj end
+end
+assert(body,'search returns Body Devil')
+body.Activated:Fire()
+assert(app.config.story_clover_capital and menu.Visible,'multi-select stays open')
+assert(not app.worker and not app.story.worker and #calls==0,'UI selection has no gameplay side effects')
+app.destroy()
+''')
+
+run_case('reference difficulty dropdown preserves selected server difficulty',mock,r'''
+local app=env.AnimeDuelScript
+local opener,menu,search
+for _,obj in ipairs(objects)do
+ if obj.ClassName=='TextButton' and obj.Text=='Nightmare  ▾' then opener=obj end
+ if obj.Name=='DropdownMenu' then menu=obj end
+ if obj.Name=='DropdownSearch' then search=obj end
+end
+assert(opener and menu and search)
 opener.Activated:Fire();assert(menu.Visible)
-search.Text='med';search:GetPropertyChangedSignal('Text'):Fire();assert(medium.Visible)
-medium.Activated:Fire()
+search.Text='med';search:GetPropertyChangedSignal('Text'):Fire()
+local medium
+for _,obj in ipairs(objects)do if obj.Parent and obj.ClassName=='TextButton' and obj.Text=='Medium' then medium=obj end end
+assert(medium);medium.Activated:Fire()
 assert(app.config.storyDifficulty=='Medium' and not menu.Visible)
 app.destroy()
 ''')
