@@ -36,12 +36,12 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v7-dungeon-teleport',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v8-dungeon-enter-history',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
     config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoReconnect=true, autoStart=false, mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
-app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0}
+app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
 local storyBosses={
     {key='purple_forest',id='purple_forest_boss',name='Water Master',secret=false},
@@ -297,7 +297,35 @@ local function findRemote(name)
 end
 local function acceptDungeon(value)
     if type(value)=='table' and type(value.unlocked)=='table' and value.coins~=nil then
-        app.dungeon.view=value;app.dungeon.version=app.dungeon.version+1;redraw();return true
+        local d=app.dungeon
+        local last=value.last
+        if type(last)=='table' and last.run~=nil and not d.historySeen[last.run] then
+            d.historySeen[last.run]=true
+            local timing=d.timing
+            if timing and timing.id==last.run then
+                local rewards={}
+                if last.coins~=nil then rewards[#rewards+1]=tostring(last.coins)..' Shards' end
+                for _,field in ipairs({'items','chests'}) do
+                    for id,count in pairs(type(last[field])=='table' and last[field] or {}) do
+                        if type(count)=='number' and count>0 then rewards[#rewards+1]=tostring(id)..' x'..count end
+                    end
+                end
+                for _,card in ipairs(type(last.cards)=='table' and last.cards or {}) do
+                    rewards[#rewards+1]=type(card)=='table' and tostring(card.name or card.card or '?') or tostring(card)
+                end
+                if last.seal then rewards[#rewards+1]='Third Battle Seal' end
+                table.insert(d.history,1,{run=last.run,difficulty=last.diff or timing.difficulty,
+                    reason=last.reason or 'ended',cleared=last.cleared or last.room,
+                    seconds=math.max(0,os.clock()-timing.at),
+                    rewards=#rewards>0 and table.concat(rewards,' · ') or 'No reward data'})
+                if #d.history>10 then table.remove(d.history) end
+                d.timing=nil
+            end
+        end
+        if type(value.run)=='table' and (not d.timing or d.timing.id~=value.run.id) then
+            d.timing={id=value.run.id,at=os.clock(),difficulty=value.run.diff}
+        end
+        d.view=value;d.version=d.version+1;redraw();return true
     end
     return false
 end
@@ -908,7 +936,7 @@ local function approachDungeonGuard(run)
         root.CFrame=CFrame.new(target.X,target.Y+2,target.Z+5)
     end)
     -- Give position replication and any server correction time before interacting.
-    pause(.4)
+    pause(.2)
     if not valid() then return false end
     if not ok or (root.Position-target).Magnitude>18 then
         setStatus('Teleport to Room '..run.room..' not confirmed; waiting before retry')
@@ -921,6 +949,7 @@ local function runDungeonLoop()
     local remote=remotes:FindFirstChild('DungeonAction')
     if not remote then error('DungeonAction not found.',0) end
     local waitingSince=nil
+    local enteredRun=nil
     local function mutate(name,payload,confirmed)
         local before=app.dungeon.version
         local result=call(name,payload,nil,remote)
@@ -949,7 +978,7 @@ local function runDungeonLoop()
             local team,seen=dungeonCards(app.config.dungeonTeam,4)
             local reserves=dungeonCards(app.config.dungeonReserves,2)
             for _,id in ipairs(reserves) do if seen[id] then error('Dungeon team/reserves must be six different cards.',0) end end
-            if view.last then setStatus('Dungeon ended — preparing the next run');pause(6) end
+            if view.last then setStatus('Dungeon ended — preparing the next run');pause(1) end
             local old=view.last and view.last.run
             setStatus('Starting Dungeon / '..app.config.dungeonDifficulty)
             mutate('Start',{team=team,reserves=reserves,difficulty=app.config.dungeonDifficulty},function()
@@ -957,11 +986,18 @@ local function runDungeonLoop()
                 return type(current)=='table' and current.id~=old
             end)
             waitingSince=nil
+        elseif enteredRun~=run.id and not run.fighting and not view.battle then
+            setStatus('Entering Dungeon')
+            local result=call('Enter',nil,nil,remote)
+            if result.uncertain then error('Enter response lost; paused without replaying: '..tostring(result.reason),0) end
+            if not result.ok then error('Enter rejected: '..tostring(result.reason),0) end
+            enteredRun=run.id
+            pause(.3)
         elseif run.fighting or view.battle or run.away then
             waitingSince=waitingSince or os.clock()
             setStatus(run.away and 'Waiting for server to recover the previous fight' or ('Fighting room '..tostring(run.room)))
             if os.clock()-waitingSince>app.config.timeout then error('Dungeon fight State timed out; no duplicate Fight was sent.',0) end
-            pause(.5)
+            pause(.1)
         else
             waitingSince=nil
             local id,room=run.id,run.room
@@ -991,7 +1027,7 @@ local function runDungeonLoop()
                     local r=current();return not r or r.id~=id or r.phase~='checkpoint'
                 end)
             else error('Unknown Dungeon phase: '..tostring(run.phase),0) end
-            pause(.5)
+            pause(.1)
         end
     end
 end
@@ -1301,7 +1337,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'Anime Card Duel',17,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'made by aquacodex · Studio v7 · Dungeon Teleport',11,false)
+local smallTitle=newText(header,'made by aquacodex · Studio v8 · Dungeon Stats',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1359,7 +1395,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='made by aquacodex · Studio v7 · Dungeon Teleport'
+        smallTitle.Text='made by aquacodex · Studio v8 · Dungeon Stats'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1814,7 +1850,10 @@ addDropdown('Dungeon','Cash out at room','dungeonCashOut',{5,10,15,20})
 addInput('Dungeon','Team: four card IDs, comma-separated','dungeonTeam','card1,card2,card3,card4')
 addInput('Dungeon','Reserves: two card IDs','dungeonReserves','card5,card6')
 addStatus('Dungeon','Checkpoint policy','Withdraw when in trouble; Safest also banks early when injured')
-addStatus('Dungeon','Guard positioning','Follows DungeonRoom guard attributes; walks within 18 studs before requests.')
+addStatus('Dungeon','Guard positioning','Enter run, then teleport to the current guard before requests.')
+section('Dungeon','Last 10 runs · time tracked this session')
+local dungeonHistory={}
+for i=1,10 do dungeonHistory[i]=addStatus('Dungeon','Run #'..i,i==1 and 'No completed runs yet' or '--') end
 section('Config','Profiles')
 local nameBox=addInput('Config','Profile name','ProfileName','Default')
 local savedDrop
@@ -2153,6 +2192,14 @@ local function refreshOverview()
     local dr=app.dungeon.view and app.dungeon.view.run
     showStatus(dungeonProgress,dr and ('Room '..tostring(dr.room)..' / '..tostring(dr.phase)) or 'No active Dungeon')
     if dr then local alive,average=ctx.dungeonVitals(dr);showStatus(dungeonHealth,alive..' alive / '..math.floor(average*100+.5)..'% HP') else showStatus(dungeonHealth,'--') end
+    for i,label in ipairs(dungeonHistory) do
+        local item=app.dungeon.history[i]
+        label.Parent.Visible=item~=nil or i==1
+        if item then
+            local seconds=math.floor(item.seconds)
+            showStatus(label,tostring(item.difficulty or '?')..' · '..tostring(item.reason)..' · '..string.format('%02d:%02d',math.floor(seconds/60),seconds%60)..' · '..tostring(item.cleared or '?')..' rooms\n'..item.rewards)
+        else showStatus(label,'No completed runs yet') end
+    end
     showStatus(configStatus,app.profiles.status)
     showStatus(configAuto,app.profiles.auto or 'OFF')
     showStatus(reconnectStatus,app.config.autoReconnect and app.reconnect.status or 'OFF')
