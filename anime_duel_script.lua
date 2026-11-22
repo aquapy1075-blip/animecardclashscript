@@ -1,6 +1,7 @@
 -- anime duel script
 -- Embeds the actual Anime Card Online UI library with Anime Duel bindings.
 -- Uses captured DraftAction calls. Auto starts only when enabled in an auto-loaded profile.
+if not game:IsLoaded() then game.Loaded:Wait() end
 local Players = game:GetService('Players')
 local RS = game:GetService('ReplicatedStorage')
 local UIS = game:GetService('UserInputService')
@@ -9,7 +10,8 @@ local HttpService = game:GetService('HttpService')
 local GuiService = game:GetService('GuiService')
 local TeleportService = game:GetService('TeleportService')
 local player = Players.LocalPlayer
-local playerGui = Players.LocalPlayer:WaitForChild('PlayerGui')
+while not player do task.wait(.1);player=Players.LocalPlayer end
+local playerGui = player:WaitForChild('PlayerGui')
 local env = getgenv and getgenv() or _G
 local previous = env.AnimeDuelScript
 if type(previous) == 'table' and type(previous.destroy) == 'function' then
@@ -39,7 +41,7 @@ assert(action and event, 'DraftAction/DraftEvent not found')
 local app = {build='studio-v17-afk-heartbeat',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, antiAfk=true,autoReconnect=true, autoStart=false,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -144,6 +146,21 @@ local function antiAfkTick()
     task.delay(60,antiAfkTick)
 end
 task.delay(60,antiAfkTick)
+app.hop={queued=false,status='Ready'}
+if player.OnTeleport then
+    track(player.OnTeleport,function(state)
+        if not app.alive or not app.config.autoExecuteOnHop then return end
+        if state==Enum.TeleportState.Failed then app.hop.queued=false;app.hop.status='Teleport failed';redraw();return end
+        if state~=Enum.TeleportState.Started and state~=Enum.TeleportState.InProgress then return end
+        if app.hop.queued then return end
+        local queue=queue_on_teleport or queueonteleport or (syn and syn.queue_on_teleport)
+        if type(queue)~='function' then app.hop.status='Executor has no queue_on_teleport';redraw();return end
+        local payload="if not game:IsLoaded() then game.Loaded:Wait() end; loadstring(game:HttpGet('https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/main/anime_duel_script.lua?v='..os.time()))()"
+        local ok=pcall(queue,payload)
+        app.hop.queued=ok;app.hop.status=ok and 'Queued for next server' or 'Executor rejected teleport queue'
+        redraw()
+    end)
+end
 local function setStatus(message)
     local ctx=controller()
     message=tostring(message)
@@ -229,7 +246,7 @@ function app.loadProfile(name)
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
-    for _,key in ipairs({'autoReconnect','autoStart','antiAfk','dungeonWalk','pauseForRift','sequenceBossDungeon'}) do
+    for _,key in ipairs({'autoReconnect','autoStart','antiAfk','autoExecuteOnHop','dungeonWalk','pauseForRift','sequenceBossDungeon'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     local hasModes=false
@@ -2412,6 +2429,8 @@ local afkStatus=addStatus('Settings','Anti-AFK status','Ready')
 section('Settings','Startup and connection')
 addToggle('Settings','Auto Start saved modes','autoStart')
 addToggle('Settings','Auto reconnect','autoReconnect')
+addToggle('Settings','Auto execute after hop','autoExecuteOnHop')
+local hopStatus=addStatus('Settings','Teleport execution','Ready')
 addAction('Settings','Rejoin server','REJOIN',ctx.rejoinServer)
 local reconnectStatus=addStatus('Settings','Connection','Monitoring')
 section('Settings','Appearance')
@@ -2749,6 +2768,7 @@ local function refreshOverview()
     local preferences={}
     for _,mode in ipairs({'draft','climb','story','dungeon'}) do preferences[#preferences+1]=mode..': '..(app.config[mode..'Enabled'] and 'ON' or 'OFF') end
     showStatus(configModes,table.concat(preferences,' · '))
+    showStatus(hopStatus,app.config.autoExecuteOnHop and app.hop.status or 'OFF')
     showStatus(afkStatus,app.config.antiAfk and app.afk.status or 'OFF')
     showStatus(reconnectStatus,app.config.autoReconnect and app.reconnect.status or 'OFF')
 end
@@ -2788,7 +2808,7 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonWalk','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonWalk','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     uiFlags.DungeonRunning=app.dungeon.enabled;uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
     local selection={}
