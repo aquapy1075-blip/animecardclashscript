@@ -148,7 +148,7 @@ end
 local GuiService={GetErrorMessage=function()return disconnectMessage end}
 local TeleportService={Teleport=function(_,place,who)assert(who==player);teleportCalls=teleportCalls+1 end}
 local services={HttpService=HttpService,GuiService=GuiService,TeleportService=TeleportService,Players={LocalPlayer=player},ReplicatedStorage=RS,UserInputService=UIS,Workspace=Workspace,TweenService={}}
-local game={PlaceId=123,GetService=function(_,name)assert(services[name],name);return services[name]end}
+local game={IsLoaded=function()return true end,PlaceId=123,GetService=function(_,name)assert(services[name],name);return services[name]end}
 local function warn(s)print(s)end
 '''
 checks=r'''
@@ -1583,4 +1583,26 @@ services.VirtualUser.Button2Up=function()releases=releases+1 end
 local app=env.AnimeDuelScript;idle:Fire()
 assert(presses==1 and afkClicks==0)
 app.destroy();assert(releases==1)
+''')
+
+run_case('Teleport autoexec queues once, respects toggle and disconnects on unload',mock+r'''
+local teleportSignal=signal();player.OnTeleport=teleportSignal
+local queued={};local function queue_on_teleport(source)queued[#queued+1]=source end
+''',r'''
+local app=env.AnimeDuelScript
+teleportSignal:Fire(Enum.TeleportState.Started);teleportSignal:Fire(Enum.TeleportState.InProgress)
+assert(#queued==1 and queued[1]:find('game:IsLoaded()',1,true))
+teleportSignal:Fire(Enum.TeleportState.Failed)
+app.config.autoExecuteOnHop=false;teleportSignal:Fire(Enum.TeleportState.Started);assert(#queued==1)
+app.config.autoExecuteOnHop=true;teleportSignal:Fire(Enum.TeleportState.Started);assert(#queued==2)
+app.destroy();teleportSignal:Fire(Enum.TeleportState.Started);assert(#queued==2)
+''')
+run_case('Startup waits for game loading before reading LocalPlayer',mock+r'''
+local loaded=false
+services.Players.LocalPlayer=nil
+game.IsLoaded=function()return loaded end
+game.Loaded={Wait=function()loaded=true;services.Players.LocalPlayer=player end}
+''',r'''
+assert(loaded and env.AnimeDuelScript.Root)
+env.AnimeDuelScript.destroy()
 ''')
