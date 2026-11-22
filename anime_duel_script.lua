@@ -38,10 +38,10 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v17-afk-heartbeat',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v18-native-clean',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -246,7 +246,7 @@ function app.loadProfile(name)
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
-    for _,key in ipairs({'autoReconnect','autoStart','antiAfk','autoExecuteOnHop','dungeonWalk','pauseForRift','sequenceBossDungeon'}) do
+    for _,key in ipairs({'autoReconnect','autoStart','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     local hasModes=false
@@ -1237,49 +1237,6 @@ local function dungeonCards(text,count)
     if #out~=count then error('Dungeon requires '..count..' card IDs in this field.',0) end
     return out,seen
 end
-local function stopDungeonMovement()
-    local walking=app.dungeon.walking
-    app.dungeon.walking=nil
-    if walking then pcall(function()walking.humanoid:MoveTo(walking.root.Position)end) end
-end
-local function approachDungeonGuard(run)
-    if not app.config.dungeonWalk then return true end
-    local folder=Workspace:FindFirstChild('Dungeon Guards')
-    local guard
-    if folder then
-        for _,obj in ipairs(folder:GetDescendants()) do
-            if obj:IsA('Model') and obj:GetAttribute('DungeonRoom')==run.room then guard=obj;break end
-        end
-    end
-    if not guard then setStatus('Waiting for DungeonRoom '..run.room..' guard to stream in');pause(2);return false end
-    local character=player.Character
-    local root=character and character:FindFirstChild('HumanoidRootPart')
-    local humanoid=character and character:FindFirstChildOfClass('Humanoid')
-    if not root or not humanoid or humanoid.Health<=0 then setStatus('Waiting for your character to respawn');pause(1);return false end
-    local targetRoot=guard:FindFirstChild('HumanoidRootPart')
-    local target=targetRoot and targetRoot.Position or guard:GetPivot().Position
-    local function valid()
-        check()
-        local current=app.dungeon.view and app.dungeon.view.run
-        return current and current.id==run.id and current.room==run.room and current.phase==run.phase
-            and player.Character==character and humanoid.Health>0 and root.Parent~=nil and guard.Parent~=nil
-    end
-    if (root.Position-target).Magnitude<=18 then return true end
-    if not valid() then return false end
-    setStatus('Teleporting to Room '..run.room..' guard')
-    local ok=pcall(function()
-        root.CFrame=CFrame.new(target.X,target.Y+2,target.Z+5)
-    end)
-    -- Give position replication and any server correction time before interacting.
-    pause(.2)
-    if not valid() then return false end
-    if not ok or (root.Position-target).Magnitude>18 then
-        setStatus('Teleport to Room '..run.room..' not confirmed; waiting before retry')
-        pause(1);return false
-    end
-    return true
-end
-
 local function runDungeonLoop()
     local remote=remotes:FindFirstChild('DungeonAction')
     if not remote then error('DungeonAction not found.',0) end
@@ -1370,7 +1327,6 @@ local function runDungeonLoop()
                 enteredRun=nil
                 continue
             end
-            if not approachDungeonGuard(run) then continue end
             if run.phase=='fight' then
                 setStatus('Starting room '..room)
                 mutate('Fight',room,function()
@@ -1403,7 +1359,6 @@ local function stopController(ctx)
     local mode=ctx==app.climb and 'climb' or (ctx==app.story and 'story' or (ctx==app.dungeon and 'dungeon' or 'draft'))
     app.config[mode..'Enabled']=false;app.config.savedModeSelection=true
     ctx.enabled=false
-    if ctx==app.dungeon then stopDungeonMovement() end
     ctx.status=ctx.worker and 'Stopping — current server fight continues' or 'Stopped'
 end
 function app.stop(mode)
@@ -1426,8 +1381,7 @@ function app.start(mode)
         local thread=coroutine.running()
         workerContexts[thread]=ctx
         local ok,err=pcall(mode=='climb' and runClimbLoop or (mode=='story' and runStoryLoop or (mode=='dungeon' and runDungeonLoop or runLoop)))
-        if ctx==app.dungeon then stopDungeonMovement() end
-        ctx.enabled=false;ctx.worker=false
+            ctx.enabled=false;ctx.worker=false
         if not ok and tostring(err)~='__STOP__' then
             ctx.lastError=tostring(err)
             setStatus('ERROR: '..ctx.lastError)
@@ -1521,6 +1475,14 @@ local themes={
     Emerald={bg='101C18',side='152B24',panel='1C372D',row='29463A',text='EFFFF4',muted='A0C8B0',accent='60D8A8',line='3E6454',selected='235545',selectedText='D2FFEC',mint='79E8BD',gold='F4CE86',rose='FCA3C0',violet='B7ACFF'},
     Rose={bg='23171C',side='311D27',panel='3E2633',row='503442',text='FFEFF4',muted='D9A9BC',accent='FF8FB2',line='704859',selected='64364E',selectedText='FFE2EE',mint='7AE5CE',gold='F5CF92',rose='FFABCD',violet='C8ADFF'},
 }
+-- Keep theme accents while using the same clear, neutral surface hierarchy.
+for name,palette in pairs(themes)do
+    if name~='Light'then
+        palette.bg='101014';palette.side='15151B';palette.panel='1B1B23';palette.row='24242F'
+        palette.line='41414F';palette.text='F4F4F8';palette.muted='B0B0C0'
+        palette.selected='30303E';palette.selectedText='FFFFFF'
+    end
+end
 local function rgb(hex)
     return Color3.fromRGB(tonumber(hex:sub(1,2),16),tonumber(hex:sub(3,4),16),tonumber(hex:sub(5,6),16))
 end
@@ -1570,7 +1532,7 @@ local function corner(obj,size)
     make('UICorner',obj,{CornerRadius=UDim.new(0,size or 9)})
 end
 local function stroke(obj)
-    local s=make('UIStroke',obj,{Thickness=1,Transparency=0.15})
+    local s=make('UIStroke',obj,{Thickness=1,Transparency=0.65})
     skin(s,'Color','line')
 end
 local textGradients=setmetatable({}, {__mode='k'})
@@ -1605,7 +1567,7 @@ local function newText(parent,label,size,bold)
         TextTruncate=Enum.TextTruncate.AtEnd,BorderSizePixel=0,
     })
     skin(l,'TextColor3',bold and 'text' or 'muted')
-    if bold then gradientText(l) end
+    if bold and (size or 13)>=16 then gradientText(l) end
     return l
 end
 local function uiButton(parent,caption,size)
@@ -1717,7 +1679,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'ANIME DUEL',19,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'AQUA  /  ACO EDITION  /  v17',11,false)
+local smallTitle=newText(header,'AQUA  /  NATIVE EDITION  /  v18',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1752,7 +1714,7 @@ local navButtons={}
 local tabPages={}
 local tabNames={'Monitor','Draft','Climb','Boss','Dungeon','Config','Settings'}
 for i,name in ipairs(tabNames) do
-    local tab=uiButton(sidebar,string.format('%02d   %s',i,name),UDim2.new(1,-20,0,39))
+    local tab=uiButton(sidebar,name,UDim2.new(1,-20,0,39))
     tab.Name='Nav'..name;tab.TextSize=15;tab.Font=Enum.Font.GothamMedium
     local marker=make('Frame',tab,{Name='SelectedMarker',Position=UDim2.new(0,0,.2,0),Size=UDim2.new(0,3,.6,0),BorderSizePixel=0,Visible=false})
     corner(marker,2);skin(marker,'BackgroundColor3','accent')
@@ -1777,7 +1739,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='AQUA  /  ACO EDITION  /  v17'
+        smallTitle.Text='AQUA  /  NATIVE EDITION  /  v18'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -1810,7 +1772,7 @@ local function row(tab,label)
     })
     corner(r,10)
     skin(r,'BackgroundColor3','panel')
-    local glow=make('UIGradient',r,{Rotation=15,Color=ColorSequence.new(Color3.fromRGB(255,255,255),Color3.fromRGB(195,211,245))})
+    -- Flat neutral rows keep small text crisp.
     stroke(r)
     local nameLabel=newText(r,label,13,true)
     nameLabel.Position=UDim2.fromOffset(14,0)
@@ -1842,9 +1804,9 @@ local function addToggle(tab,label,key)
     b.MouseButton1Click:Connect(function() setFlag(key,not flags[key]) end)
     widgets[#widgets+1]=function()
         local on=flags[key]==true
-        b.Text=on and 'ON  ●' or 'OFF  ○'
+        b.Text=on and 'ON' or 'OFF'
         animate(b,{BackgroundColor3=on and color('accent') or color('row'),
-            TextColor3=on and color('bg') or color('muted')},.16)
+            TextColor3=on and color('bg') or color('text')},.16)
     end
     return b
 end
@@ -2399,10 +2361,9 @@ dungeonUI.current=dungeonUI.groups.Settings
 section('Dungeon','Automation & priorities')
 addToggle('Dungeon','Pause autos for native Rift','pauseForRift')
 addToggle('Dungeon','Prioritize ready Story Boss','sequenceBossDungeon')
-addToggle('Dungeon','Teleport to Dungeon guards','dungeonWalk')
 local priorityLive=addStatus('Dungeon','Battle priority','Ready')
 addStatus('Dungeon','Checkpoint policy','Withdraw when in trouble; Safest also banks early when injured')
-addStatus('Dungeon','Guard positioning','Enter run, then teleport to the current guard before requests.')
+addStatus('Dungeon','Movement','No automatic teleport between rooms. Enter still returns you to the run.')
 dungeonUI.current=dungeonUI.groups.History
 section('Dungeon','Last 10 runs · time tracked this session')
 local dungeonHistory={}
@@ -2808,7 +2769,7 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonWalk','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     uiFlags.DungeonRunning=app.dungeon.enabled;uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
     local selection={}
@@ -2866,7 +2827,7 @@ ui=UILibrary.Create({app=app,state=uiState,profile=profileView,flags=uiFlags,pla
 app.Root=ui.Root;app.ui=ui
 render=function()if ui and app.alive then syncUI();ui.Repaint();ui.Refresh()end end
 redraw()
-setStatus('Ready — Online UI library / independent mode controls')
+setStatus('Ready — Native UI / independent mode controls')
 monitorConnection()
 app.refreshDungeonCollection()
 if autoLoaded and app.config.autoStart then app.restoreSavedModes() end
