@@ -24,9 +24,11 @@ local function container(kind,config)
  for _,method in ipairs({'Tab','Section','Toggle','Dropdown','Paragraph','Button','Input','Slider'}) do
   obj[method]=function(_,c)return container(method,c)end
  end
+ function obj:Lock()self.locked=true end
+ function obj:Unlock()self.locked=false end
  function obj:Set(value,callback)self.value=value;if callback~=false and self.config.Callback then self.config.Callback(value)end end
- function obj:Select(value)self.value=value;if value~=nil and self.config.Callback then self.config.Callback(value)end end
- function obj:Refresh(values)self.values=values end
+ function obj:Select(value)self.value=value;if value~=nil and not self.locked and self.config.Callback then self.config.Callback(value)end end
+ function obj:Refresh(values)self.values=values;self.refreshes=(self.refreshes or 0)+1 end
  function obj:SetTitle(v)self.title=v end
  function obj:SetDesc(v)self.desc=v end
  function obj:SetThumbnail(v)self.image=v end
@@ -51,5 +53,22 @@ end end
 assert(toggles==2 and not app.uiError,tostring(app.uiError))
 assert(app.ui.Library==wind)
 assert(app.config.dungeonTeam=='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold','saved team preserved on UI creation')
+app.destroy()
+''')
+
+ns['run_case']('Wind collection menu bounds and unchanged refresh',ns['mock']+ns['collection_mock'],r'''
+drain()
+local app=env.AnimeDuelScript
+for i=21,300 do local id='large_'..i;cardDefs[id]={Name='Large '..i,Variant='Gold',Damage=i,Health=i,Image=''};owned[id]=1 end
+app.refreshDungeonCollection();drain()
+local count=0
+for _,o in ipairs(windObjects)do if o.kind=='Dropdown' and o.values then
+ assert(#o.values<=37,'bounded menus even for a large collection')
+ count=count+(o.refreshes or 0)
+end end
+for i=1,30 do env.AnimeDuelScript['ui']:Refresh()end
+local after=0;for _,o in ipairs(windObjects)do if o.kind=='Dropdown' and o.values then after=after+(o.refreshes or 0)end end
+assert(count==after,'unchanged UI must not rebuild dropdowns')
+assert(app.config.dungeonTeam=='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold')
 app.destroy()
 ''')
