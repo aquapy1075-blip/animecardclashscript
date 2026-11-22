@@ -1418,6 +1418,13 @@ function UILibrary.Create(ctx)
         Size=UDim2.fromOffset(app.config.windowW,app.config.windowH),Theme='Dark',Resizable=true,AutoScale=true,
         SideBarWidth=190,ScrollBarEnabled=true,ToggleKey=Enum.KeyCode.RightShift,Acrylic=false})
     local alive=true
+    local updating=false
+    local function quiet(control,callback)
+        control:Lock()
+        local ok,err=pcall(callback)
+        control:Unlock()
+        if not ok then error(err,0)end
+    end
     local controls,statuses={},{}
     local function section(tab,title,opened)return tab:Section({Title=title,Opened=opened~=false,Box=true})end
     local function status(tab,title,get)
@@ -1491,7 +1498,7 @@ function UILibrary.Create(ctx)
     dropdown(route,'Cash out at room','dungeonCashOut',{5,10,15,20})
     toggle(route,'Yield to native Rift','pauseForRift');toggle(route,'Prioritize ready Story Boss','sequenceBossDungeon')
     local squad=section(dungeon,'Team · 4 main / 2 reserves',true)
-    local slots={};local collectionRevision=-1;local labels,ids={},{}
+    local slots={};local collectionRevision=-1;local labels,ids={},{};local cardPage=1;local pageCount=1;local lastSlots=nil
     local initialSlots=app.getDungeonSlots()
     for i=1,6 do
         local slot=i
@@ -1538,21 +1545,31 @@ function UILibrary.Create(ctx)
     dropdown(settings,'Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose','Light'})
     settings:Slider({Title='Transparency',Value={Min=0,Max=65,Default=app.config.transparency},Callback=function(v)if alive then ctx.setFlag('AO_UI_Transparency',v)end end})
     button(settings,'Unload script',function()app.destroy()end)
+    button(gallery,'Previous card page',function()cardPage=math.max(1,cardPage-1);collectionRevision=-1;app.ui.Refresh()end)
+    button(gallery,'Next card page',function()cardPage=math.min(pageCount,cardPage+1);collectionRevision=-1;app.ui.Refresh()end)
+    local pageInfo=gallery:Paragraph({Title='Card pages',Desc='30 cards per page to keep menus responsive.'})
     local lastBoss,lastProfiles,lastTheme,lastTransparency
-    local function refresh()
+    local function paint()
         if not alive then return end
         for _,c in ipairs(controls)do local value=ctx.flags[c.key];if value~=c.last then
-            c.last=value;if c.kind=='toggle'then c.item:Set(value==true,false)elseif c.kind=='input'then c.item:Set(tostring(value or ''))else c.item:Select(tostring(value))end
+            c.last=value;if c.kind=='toggle'then c.item:Set(value==true,false)elseif c.kind=='input'then c.item:Set(tostring(value or ''))else quiet(c.item,function()c.item:Select(tostring(value))end)end
         end end
         for _,entry in ipairs(statuses)do local value=tostring(entry.get());if value~=entry.last then entry.last=value;entry.item:SetDesc(value)end end
         local bosses={};for _,label in ipairs(options)do if app.config['story_'..lookup[label].key]then bosses[#bosses+1]=label end end
-        local key=table.concat(bosses,'|');if key~=lastBoss then lastBoss=key;bossChoice:Select(bosses)end
-        local profileKey=table.concat(ctx.profile.storedNames,'|');if profileKey~=lastProfiles then lastProfiles=profileKey;profileSelect:Refresh(ctx.profile.storedNames)end
+        local key=table.concat(bosses,'|');if key~=lastBoss then lastBoss=key;quiet(bossChoice,function()bossChoice:Select(bosses)end)end
+        local profileKey=table.concat(ctx.profile.storedNames,'|');if profileKey~=lastProfiles then lastProfiles=profileKey;quiet(profileSelect,function()profileSelect:Refresh(ctx.profile.storedNames)end)end
         local owned=app.dungeon.collection
-        local revision=owned.revision..'/'..app.config.dungeonTeam..'/'..app.config.dungeonReserves
+        local revision=owned.revision..'/'..cardPage
         if revision~=collectionRevision then
             collectionRevision=revision;labels={'Empty'};ids={};local byId={}
-            for _,card in ipairs(app.listDungeonCards('','All','Power'))do
+            local all=app.listDungeonCards('','All','Power')
+            pageCount=math.max(1,math.ceil(#all/30));cardPage=math.clamp(cardPage,1,pageCount)
+            pageInfo:SetDesc('Page '..cardPage..' / '..pageCount..' · '..#all..' owned cards. Search applies to this page.')
+            for _,card in ipairs(all)do
+                byId[card.id]=card.name..' · '..card.border..' · x'..card.count..' ['..card.id..']'
+            end
+            for index=(cardPage-1)*30+1,math.min(#all,cardPage*30)do
+                local card=all[index]
                 local label=card.name..' · '..card.border..' · x'..card.count..' ['..card.id..']'
                 labels[#labels+1]=label;ids[label]=card.id;byId[card.id]=label
             end
@@ -1560,13 +1577,31 @@ function UILibrary.Create(ctx)
             for i,c in ipairs(slots)do
                 local id=selectedSlots[i]
                 local label=byId[id]
-                if not label and id~=''then label='Not owned ['..id..']';labels[#labels+1]=label;ids[label]=id end
-                c:Refresh(labels);c:Select(label or 'Empty')
+                if id~='' and (not label or not ids[label])then label=label or ('Not owned ['..id..']');labels[#labels+1]=label;ids[label]=id end
+                quiet(c,function()c:Refresh(labels);c:Select(label or 'Empty')end)
             end
-            previewSelect:Refresh(labels)
+            quiet(previewSelect,function()previewSelect:Refresh(labels)end)
+            lastSlots=app.config.dungeonTeam..'/'..app.config.dungeonReserves
+        end
+        local slotKey=app.config.dungeonTeam..'/'..app.config.dungeonReserves
+        if lastSlots~=slotKey then
+            lastSlots=slotKey
+            local selected=app.getDungeonSlots()
+            for i,c in ipairs(slots)do
+                local label='Empty'
+                for text,id in pairs(ids)do if id==selected[i]then label=text;break end end
+                quiet(c,function()c:Select(label)end)
+            end
         end
         if lastTheme~=app.config.theme then lastTheme=app.config.theme;WindUI:SetTheme(lastTheme)end
         if lastTransparency~=app.config.transparency then lastTransparency=app.config.transparency;window:SetBackgroundTransparency(lastTransparency/100)end
+    end
+    local function refresh()
+        if not alive or updating then return end
+        updating=true
+        local ok,err=pcall(paint)
+        updating=false
+        if not ok then error(err,0)end
     end
     window:OnDestroy(function()if alive then app.destroy()end end)
     local api={Root=window.UIElements.Main,Window=window,Library=WindUI,Repaint=refresh,Refresh=refresh,
