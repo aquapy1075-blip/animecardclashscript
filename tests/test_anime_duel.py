@@ -148,7 +148,7 @@ end
 local GuiService={GetErrorMessage=function()return disconnectMessage end}
 local TeleportService={Teleport=function(_,place,who)assert(who==player);teleportCalls=teleportCalls+1 end}
 local services={HttpService=HttpService,GuiService=GuiService,TeleportService=TeleportService,Players={LocalPlayer=player},ReplicatedStorage=RS,UserInputService=UIS,Workspace=Workspace,TweenService={}}
-local game={IsLoaded=function()return true end,PlaceId=123,GetService=function(_,name)assert(services[name],name);return services[name]end}
+local game={IsLoaded=function()return true end,PlaceId=114301290313191,GetService=function(_,name)assert(services[name],name);return services[name]end}
 local function warn(s)print(s)end
 '''
 checks=r'''
@@ -1620,4 +1620,14 @@ end
 assert(team and cards and tab and app.config.dungeonWalk==false)
 assert(not app.uiError,tostring(app.uiError))
 app.destroy()
+''')
+
+run_case('Unsupported place exits before loading, services, UI or previous-session changes',mock+r'''
+game.PlaceId=123
+local prior={alive=true};env.AnimeDuelScript=prior
+game.IsLoaded=function()error('must exit before game loading')end
+game.GetService=function()error('must not access services in unsupported place')end
+''',r'''
+assert(env.AnimeDuelScript==prior and prior.alive)
+assert(#calls==0)
 ''')
