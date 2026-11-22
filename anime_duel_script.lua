@@ -1,3 +1,4 @@
+if game.PlaceId ~= 114301290313191 then return end
 -- anime duel script
 -- Embeds the actual Anime Card Online UI library with Anime Duel bindings.
 -- Uses captured DraftAction calls. Auto starts only when enabled in an auto-loaded profile.
