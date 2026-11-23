@@ -16,10 +16,10 @@ local playerGui = player:WaitForChild('PlayerGui')
 local env = getgenv and getgenv() or _G
 local previous = env.AnimeDuelScript
 if type(previous) == 'table' and type(previous.destroy) == 'function' then
-    if previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) or (previous.hunt and previous.hunt.worker) then
+    if previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) or (previous.hunt and previous.hunt.worker) or (previous.realm and previous.realm.busy) then
         previous.stop()
         local deadline=os.clock()+10
-        while previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) or (previous.hunt and previous.hunt.worker) do
+        while previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) or (previous.hunt and previous.hunt.worker) or (previous.realm and previous.realm.busy) do
             if os.clock()>=deadline then
                 previous.status='Old request is still pending; wait for it to finish before upgrading.'
                 return
@@ -42,7 +42,7 @@ assert(action and event, 'DraftAction/DraftEvent not found')
 local app = {build='studio-v20-guild-hunt',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true,huntEnabled=false,huntCashOut=10,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true,autoRealm=false,realmPotion='Kimetsu',huntEnabled=false,huntCashOut=10,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -238,6 +238,7 @@ function app.loadProfile(name)
     if table.find({'Normal','Hard','Nightmare'},incoming.dungeonDifficulty) then app.config.dungeonDifficulty=incoming.dungeonDifficulty end
     if table.find({'Balanced','Loot','Safe'},incoming.dungeonPath) then app.config.dungeonPath=incoming.dungeonPath end
     for _,key in ipairs({'dungeonTeam','dungeonReserves'}) do if type(incoming[key])=='string' then app.config[key]=incoming[key] end end
+    if table.find({'Random','Ice','Flame','Hunter','Kimetsu','TYBW','Dragon'},incoming.realmPotion) then app.config.realmPotion=incoming.realmPotion end
     app.config.storyInterval=1.5 -- Migrate profiles saved with the old 5-second interval.
     for key,range in pairs(ranges) do
         local v=incoming[key]
@@ -252,7 +253,7 @@ function app.loadProfile(name)
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
-    for _,key in ipairs({'antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','hardcore_broly_hc','hardcore_beerus_hc','hardcore_wheel_hc'}) do
+    for _,key in ipairs({'autoRealm','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','hardcore_broly_hc','hardcore_beerus_hc','hardcore_wheel_hc'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     local hasModes=false
@@ -333,6 +334,7 @@ function app.requestReconnect(force)
     st.attempts=st.attempts+1;st.lastTry=os.clock()
     st.status='Rejoining '..st.attempts..'/'..st.limit
     -- Stop scheduling gameplay; a disconnected session cannot confirm new mutations.
+    app.config.autoRealm=false
     app.enabled=false;app.climb.enabled=false;app.story.enabled=false;app.dungeon.enabled=false
     app.stopReason='Connection lost — auto reconnect requested'
     app.climb.stopReason=app.stopReason;app.story.stopReason=app.stopReason;app.dungeon.stopReason=app.stopReason
@@ -376,6 +378,84 @@ end)
 local function findRemote(name)
     local ok,value=pcall(function()return remotes:FindFirstChild(name)end)
     return ok and value or nil
+end
+-- Auto Realm never interprets missing data as an empty server.
+app.realm={status='Off',pending=previous and previous.realm and previous.realm.pending or false,nextTry=previous and previous.realm and previous.realm.nextTry or 0}
+do
+    local potions={Random='realm_potion',Ice='realm_potion_ice',Flame='realm_potion_flame',Hunter='realm_potion_hunter',Kimetsu='realm_potion_kimetsu',TYBW='realm_potion_tybw',Dragon='realm_potion_dragon'}
+    local function decode(value)
+        if value==false or value=='' or value=='None' or value=='Normal' then return 'empty' end
+        if type(value)=='string' and potions[value] and value~='Random' then return 'active',value end
+        return nil
+    end
+    function app.realm.read(snapshot)
+        local empty=false
+        local function consider(value)
+            local state,name=decode(value)
+            if state=='empty' then empty=true end
+            return state=='active' and name or nil
+        end
+        -- Only explicit empty markers authorize consumption; unknown/new schemas wait.
+        for _,obj in ipairs({RS,Workspace}) do
+            for _,key in ipairs({'Realm','CurrentRealm','ActiveRealm'}) do
+                local ok,value=pcall(function()return obj:GetAttribute(key)end)
+                if ok then local name=consider(value);if name then return 'active',name end end
+            end
+        end
+        if type(snapshot)=='table' then
+            for _,key in ipairs({'Realm','realm','CurrentRealm','ActiveRealm'}) do
+                local name=consider(snapshot[key]);if name then return 'active',name end
+            end
+        end
+        return empty and 'empty' or 'unknown'
+    end
+    function app.realm.tick()
+        local r=app.realm
+        if not app.config.autoRealm then r.status='Off';return end
+        if not app.alive or r.busy or app.requestBusy or os.clock()<r.nextTry then return end
+        local getter=findRemote('GetSnapshot')
+        if not getter then r.status='Waiting for GetSnapshot';return end
+        r.busy=true;app.requestBusy=true
+        local ok,snapshot=pcall(function()return getter:InvokeServer()end)
+        app.requestBusy=false
+        if not app.alive then r.busy=false;return end
+        if not ok then r.busy=false;r.status='Realm state unavailable';r.nextTry=os.clock()+10;return end
+        local state,name=r.read(snapshot)
+        if state=='active' then
+            r.pending=false;r.status='Waiting — '..name..' Realm'
+        elseif state=='unknown' then
+            r.status='Waiting for explicit Realm state — no potion used'
+        elseif r.pending then
+            r.status='Waiting for server to confirm potion — no repeat'
+        elseif not app.config.autoRealm then
+            r.status='Off'
+        else
+            local id=potions[app.config.realmPotion]
+            local remote=findRemote('UseItem')
+            if not id or not remote then r.status='Potion / UseItem unavailable';r.busy=false;return end
+            -- Check replicated state once more after the snapshot request yields.
+            local latest=r.read(snapshot)
+            if latest~='empty' or app.requestBusy then r.busy=false;return end
+            r.pending=true;app.requestBusy=true
+            local result=table.pack(pcall(function()return remote:InvokeServer(id,1)end))
+            app.requestBusy=false
+            if not result[1] then
+                r.status='UseItem response lost — waiting for Realm; no repeat'
+            elseif result[2]==false or (type(result[2])=='table' and result[2].ok==false) then
+                local reason=type(result[2])=='table' and (result[2].reason or result[2].message) or result[3]
+                r.pending=false;r.nextTry=os.clock()+60;r.status='Potion rejected: '..tostring(reason or 'unknown')
+            else
+                r.status='Potion sent — waiting for Realm'
+            end
+        end
+        r.busy=false
+        redraw()
+    end
+    function app.realm.monitor()
+        if not app.alive then return end
+        app.realm.tick()
+        if app.alive then task.delay(3,app.realm.monitor)end
+    end
 end
 app.hunt={enabled=false,worker=false,status='Ready — uses your in-game HUNT TEAM',version=0,busy=false,ended={}}
 local function acceptHuntState(data,explicit)
@@ -2592,6 +2672,10 @@ section('Settings','Server')
 addAction('Settings','Rejoin server','REJOIN',ctx.rejoinServer)
 addToggle('Settings','Anti-AFK','antiAfk')
 addToggle('Settings','Auto execute after hop','autoExecuteOnHop')
+section('Settings','Realm potions')
+addToggle('Settings','Auto Realm potion','autoRealm')
+addDropdown('Settings','Realm potion','realmPotion',{'Random','Ice','Flame','Hunter','Kimetsu','TYBW','Dragon'})
+local realmLive=addStatus('Settings','Realm status','Off')
 section('Settings','Appearance')
 addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose','Light'})
 local transparencyRow=row('Settings','Transparency')
@@ -2889,6 +2973,7 @@ local function refreshOverview()
         showStatus(cooldownLabels[boss.id],remaining>0 and ctx.cooldownText(remaining) or 'No known cooldown')
     end
     showStatus(priorityLive,ctx.app.priority.status)
+    showStatus(realmLive,app.realm.status)
     showStatus(huntLive,app.hunt.status)
     local hr=app.hunt.view and app.hunt.view.run
     showStatus(huntProgress,hr and ('Wave '..hr.wave..' / '..hr.phase..' / '..hr.cleared..' cleared')or'No active hunt')
@@ -2959,7 +3044,7 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'huntCashOut','farm','bossFarm','delay','timeout','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'autoRealm','realmPotion','huntCashOut','farm','bossFarm','delay','timeout','autoRealm','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     for _,id in ipairs(hardcoreIds)do uiFlags['hardcore_'..id]=app.config['hardcore_'..id]end
     uiFlags.HuntRunning=app.hunt.enabled
@@ -2981,6 +3066,8 @@ local function setUIFlag(key,value)
     if range then
         local number=tonumber(value)
         if number and number==number and number>=range[1] and number<=range[2] then app.config[configKey]=range[3] and math.floor(number) or number end
+    elseif configKey=='realmPotion' then
+        if table.find({'Random','Ice','Flame','Hunter','Kimetsu','TYBW','Dragon'},value) then app.config.realmPotion=value end
     elseif configKey=='dungeonPath' then
         if table.find({'Balanced','Loot','Safe'},value) then app.config.dungeonPath=value end
     elseif configKey=='dungeonDifficulty' then
@@ -3022,5 +3109,6 @@ render=function()if ui and app.alive then syncUI();ui.Repaint();ui.Refresh()end 
 redraw()
 setStatus('Ready — Native UI / independent mode controls')
 monitorConnection()
+task.delay(3,app.realm.monitor)
 app.refreshDungeonCollection()
 if autoLoaded then app.restoreSavedModes() end
