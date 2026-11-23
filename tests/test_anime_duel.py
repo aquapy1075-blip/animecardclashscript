@@ -1693,3 +1693,30 @@ schedule(2,function()assert(hfights==0,'native Rift retains priority');riftOpen=
 schedule(15,function()assert(hfights==2);app.stop('hardcore')end)
 drain();app.destroy()
 ''')
+
+run_case('Completed Hardcore ignores retry timers and only resumes when its cycle resets',mock+hardcore_mock,r'''
+local app=env.AnimeDuelScript;local first=raid.Slot(Workspace:GetServerTimeNow())
+app.hardcore.completed.wheel_hc=first
+app.hardcore.nextTry.wheel_hc=60;app.hardcore.retrySlots.wheel_hc=first
+app.start('hardcore')
+schedule(65,function()
+ assert(hfights==0,'no retry even after 60s when milestones are complete')
+ assert(app.hardcore.waits.wheel_hc.kind=='reset')
+ assert(app.hardcore.status:find('waiting for next reset',1,true))
+ shift=3600
+end)
+schedule(80,function()assert(hfights==2,'only run again in the new cycle');app.stop('hardcore')end)
+drain();app.destroy()
+''')
+run_case('Rejected Hardcore uses retry status and old retry delay cannot carry into a new cycle',mock+hardcore_mock+r'''
+hr.InvokeServer=function()hfights=hfights+1;return {ok=false,reason='No free battle slot'}end
+''',r'''
+local app=env.AnimeDuelScript;app.start('hardcore')
+schedule(3,function()
+ assert(hfights==1 and app.hardcore.waits.wheel_hc.kind=='retry')
+ assert(app.hardcore.completed.wheel_hc==nil)
+ shift=3600
+end)
+schedule(6,function()assert(hfights==2,'new cycle is not held by old retry');app.stop('hardcore')end)
+drain();app.destroy()
+''')
