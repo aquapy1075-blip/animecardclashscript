@@ -1798,3 +1798,48 @@ assert(huntCashouts==1 and huntContinues==7)
 for _,o in ipairs(objects)do assert(o.Text~='Cash out below average HP (%)' and o.Text~='Allow early Cash Out for low HP')end
 app.destroy()
 ''')
+
+for ending in ['empty','lowercase','settlement','response']:
+ fixture=hunt_mock+r'''
+local original=huntRemote.InvokeServer
+local stale
+huntRemote.InvokeServer=function(self,command,arg)
+ if command=='CashOut'then
+  local old=hs.Run;stale=old;huntCashouts=huntCashouts+1;hs.Run=nil
+  if 'ENDING'=='empty'then he.OnClientEvent:Fire('State',{})
+  elseif 'ENDING'=='lowercase'then he.OnClientEvent:Fire('State',{run=false,week={}})
+  elseif 'ENDING'=='settlement'then
+   he.OnClientEvent:Fire('Result',{runId=old.Id,how='cashout',waves=old.Cleared,points=100})
+  elseif 'ENDING'=='response'then
+   return {ok=true,result={runId=old.Id,how='cashout',waves=old.Cleared,points=100}}
+  end
+  return {ok=true}
+ end
+ return original(self,command,arg)
+end
+remotes.FindFirstChild=function(_,name)
+ if name=='GuildHuntAction'then return huntRemote elseif name=='GuildHuntEvent'then return he
+ elseif name=='GetSnapshot'then return {InvokeServer=function()return {GuildHunt={Run=stale or hs.Run,Stats={}}}end}end
+end
+'''
+ run_case('Guild Hunt restarts after '+ending+' completion despite a stale snapshot',mock+fixture.replace('ENDING',ending),r'''
+local app=env.AnimeDuelScript;app.start('hunt');drain()
+assert(huntCashouts==1 and huntStarts==2 and not app.hunt.worker,app.hunt.status)
+assert(app.hunt.status=='Stopped',app.hunt.status)
+app.destroy()
+''')
+run_case('Unrelated Hunt settlement and generic ok response cannot end the active run',mock+hunt_mock+r'''
+huntRemote.InvokeServer=function(_,command,arg)
+ hs.Run={Id='active',Size=1,Wave=6,Cleared=5,Phase='decide',Team={'a','b','c','d'},Hp={}}
+ he.OnClientEvent:Fire('State',hs)
+ return {ok=true}
+end
+''',r'''
+local app=env.AnimeDuelScript
+he.OnClientEvent:Fire('State',{Run={Id='active',Size=1,Wave=6,Cleared=5,Phase='decide',Team={},Hp={}}})
+he.OnClientEvent:Fire('Result',{runId='other',how='cashout',waves=5,points=100})
+assert(app.hunt.view.run.id=='active')
+app.config.huntCashOut=5;app.start('hunt');drain()
+assert(app.hunt.status:find('not confirmed',1,true),app.hunt.status)
+app.destroy()
+''')
