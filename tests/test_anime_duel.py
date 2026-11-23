@@ -1893,3 +1893,61 @@ app.destroy();loadScript();app=env.AnimeDuelScript
 assert(not app.worker and not app.climb.worker and not app.story.worker and not app.dungeon.worker and not app.hardcore.worker and not app.hunt.worker)
 app.destroy()
 ''')
+
+realm_mock=r'''
+local realmSnapshot={}
+local uses={}
+local potionResponse=true
+local potionReason=nil
+local losePotionResponse=false
+local snap={InvokeServer=function()return realmSnapshot end}
+local use={InvokeServer=function(_,id,count)
+ table.insert(uses,{id,count})
+ if losePotionResponse then error('connection interrupted')end
+ return potionResponse,potionReason
+end}
+remotes.FindFirstChild=function(_,name)
+ if name=='GetSnapshot' then return snap end
+ if name=='UseItem' then return use end
+end
+'''
+run_case('Realm waits for explicit empty state, respects every active realm and sends one selected potion',mock+realm_mock,r'''
+local app=env.AnimeDuelScript
+app.config.autoRealm=true
+app.realm.tick();assert(#uses==0 and app.realm.status:find('explicit'))
+for _,name in ipairs({'Ice','Flame','Hunter','Kimetsu','TYBW','Dragon'})do
+ realmSnapshot={Realm=name};app.realm.tick();assert(#uses==0)
+end
+realmSnapshot={Realm=false};app.config.realmPotion='Kimetsu';app.realm.tick()
+assert(#uses==1 and uses[1][1]=='realm_potion_kimetsu' and uses[1][2]==1)
+app.realm.tick();app.realm.tick();assert(#uses==1,'no duplicate before replication')
+realmSnapshot={Realm='Kimetsu'};app.realm.tick()
+realmSnapshot={Realm=''};app.config.realmPotion='Dragon';app.realm.tick()
+assert(#uses==2 and uses[2][1]=='realm_potion_dragon','new empty cycle')
+app.destroy()
+''')
+run_case('Realm rejection backs off and lost UseItem responses cannot consume another potion',mock+realm_mock,r'''
+local app=env.AnimeDuelScript;app.config.autoRealm=true;realmSnapshot={Realm=false}
+potionResponse=false;potionReason='No items';app.realm.tick();assert(#uses==1)
+app.realm.tick();assert(#uses==1)
+now=61;losePotionResponse=true;app.realm.tick();assert(#uses==2)
+now=1000;app.realm.tick();assert(#uses==2,'unknown success must not be replayed')
+app.config.autoRealm=false;app.realm.tick();assert(app.realm.status=='Off')
+app.config.autoRealm=true;app.realm.tick();assert(#uses==2,'toggle cannot clear pending request')
+app.destroy()
+''')
+run_case('Active replicated realm overrides an empty snapshot and realm preferences persist',mock+file_mock+realm_mock,r'''
+local app=env.AnimeDuelScript;app.config.autoRealm=true;realmSnapshot={Realm=false}
+Workspace:SetAttribute('Realm','Hunter');app.realm.tick();assert(#uses==0)
+app.config.realmPotion='TYBW';assert(app.saveProfile('Realm'))
+app.config.realmPotion='Ice';app.config.autoRealm=false
+assert(app.loadProfile('Realm'));assert(app.config.autoRealm and app.config.realmPotion=='TYBW')
+app.destroy()
+''')
+run_case('Reloading the script retains pending potion confirmation',mock+realm_mock,r'''
+local app=env.AnimeDuelScript;app.config.autoRealm=true;realmSnapshot={Realm=false}
+app.realm.tick();assert(#uses==1 and app.realm.pending)
+loadScript();app=env.AnimeDuelScript;app.config.autoRealm=true
+app.realm.tick();assert(#uses==1 and app.realm.pending,'reload must not replay accepted UseItem')
+app.destroy()
+''')
