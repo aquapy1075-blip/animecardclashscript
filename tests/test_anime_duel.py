@@ -1769,11 +1769,32 @@ local app=env.AnimeDuelScript;app.start('hunt');drain()
 assert(#hc==0 and app.hunt.status:find('SOLO',1,true),app.hunt.status)
 app.destroy()
 ''')
-run_case('Guild Hunt cashes out at a checkpoint when HP falls below configured threshold',mock+hunt_mock+r'''
-hs.Run={Id='low',Size=1,Wave=6,Cleared=5,Phase='decide',Team={'a','b','c','d'},Hp={a=.2,b=.2,c=.2,d=.2}}
+for label,hp in [('low HP','Hp={a=.1,b=.1,c=.1,d=.1}'),('missing HP','Hp={}'),('one survivor','Hp={a=.1,b=0,c=0,d=0}')]:
+ fixture=hunt_mock.replace('Hp={a=1,b=1,c=1,d=1}',hp)
+ run_case('Guild Hunt target 40 is respected with '+label+' when early Cash Out is disabled',mock+fixture,r'''
+local app=env.AnimeDuelScript;app.config.huntCashOut=40
+assert(app.config.huntEarlyCashOut==nil)
+app.start('hunt');drain()
+assert(huntCashouts==1 and huntContinues==7)
+local waves=0;for _,c in ipairs(hc)do if c[1]=='Next'then waves=waves+1 end end
+assert(waves==40,'must not cash out at wave five')
+app.destroy()
+''')
+run_case('Guild Hunt ignores obsolete early cashout settings',mock+hunt_mock.replace('Hp={a=1,b=1,c=1,d=1}','Hp={}'),r'''
+local app=env.AnimeDuelScript;app.config.huntEarlyCashOut=true;app.config.huntCashOut=40
+app.start('hunt');drain()
+assert(huntCashouts==1 and huntContinues==7)
+app.destroy()
+''')
+
+run_case('Guild Hunt checkpoint 5 sends Continue and never CashOut when target is 40',mock+hunt_mock+r'''
+hs.Run={Id='full',Size=1,Wave=6,Cleared=5,Phase='decide',Team={'a','b','c','d'},Hp={a=1,b=1,c=1,d=1}}
 huntStarts=1
 ''',r'''
-local app=env.AnimeDuelScript;app.start('hunt');drain()
-assert(huntCashouts==1 and huntContinues==0)
+local app=env.AnimeDuelScript;app.config.huntCashOut=40
+app.start('hunt');drain()
+assert(hc[1][1]=='Continue','first action at checkpoint five must be Continue')
+assert(huntCashouts==1 and huntContinues==7)
+for _,o in ipairs(objects)do assert(o.Text~='Cash out below average HP (%)' and o.Text~='Allow early Cash Out for low HP')end
 app.destroy()
 ''')
