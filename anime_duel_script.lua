@@ -371,29 +371,44 @@ local function findRemote(name)
     local ok,value=pcall(function()return remotes:FindFirstChild(name)end)
     return ok and value or nil
 end
-app.hunt={enabled=false,worker=false,status='Ready — uses your in-game HUNT TEAM',version=0,busy=false}
+app.hunt={enabled=false,worker=false,status='Ready — uses your in-game HUNT TEAM',version=0,busy=false,ended={}}
 local function acceptHuntState(data,explicit)
     if type(data)~='table'then return false end
-    local state=data.GuildHunt or data
+    local state=data.GuildHunt or (explicit and (data.state or data.view)) or data
     if type(state)~='table'then return false end
     if not explicit and not data.GuildHunt then return false end
     local raw=state.Run or state.run
+    if raw==false then raw=nil end
     if raw~=nil and type(raw)~='table'then return false end
     local run
     if raw then
         local id,wave,phase=raw.Id or raw.id,raw.Wave or raw.wave,raw.Phase or raw.phase
         if id==nil or type(wave)~='number' or type(phase)~='string'then return false end
+        if app.hunt.ended[id] then return false end
         run={id=id,wave=wave,phase=phase,size=raw.Size or raw.size,
             cleared=raw.Cleared or raw.cleared or (phase=='decide' and math.max(0,wave-1)or 0),team=raw.Team or raw.team or {},hp=raw.Hp or raw.hp or {},
             fighting=type(raw.Fight)=='table' or raw.fighting==true,away=type(raw.Away)=='table' or raw.away==true}
-    elseif not data.GuildHunt and state.Run==nil and state.run==nil and state.Stats==nil and state.Week==nil then return false end
+    elseif not data.GuildHunt and explicit~='event' and state.Stats==nil and state.Week==nil and state.stats==nil and state.week==nil then return false end
+    if not run then
+        local prior=app.hunt.view and app.hunt.view.run
+        if prior then app.hunt.ended[prior.id]=true end
+    end
     app.hunt.view={run=run};app.hunt.version=app.hunt.version+1
     app.hunt.busy=run and run.fighting or false
     redraw();return true
 end
+local function acceptHuntResult(data)
+    if type(data)~='table'then return false end
+    if type(data.result)=='table'then data=data.result end
+    if data.runId==nil or type(data.how)~='string' or type(data.waves)~='number'then return false end
+    local h=app.hunt;local current=h.view and h.view.run
+    if not current or current.id~=data.runId then return false end
+    h.ended[data.runId]=true;h.lastRun=data.runId;h.view={run=nil};h.busy=false;h.version=h.version+1
+    redraw();return true
+end
 local huntEvent=findRemote('GuildHuntEvent')
 if huntEvent then track(huntEvent.OnClientEvent,function(kind,data)
-    if kind=='State'then acceptHuntState(data,true)end
+    if not acceptHuntResult(data) and kind=='State'then acceptHuntState(data,'event')end
 end)end
 
 local hardcoreIds={'broly_hc','beerus_hc','wheel_hc'}
@@ -800,7 +815,7 @@ local function call(name,a,b,remote)
     if remote and remote==findRemote('GuildHuntAction')then
         for i=2,values.n do
             local value=values[i]
-            if acceptHuntState(value,true)or(type(value)=='table' and (acceptHuntState(value.state,true)or acceptHuntState(value.view,true)))then break end
+            if acceptHuntResult(value)or acceptHuntState(value,true)or(type(value)=='table' and (acceptHuntState(value.state,true)or acceptHuntState(value.view,true)))then break end
         end
     end
     if remote and remote==findRemote('DungeonAction') then
