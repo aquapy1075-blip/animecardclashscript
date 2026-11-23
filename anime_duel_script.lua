@@ -16,10 +16,10 @@ local playerGui = player:WaitForChild('PlayerGui')
 local env = getgenv and getgenv() or _G
 local previous = env.AnimeDuelScript
 if type(previous) == 'table' and type(previous.destroy) == 'function' then
-    if previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) then
+    if previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) then
         previous.stop()
         local deadline=os.clock()+10
-        while previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) do
+        while previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) do
             if os.clock()>=deadline then
                 previous.status='Old request is still pending; wait for it to finish before upgrading.'
                 return
@@ -39,10 +39,10 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v18-native-clean',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v19-hourly-hardcore',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -223,7 +223,7 @@ function app.saveProfile(name)
     return true
 end
 function app.loadProfile(name)
-    if app.worker or app.climb.worker or app.story.worker or app.dungeon.worker then storageStatus('Stop active modes before loading a profile');return false end
+    if app.worker or app.climb.worker or app.story.worker or app.dungeon.worker or (app.hardcore and app.hardcore.worker) then storageStatus('Stop active modes before loading a profile');return false end
     name=profileId(name)
     local data=name and readJson(profilePath(name))
     if not data or data.version~=1 or type(data.config)~='table' then
@@ -240,18 +240,18 @@ function app.loadProfile(name)
             app.config[key]=range[3] and math.floor(v) or v
         end
     end
-    if incoming.mode=='draft' or incoming.mode=='climb' or incoming.mode=='story' or incoming.mode=='dungeon' then app.config.mode=incoming.mode end
+    if incoming.mode=='draft' or incoming.mode=='climb' or incoming.mode=='story' or incoming.mode=='dungeon' or incoming.mode=='hardcore' then app.config.mode=incoming.mode end
     if table.find(storyDifficulties,incoming.storyDifficulty) then app.config.storyDifficulty=incoming.storyDifficulty end
     for _,boss in ipairs(storyBosses) do
         local key='story_'..boss.key
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
-    for _,key in ipairs({'autoReconnect','autoStart','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon'}) do
+    for _,key in ipairs({'autoReconnect','autoStart','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','hardcore_broly_hc','hardcore_beerus_hc','hardcore_wheel_hc'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     local hasModes=false
-    for _,mode in ipairs({'draft','climb','story','dungeon'}) do
+    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore'}) do
         local key=mode..'Enabled'
         app.config[key]=incoming[key]==true
         if type(incoming[key])=='boolean' then hasModes=true end
@@ -371,6 +371,33 @@ local function findRemote(name)
     local ok,value=pcall(function()return remotes:FindFirstChild(name)end)
     return ok and value or nil
 end
+local hardcoreIds={'broly_hc','beerus_hc','wheel_hc'}
+app.hardcore={enabled=false,worker=false,status='Ready',hits={},kills={},progress={},completed=readJson(storage..'/hardcore_cycles.json') or {},nextTry={},ready=false,busy=false}
+local function loadHardcoreConfig()
+    local shared=RS:FindFirstChild('Shared')
+    local module=shared and shared:FindFirstChild('RaidConfig',true)
+    if not module then error('RaidConfig unavailable; Hardcore paused.',0)end
+    local cfg=require(module)
+    if type(cfg)~='table' or type(cfg.RAIDS)~='table'then error('RaidConfig invalid.',0)end
+    return cfg
+end
+local raidEvent=findRemote('RaidEvent')
+if raidEvent then track(raidEvent.OnClientEvent,function(kind,data)
+    if type(data)~='table' or not table.find(hardcoreIds,data.raid)then return end
+    local h=app.hardcore
+    if kind=='Hit' and type(data.dealt)=='number'then
+        h.hits[data.raid]=(h.hits[data.raid] or 0)+1
+        if h.inFlightRaid==data.raid and h.inFlightSlot then
+            local progress=h.progress[data.raid]
+            if not progress or progress.slot~=h.inFlightSlot then progress={slot=h.inFlightSlot,dealt=0};h.progress[data.raid]=progress end
+            progress.dealt=progress.dealt+math.max(0,data.dealt)
+            h.inFlightRaid=nil;h.inFlightSlot=nil
+        end
+    elseif kind=='Killed' and type(data.slot)=='number'then
+        h.kills[data.raid]=data.slot
+    end
+end)end
+
 app.priority={status='Ready',battles={},closed={},closedOrder={},riftRecord=nil,lease=nil,lastPoll=-math.huge}
 local riftConfig
 local function loadRiftConfig()
@@ -489,6 +516,12 @@ local function priorityReason()
     if rift then app.priority.status=rift;return rift end
     if app.bosses.world or app.bosses.raid then return 'Paused — waiting for World/Raid boss death' end
     local ctx=controller();local p=app.priority
+    if ctx==app.hardcore then
+        local dr=app.dungeon.view and app.dungeon.view.run
+        if next(p.battles) or p.lease or (dr and dr.fighting)then return 'Hardcore waiting for the current battle to finish'end
+    elseif app.hardcore.enabled and (app.hardcore.ready or app.hardcore.busy)then
+        return 'Paused — hourly Hardcore Raid has priority'
+    end
     if app.config.sequenceBossDungeon and p.canSequence then
         local run=app.dungeon.view and app.dungeon.view.run
         local fighting=run and (run.fighting or (app.dungeon.view and app.dungeon.view.battle))
@@ -1356,8 +1389,65 @@ local function runDungeonLoop()
     end
 end
 
+local function runHardcoreLoop()
+    local remote=findRemote('RaidFight')
+    if not remote or not raidEvent then error('RaidFight / RaidEvent unavailable.',0)end
+    local cfg=loadHardcoreConfig()
+    local h=app.hardcore
+    while h.enabled do
+        check()
+        local now=Workspace:GetServerTimeNow()
+        local chosen,entry,slot,earliest=nil,nil,nil,math.huge
+        for _,id in ipairs(hardcoreIds)do
+            if app.config['hardcore_'..id]then
+                local raid=cfg.RAIDS[id]
+                if not raid or not raid.SOLO or not raid.HARDCORE then error('Unsupported Hardcore config: '..id,0)end
+                local cycle=raid.Slot(now)
+                local maximum=0
+                for index in ipairs(raid.MILESTONES)do maximum=math.max(maximum,raid.MilestoneDamage(index))end
+                local progress=h.progress[id]
+                if progress and progress.slot==cycle and progress.dealt>=maximum and h.completed[id]~=cycle then
+                    h.completed[id]=cycle
+                    if not writeJson(storage..'/hardcore_cycles.json',h.completed)then h.storage='Cycle tracking is session-only'end
+                end
+                if h.completed[id]==cycle then earliest=math.min(earliest,raid.NextSlotAt(now))
+                elseif (h.nextTry[id] or 0)>os.clock()then earliest=math.min(earliest,now+h.nextTry[id]-os.clock())
+                elseif not chosen then chosen=id;entry=raid;slot=cycle end
+            end
+        end
+        if not chosen then
+            h.ready=false
+            setStatus(earliest==math.huge and 'Select at least one Hardcore boss' or ('Waiting for reset / retry: '..math.max(0,math.ceil(earliest-now))..'s'))
+            pause(1)
+        else
+            h.ready=true
+            setStatus('Preparing '..entry.NAME..' / cycle '..slot)
+            awaitPriority()
+            -- Priority waits can cross a reset. Always recompute before sending a mutation.
+            if entry.Slot(Workspace:GetServerTimeNow())~=slot then h.ready=false;continue end
+            local before=h.hits[chosen] or 0
+            h.busy=true;h.inFlightRaid=chosen;h.inFlightSlot=slot
+            local response=call('Fight',chosen,nil,remote)
+            if response.uncertain then error('RaidFight response lost; stopped without replaying.',0)end
+            if not response.ok then
+                h.busy=false;h.ready=false;h.inFlightRaid=nil;h.inFlightSlot=nil;h.nextTry[chosen]=os.clock()+60
+                setStatus(entry.NAME..': '..tostring(response.reason)..' — retry in 60s')
+                pause(1)
+            else
+                setStatus('Fighting '..entry.NAME)
+                if not waitFor(function()return (h.hits[chosen]or 0)>before end,app.config.timeout)then
+                    error('Raid result timed out; no duplicate Fight was sent.',0)
+                end
+                h.busy=false;h.ready=false
+                -- The server respawns Hardcore bosses after five seconds.
+                pause(5.2)
+            end
+        end
+    end
+end
+
 local function stopController(ctx)
-    local mode=ctx==app.climb and 'climb' or (ctx==app.story and 'story' or (ctx==app.dungeon and 'dungeon' or 'draft'))
+    local mode=ctx==app.hardcore and 'hardcore' or ctx==app.climb and 'climb' or (ctx==app.story and 'story' or (ctx==app.dungeon and 'dungeon' or 'draft'))
     app.config[mode..'Enabled']=false;app.config.savedModeSelection=true
     ctx.enabled=false
     ctx.status=ctx.worker and 'Stopping — current server fight continues' or 'Stopped'
@@ -1367,12 +1457,13 @@ function app.stop(mode)
     elseif mode=='climb' then stopController(app.climb)
     elseif mode=='story' then stopController(app.story)
     elseif mode=='dungeon' then stopController(app.dungeon)
-    else stopController(app);stopController(app.climb);stopController(app.story);stopController(app.dungeon) end
+    elseif mode=='hardcore' then stopController(app.hardcore)
+    else stopController(app);stopController(app.climb);stopController(app.story);stopController(app.dungeon);stopController(app.hardcore) end
     redraw()
 end
 function app.start(mode)
-    if mode~='draft' and mode~='climb' and mode~='story' and mode~='dungeon' then mode=app.config.mode end
-    local ctx=mode=='climb' and app.climb or (mode=='story' and app.story or (mode=='dungeon' and app.dungeon or app))
+    if mode~='draft' and mode~='climb' and mode~='story' and mode~='dungeon' and mode~='hardcore' then mode=app.config.mode end
+    local ctx=mode=='hardcore' and app.hardcore or mode=='climb' and app.climb or (mode=='story' and app.story or (mode=='dungeon' and app.dungeon or app))
     if not app.alive or ctx.worker then return end
     app.config.mode=mode -- Auto Load preference only; never selects the live worker.
     app.config[mode..'Enabled']=true;app.config.savedModeSelection=true
@@ -1381,8 +1472,9 @@ function app.start(mode)
     task.spawn(function()
         local thread=coroutine.running()
         workerContexts[thread]=ctx
-        local ok,err=pcall(mode=='climb' and runClimbLoop or (mode=='story' and runStoryLoop or (mode=='dungeon' and runDungeonLoop or runLoop)))
-            ctx.enabled=false;ctx.worker=false
+        local ok,err=pcall(mode=='hardcore' and runHardcoreLoop or mode=='climb' and runClimbLoop or (mode=='story' and runStoryLoop or (mode=='dungeon' and runDungeonLoop or runLoop)))
+        if ctx==app.hardcore then ctx.ready=false;ctx.busy=false;ctx.inFlightRaid=nil;ctx.inFlightSlot=nil end
+        ctx.enabled=false;ctx.worker=false
         if not ok and tostring(err)~='__STOP__' then
             ctx.lastError=tostring(err)
             setStatus('ERROR: '..ctx.lastError)
@@ -1394,8 +1486,8 @@ end
 function app.restoreSavedModes()
     if not app.config.savedModeSelection then app.start(app.config.mode);return end
     local modes={}
-    for _,mode in ipairs({'draft','climb','story','dungeon'}) do modes[mode]=app.config[mode..'Enabled']==true end
-    for _,mode in ipairs({'draft','climb','story','dungeon'}) do if modes[mode] then app.start(mode) end end
+    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore'}) do modes[mode]=app.config[mode..'Enabled']==true end
+    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore'}) do if modes[mode] then app.start(mode) end end
 end
 
 -- Exact embedded Online UI library, upstream 831eaf86123661bbb2bad7d26605bde614a47262.
@@ -1680,7 +1772,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'ANIME DUEL',19,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'AQUA  /  NATIVE EDITION  /  v18',11,false)
+local smallTitle=newText(header,'AQUA  /  NATIVE EDITION  /  v19',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1713,7 +1805,7 @@ local body=make('Frame',main,{
 local selectedTab='Monitor'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Draft','Climb','Boss','Dungeon','Config','Settings'}
+local tabNames={'Monitor','Draft','Climb','Boss','Dungeon','Hardcore','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,name,UDim2.new(1,-20,0,39))
     tab.Name='Nav'..name;tab.TextSize=15;tab.Font=Enum.Font.GothamMedium
@@ -1740,7 +1832,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='AQUA  /  NATIVE EDITION  /  v18'
+        smallTitle.Text='AQUA  /  NATIVE EDITION  /  v19'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -2125,7 +2217,7 @@ local function clearNotifications()
     toastBox.Visible=false
 end
 do
-    local descriptions={Monitor='Everything in view. Every run under control.',Draft='Build a stronger team. Climb through the bosses.',Climb='Smart card choices for your next milestone.',Boss='Your targets. Their cooldowns. One control center.',Dungeon='Build your squad. Choose your route. Collect the rewards.',Config='Your setup, ready for the next session.',Settings='Make this workspace feel like yours.'}
+    local descriptions={Monitor='Everything in view. Every run under control.',Draft='Build a stronger team. Climb through the bosses.',Climb='Smart card choices for your next milestone.',Boss='Your targets. Their cooldowns. One control center.',Dungeon='Build your squad. Choose your route. Collect the rewards.',Hardcore='Collect each cycle. Return automatically after reset.',Config='Your setup, ready for the next session.',Settings='Make this workspace feel like yours.'}
     for _,tab in ipairs(tabNames) do
         local hero=make('Frame',tabPages[tab],{Name=tab..'Hero',LayoutOrder=-20,Size=UDim2.new(1,-2,0,110),BorderSizePixel=0})
         corner(hero,12);stroke(hero)
@@ -2369,6 +2461,14 @@ dungeonUI.current=dungeonUI.groups.History
 section('Dungeon','Last 10 runs · time tracked this session')
 local dungeonHistory={}
 for i=1,10 do dungeonHistory[i]=addStatus('Dungeon','Run #'..i,i==1 and 'No completed runs yet' or '--') end
+section('Hardcore','Hourly Hardcore Raids')
+addToggle('Hardcore','Auto Hardcore Raids','HardcoreRunning')
+addToggle('Hardcore','Green Saiyan · reset xx:45','hardcore_broly_hc')
+addToggle('Hardcore','Destroyer Cat · reset xx:10','hardcore_beerus_hc')
+addToggle('Hardcore','Wheel General · reset xx:25','hardcore_wheel_hc')
+local hardcoreLive=addStatus('Hardcore','Status','Ready')
+addStatus('Hardcore','Cycle tracking','Tracks confirmed Hit damage to the final milestone, then waits for reset. Enabling mid-cycle may require extra fights. Completed cycles persist per account.')
+addStatus('Hardcore','Priorities','Rift first; Hardcore waits for the current battle before starting. No automatic character teleport.')
 section('Config','Profiles')
 local nameBox=addInput('Config','Profile name','ProfileName','Default')
 local savedDrop
@@ -2710,6 +2810,7 @@ local function refreshOverview()
     end
     showStatus(bossSummary,selectedCount..' selected  ·  '..readyCount..' no known CD  ·  '..coolingCount..' cooling')
     showStatus(priorityLive,ctx.app.priority.status)
+    showStatus(hardcoreLive,app.hardcore.status)
     showStatus(dungeonLive,app.dungeon.status)
     local dr=app.dungeon.view and app.dungeon.view.run
     showStatus(dungeonProgress,dr and ('Room '..tostring(dr.room)..' / '..tostring(dr.phase)) or 'No active Dungeon')
@@ -2728,7 +2829,7 @@ local function refreshOverview()
     showStatus(configStatus,app.profiles.status)
     showStatus(configAuto,app.profiles.auto or 'OFF')
     local preferences={}
-    for _,mode in ipairs({'draft','climb','story','dungeon'}) do preferences[#preferences+1]=mode..': '..(app.config[mode..'Enabled'] and 'ON' or 'OFF') end
+    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore'}) do preferences[#preferences+1]=mode..': '..(app.config[mode..'Enabled'] and 'ON' or 'OFF') end
     showStatus(configModes,table.concat(preferences,' · '))
     showStatus(hopStatus,app.config.autoExecuteOnHop and app.hop.status or 'OFF')
     showStatus(afkStatus,app.config.antiAfk and app.afk.status or 'OFF')
@@ -2772,6 +2873,8 @@ local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
     for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
+    for _,id in ipairs(hardcoreIds)do uiFlags['hardcore_'..id]=app.config['hardcore_'..id]end
+    uiFlags.HardcoreRunning=app.hardcore.enabled
     uiFlags.DungeonRunning=app.dungeon.enabled;uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
     local selection={}
     for _,boss in ipairs(storyBosses) do selection[#selection+1]=app.config['story_'..boss.key] and '1' or '0' end
@@ -2782,7 +2885,7 @@ end
 local function setUIFlag(key,value)
     uiFlags.InputRevision=(tonumber(uiFlags.InputRevision) or 0)+1
     if key=='ProfileName' then uiFlags.ProfileName=value;return end
-    local modes={DraftRunning='draft',ClimbRunning='climb',BossRunning='story',DungeonRunning='dungeon'}
+    local modes={HardcoreRunning='hardcore',DraftRunning='draft',ClimbRunning='climb',BossRunning='story',DungeonRunning='dungeon'}
     if modes[key] then if value then app.start(modes[key]) else app.stop(modes[key]) end;return end
     local configKey=flagKeys[key] or key
     local range=ranges[configKey]
