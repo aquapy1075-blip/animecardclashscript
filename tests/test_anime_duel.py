@@ -602,7 +602,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v18-native-clean','visible versioned build')
+assert(current.build=='studio-v19-hourly-hardcore','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -1630,4 +1630,66 @@ game.GetService=function()error('must not access services in unsupported place')
 ''',r'''
 assert(env.AnimeDuelScript==prior and prior.alive)
 assert(#calls==0)
+''')
+
+hardcore_mock=r'''
+local re={OnClientEvent=signal()};local hfights=0;local shift=0
+Workspace.GetServerTimeNow=function()return 100000+now+shift end
+local raid={SOLO=true,HARDCORE=true,NAME='Wheel General Hardcore',MILESTONES={{at=1},{at=2}},
+ Slot=function(t)return math.floor((t-1500)/3600)end,
+ NextSlotAt=function(t)return (math.floor((t-1500)/3600)+1)*3600+1500 end,
+ MilestoneDamage=function(i)return i*100 end,SoloHp=function()return 200 end}
+local module={};local shared={FindFirstChild=function(_,name)if name=='RaidConfig'then return module end end}
+RS.FindFirstChild=function(_,name)if name=='Shared'then return shared end end
+local function require(m)assert(m==module);return {RAIDS={wheel_hc=raid}}end
+local hr={InvokeServer=function(_,action,id)
+ assert(action=='Fight' and id=='wheel_hc');hfights=hfights+1
+ schedule(.2,function()
+  re.OnClientEvent:Fire('Killed',{raid=id,slot=raid.Slot(Workspace:GetServerTimeNow()),claimed=true})
+  re.OnClientEvent:Fire('Hit',{raid=id,dealt=100,currency=0,capped=true})
+ end)
+ return {ok=true}
+end}
+remotes.FindFirstChild=function(_,name)if name=='RaidFight'then return hr elseif name=='RaidEvent'then return re end end
+'''
+run_case('Hardcore ignores capped and claimed as milestone proof, completes once and resumes after reset',mock+file_mock+hardcore_mock,r'''
+local app=env.AnimeDuelScript;local first=raid.Slot(Workspace:GetServerTimeNow())
+app.start('hardcore')
+schedule(2,function()assert(hfights==1 and app.hardcore.completed.wheel_hc==nil,'first capped Hit and claimed Kill cannot skip damage milestones')end)
+schedule(12,function()assert(hfights==2 and app.hardcore.completed.wheel_hc==first)end)
+schedule(13,function()shift=3600 end)
+schedule(26,function()
+ assert(hfights==4 and app.hardcore.completed.wheel_hc==first+1)
+ assert(files['AnimeDuelScript/42/hardcore_cycles.json'])
+ app.stop('hardcore')
+end)
+drain();assert(not app.hardcore.worker);app.destroy()
+''')
+run_case('Hardcore Stop cancels preparation independently of enabled Draft',mock+hardcore_mock,r'''
+local app=env.AnimeDuelScript
+app.start('hardcore');app.stop('hardcore');drain()
+assert(hfights==0 and not app.hardcore.worker)
+assert(app.config.hardcoreEnabled==false)
+app.destroy()
+''')
+run_case('Hardcore completed cycle survives script reload and prevents replay until next slot',mock+file_mock+hardcore_mock,r'''
+local app=env.AnimeDuelScript
+app.start('hardcore');schedule(12,function()app.stop('hardcore')end);drain()
+assert(hfights==2)
+app.destroy();loadScript();app=env.AnimeDuelScript
+app.start('hardcore');schedule(2,function()app.stop('hardcore')end);drain()
+assert(hfights==2,'no repeated fights for completed saved cycle')
+app.destroy()
+''')
+run_case('Hardcore waits for a current battle and yields to native Rift before sending Fight',mock+hardcore_mock+rift_mock+r'''
+shared.FindFirstChild=function(_,name)if name=='RaidConfig'then return module elseif name=='RiftConfig'then return riftModule end end
+local function require(value)if value==module then return {RAIDS={wheel_hc=raid}}else return cfg end end
+''',r'''
+local app=env.AnimeDuelScript
+app.priority.battles['existing']={lane=1}
+app.start('hardcore')
+schedule(1,function()assert(hfights==0);app.priority.battles['existing']=nil end)
+schedule(2,function()assert(hfights==0,'native Rift retains priority');riftOpen=false end)
+schedule(15,function()assert(hfights==2);app.stop('hardcore')end)
+drain();app.destroy()
 ''')
