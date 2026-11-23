@@ -42,7 +42,7 @@ assert(action and event, 'DraftAction/DraftEvent not found')
 local app = {build='studio-v20-guild-hunt',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,huntEnabled=false,huntCashOut=10,huntHp=40,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,huntEnabled=false,huntCashOut=10,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -176,7 +176,7 @@ local profileDir=storage..'/profiles'
 local disk=type(readfile)=='function' and type(writefile)=='function'
 app.profiles={current='Default',auto=nil,names={},status=disk and 'Storage ready' or 'File API unavailable'}
 app.reconnect={attempts=0,lastTry=-math.huge,status='Monitoring',limit=3,interval=9}
-local ranges={huntCashOut={5,1000,true},huntHp={0,100,true},dungeonCashOut={5,20,true},windowW={600,1200},windowH={420,1000},windowX={0,1},windowY={0,1},farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
+local ranges={huntCashOut={5,1000,true},dungeonCashOut={5,20,true},windowW={600,1200},windowH={420,1000},windowX={0,1},windowY={0,1},farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
 local themesAllowed={Midnight=true,Emerald=true,Violet=true,Light=true,Ocean=true,Rose=true}
 local function profileId(name)
     if type(name)~='string' then return nil end
@@ -384,7 +384,7 @@ local function acceptHuntState(data,explicit)
         local id,wave,phase=raw.Id or raw.id,raw.Wave or raw.wave,raw.Phase or raw.phase
         if id==nil or type(wave)~='number' or type(phase)~='string'then return false end
         run={id=id,wave=wave,phase=phase,size=raw.Size or raw.size,
-            cleared=raw.Cleared or raw.cleared or 0,team=raw.Team or raw.team or {},hp=raw.Hp or raw.hp or {},
+            cleared=raw.Cleared or raw.cleared or (phase=='decide' and math.max(0,wave-1)or 0),team=raw.Team or raw.team or {},hp=raw.Hp or raw.hp or {},
             fighting=type(raw.Fight)=='table' or raw.fighting==true,away=type(raw.Away)=='table' or raw.away==true}
     elseif not data.GuildHunt and state.Run==nil and state.run==nil and state.Stats==nil and state.Week==nil then return false end
     app.hunt.view={run=run};app.hunt.version=app.hunt.version+1
@@ -1545,12 +1545,9 @@ local function runHuntLoop()
             fightingAt=nil;h.lastRun=run.id
             local id,wave,phase=run.id,run.wave,run.phase
             if phase=='decide'then
-                local alive,total=0,0
-                for _,card in ipairs(run.team)do local hp=tonumber(run.hp[card])or 0;if hp>0 then alive=alive+1;total=total+hp end end
-                local average=alive>0 and total/alive or 0
-                local withdraw=run.cleared>=app.config.huntCashOut or alive<2 or average<app.config.huntHp/100
+                local withdraw=run.cleared>=app.config.huntCashOut
                 local command=withdraw and 'CashOut' or 'Continue'
-                setStatus(command..' at Hunt checkpoint '..run.cleared)
+                setStatus(command..' at Hunt checkpoint '..run.cleared..' / target '..app.config.huntCashOut)
                 mutate(command,nil,function()
                     local r=h.view and h.view.run;return not r or r.id~=id or r.phase~=phase
                 end)
@@ -2598,9 +2595,8 @@ addToggle('Hunt','Auto Guild Hunt','HuntRunning')
 local huntLive=addStatus('Hunt','Status','Ready')
 local huntProgress=addStatus('Hunt','Wave / checkpoint','—')
 addInput('Hunt','Cash out after cleared wave','huntCashOut','10')
-addInput('Hunt','Cash out below average HP (%)','huntHp','40')
 addStatus('Hunt','Team selection','Uses your saved HUNT TEAM in the game. Set four cards with Hunt Master before enabling. No healing or revives.')
-addStatus('Hunt','Checkpoints','Cash out at the next boss checkpoint after the configured wave, or early when HP is low / fewer than two cards remain. Solo only; native battles are not cancelled.')
+addStatus('Hunt','Checkpoints','Continue at every checkpoint below the selected wave; Cash Out only when the cleared wave reaches the target. HP never triggers Cash Out. Solo only; native battles are not cancelled.')
 section('Config','Profiles')
 local nameBox=addInput('Config','Profile name','ProfileName','Default')
 local savedDrop
@@ -3017,7 +3013,7 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'huntCashOut','huntHp','farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'huntCashOut','farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     for _,id in ipairs(hardcoreIds)do uiFlags['hardcore_'..id]=app.config['hardcore_'..id]end
     uiFlags.HuntRunning=app.hunt.enabled
