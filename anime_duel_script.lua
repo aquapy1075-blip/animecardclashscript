@@ -372,7 +372,7 @@ local function findRemote(name)
     return ok and value or nil
 end
 local hardcoreIds={'broly_hc','beerus_hc','wheel_hc'}
-app.hardcore={enabled=false,worker=false,status='Ready',hits={},kills={},progress={},completed=readJson(storage..'/hardcore_cycles.json') or {},nextTry={},ready=false,busy=false}
+app.hardcore={enabled=false,worker=false,status='Ready',hits={},kills={},progress={},completed=readJson(storage..'/hardcore_cycles.json') or {},nextTry={},retrySlots={},waits={},ready=false,busy=false}
 local function loadHardcoreConfig()
     local shared=RS:FindFirstChild('Shared')
     local module=shared and shared:FindFirstChild('RaidConfig',true)
@@ -1398,11 +1398,14 @@ local function runHardcoreLoop()
         check()
         local now=Workspace:GetServerTimeNow()
         local chosen,entry,slot,earliest=nil,nil,nil,math.huge
+        local pendingRetry=false
+        h.waits={}
         for _,id in ipairs(hardcoreIds)do
             if app.config['hardcore_'..id]then
                 local raid=cfg.RAIDS[id]
                 if not raid or not raid.SOLO or not raid.HARDCORE then error('Unsupported Hardcore config: '..id,0)end
                 local cycle=raid.Slot(now)
+                if h.retrySlots[id]~=cycle then h.nextTry[id]=nil;h.retrySlots[id]=cycle end
                 local maximum=0
                 for index in ipairs(raid.MILESTONES)do maximum=math.max(maximum,raid.MilestoneDamage(index))end
                 local progress=h.progress[id]
@@ -1410,14 +1413,22 @@ local function runHardcoreLoop()
                     h.completed[id]=cycle
                     if not writeJson(storage..'/hardcore_cycles.json',h.completed)then h.storage='Cycle tracking is session-only'end
                 end
-                if h.completed[id]==cycle then earliest=math.min(earliest,raid.NextSlotAt(now))
-                elseif (h.nextTry[id] or 0)>os.clock()then earliest=math.min(earliest,now+h.nextTry[id]-os.clock())
+                if h.completed[id]==cycle then
+                    h.nextTry[id]=nil
+                    local reset=raid.NextSlotAt(now)
+                    h.waits[id]={kind='reset',at=reset,slot=cycle,name=raid.NAME}
+                    earliest=math.min(earliest,reset)
+                elseif (h.nextTry[id] or 0)>os.clock()then
+                    pendingRetry=true
+                    local retry=now+h.nextTry[id]-os.clock()
+                    h.waits[id]={kind='retry',at=retry,slot=cycle,name=raid.NAME}
+                    earliest=math.min(earliest,retry)
                 elseif not chosen then chosen=id;entry=raid;slot=cycle end
             end
         end
         if not chosen then
             h.ready=false
-            setStatus(earliest==math.huge and 'Select at least one Hardcore boss' or ('Waiting for reset / retry: '..math.max(0,math.ceil(earliest-now))..'s'))
+            setStatus(earliest==math.huge and 'Select at least one Hardcore boss' or ((pendingRetry and 'Waiting to retry a rejected Fight: ' or 'Milestones complete — waiting for next reset: ')..math.max(0,math.ceil(earliest-now))..'s'))
             pause(1)
         else
             h.ready=true
@@ -1430,7 +1441,7 @@ local function runHardcoreLoop()
             local response=call('Fight',chosen,nil,remote)
             if response.uncertain then error('RaidFight response lost; stopped without replaying.',0)end
             if not response.ok then
-                h.busy=false;h.ready=false;h.inFlightRaid=nil;h.inFlightSlot=nil;h.nextTry[chosen]=os.clock()+60
+                h.busy=false;h.ready=false;h.inFlightRaid=nil;h.inFlightSlot=nil;h.nextTry[chosen]=os.clock()+60;h.retrySlots[chosen]=slot
                 setStatus(entry.NAME..': '..tostring(response.reason)..' — retry in 60s')
                 pause(1)
             else
@@ -2467,6 +2478,8 @@ addToggle('Hardcore','Green Saiyan · reset xx:45','hardcore_broly_hc')
 addToggle('Hardcore','Destroyer Cat · reset xx:10','hardcore_beerus_hc')
 addToggle('Hardcore','Wheel General · reset xx:25','hardcore_wheel_hc')
 local hardcoreLive=addStatus('Hardcore','Status','Ready')
+local hardcoreTimers={}
+for _,id in ipairs(hardcoreIds)do hardcoreTimers[id]=addStatus('Hardcore',id,'Not selected / ready')end
 addStatus('Hardcore','Cycle tracking','Tracks confirmed Hit damage to the final milestone, then waits for reset. Enabling mid-cycle may require extra fights. Completed cycles persist per account.')
 addStatus('Hardcore','Priorities','Rift first; Hardcore waits for the current battle before starting. No automatic character teleport.')
 section('Config','Profiles')
@@ -2811,6 +2824,17 @@ local function refreshOverview()
     showStatus(bossSummary,selectedCount..' selected  ·  '..readyCount..' no known CD  ·  '..coolingCount..' cooling')
     showStatus(priorityLive,ctx.app.priority.status)
     showStatus(hardcoreLive,app.hardcore.status)
+    local serverNow=0
+    pcall(function()serverNow=Workspace:GetServerTimeNow()end)
+    for _,id in ipairs(hardcoreIds)do
+        local wait=app.hardcore.waits[id]
+        local text='Not selected / ready'
+        if wait then
+            local remaining=math.max(0,math.ceil(wait.at-serverNow))
+            text=wait.kind=='reset' and ('Milestones complete · RESET in '..ctx.cooldownText(remaining)) or ('Fight rejected · RETRY in '..ctx.cooldownText(remaining))
+        end
+        showStatus(hardcoreTimers[id],text)
+    end
     showStatus(dungeonLive,app.dungeon.status)
     local dr=app.dungeon.view and app.dungeon.view.run
     showStatus(dungeonProgress,dr and ('Room '..tostring(dr.room)..' / '..tostring(dr.phase)) or 'No active Dungeon')
