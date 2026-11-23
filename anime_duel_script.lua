@@ -42,7 +42,7 @@ assert(action and event, 'DraftAction/DraftEvent not found')
 local app = {build='studio-v20-guild-hunt',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,huntEnabled=false,huntCashOut=10,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true,huntEnabled=false,huntCashOut=10,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -207,8 +207,11 @@ end
 local function configSnapshot()
     local out={}
     for key,value in pairs(app.config) do out[key]=value end
-    out.savedModeSelection=true
-    if app.config.autoStart and not app.config.savedModeSelection then out[app.config.mode..'Enabled']=true end
+    out.savedModeSelection=true;out.autoStart=nil;out.autoReconnect=true
+    out.draftEnabled=false;out.climbEnabled=false
+    out.storyEnabled=app.story.enabled;out.dungeonEnabled=app.dungeon.enabled
+    out.hardcoreEnabled=app.hardcore and app.hardcore.enabled or false
+    out.huntEnabled=app.hunt and app.hunt.enabled or false
     return out
 end
 function app.saveProfile(name)
@@ -219,7 +222,9 @@ function app.saveProfile(name)
     end
     app.profiles.current=name;addName(name)
     local indexed=writeJson(storage..'/index.json',app.profiles.names)
-    storageStatus(indexed and ('Saved: '..name) or ('Saved '..name..'; profile index failed'))
+    local automatic=writeJson(storage..'/autoload.json',{profile=name})
+    if automatic then app.profiles.auto=name end
+    storageStatus(indexed and automatic and ('Saved: '..name) or ('Saved '..name..'; profile index or Auto Load failed'))
     return true
 end
 function app.loadProfile(name)
@@ -247,7 +252,7 @@ function app.loadProfile(name)
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
-    for _,key in ipairs({'autoReconnect','autoStart','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','hardcore_broly_hc','hardcore_beerus_hc','hardcore_wheel_hc'}) do
+    for _,key in ipairs({'antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','hardcore_broly_hc','hardcore_beerus_hc','hardcore_wheel_hc'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     local hasModes=false
@@ -256,9 +261,10 @@ function app.loadProfile(name)
         app.config[key]=incoming[key]==true
         if type(incoming[key])=='boolean' then hasModes=true end
     end
+    app.config.draftEnabled=false;app.config.climbEnabled=false;app.config.autoReconnect=true;app.config.autoStart=nil
     app.config.savedModeSelection=hasModes
     app.profiles.current=name;addName(name);storageStatus('Loaded: '..name)
-    if app.config.autoStart and app.restoreSavedModes then app.restoreSavedModes() end
+    if app.restoreSavedModes then app.restoreSavedModes() end
     return true
 end
 function app.deleteProfile(name)
@@ -1618,10 +1624,10 @@ function app.start(mode)
 end
 
 function app.restoreSavedModes()
-    if not app.config.savedModeSelection then app.start(app.config.mode);return end
+    if not app.config.savedModeSelection then return end
     local modes={}
-    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore','hunt'}) do modes[mode]=app.config[mode..'Enabled']==true end
-    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore','hunt'}) do if modes[mode] then app.start(mode) end end
+    for _,mode in ipairs({'story','dungeon','hardcore','hunt'}) do modes[mode]=app.config[mode..'Enabled']==true end
+    for _,mode in ipairs({'story','dungeon','hardcore','hunt'}) do if modes[mode] then app.start(mode) end end
 end
 
 -- Exact embedded Online UI library, upstream 831eaf86123661bbb2bad7d26605bde614a47262.
@@ -1906,7 +1912,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'ANIME DUEL',19,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'AQUA  /  NATIVE EDITION  /  v20',11,false)
+local smallTitle=newText(header,'V20',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1936,18 +1942,18 @@ local body=make('Frame',main,{
     Position=UDim2.fromOffset(175,57),Size=UDim2.new(1,-175,1,-57),
     BackgroundTransparency=1,ClipsDescendants=true,
 })
-local selectedTab='Monitor'
+local selectedTab='Boss'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Draft','Climb','Boss','Dungeon','Hardcore','Hunt','Config','Settings'}
+local tabNames={'Boss','Dungeon','Hardcore','Hunt','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,name,UDim2.new(1,-20,0,39))
     tab.Name='Nav'..name;tab.TextSize=15;tab.Font=Enum.Font.GothamMedium
-    local marker=make('Frame',tab,{Name='SelectedMarker',Position=UDim2.new(0,0,.2,0),Size=UDim2.new(0,3,.6,0),BorderSizePixel=0,Visible=false})
+    local marker=make('Frame',tab,{Name='SelectedMarker',Position=UDim2.new(0,-14,.2,0),Size=UDim2.new(0,3,.6,0),BorderSizePixel=0,Visible=false})
     corner(marker,2);skin(marker,'BackgroundColor3','accent')
     tab.LayoutOrder=i
     tab.TextXAlignment=Enum.TextXAlignment.Left
-    make('UIPadding',tab,{PaddingLeft=UDim.new(0,14)})
+    make('UIPadding',tab,{PaddingLeft=UDim.new(0,20)})
     navButtons[name]=tab
     local page=make('ScrollingFrame',body,{
         Name=name,Position=UDim2.fromOffset(0,0),Size=UDim2.fromScale(1,1),
@@ -1966,7 +1972,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='AQUA  /  NATIVE EDITION  /  v20'
+        smallTitle.Text='V20'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -2165,9 +2171,16 @@ local function openMenu(anchor,options,choose)
     menu.Size=UDim2.fromOffset(width,math.max(72,height-12))
     animate(menu,{Size=target},.14)
 end
+local function dropdownChevron(button)
+    for i,rotation in ipairs({45,-45})do
+        local arm=make('Frame',button,{Name='DropdownChevron'..i,AnchorPoint=Vector2.new(.5,.5),Position=UDim2.new(1,-17+(i-1)*4,.5,0),Size=UDim2.fromOffset(6,2),Rotation=rotation,BorderSizePixel=0})
+        skin(arm,'BackgroundColor3','muted')
+    end
+end
 local function addDropdown(tab,label,key,choices,indexed)
     local r=row(tab,label)
-    local b=uiButton(r,'--  ▾',UDim2.fromOffset(180,31))
+    local b=uiButton(r,'--',UDim2.fromOffset(180,31))
+    dropdownChevron(b)
     b.Position=UDim2.new(1,-195,.5,-15)
     b.Activated:Connect(function()
         if menu.Visible then hideMenu();return end
@@ -2178,7 +2191,7 @@ local function addDropdown(tab,label,key,choices,indexed)
     widgets[#widgets+1]=function()
         local v=flags[key]
         if indexed then v=choices[math.clamp(tonumber(v) or 1,1,#choices)] end
-        b.Text=tostring(v or '--')..'  ▾'
+        b.Text=tostring(v or '--')..''
     end
     return b
 end
@@ -2350,56 +2363,9 @@ local function clearNotifications()
     toast.queue={};toast.active=false;toast.item=nil
     toastBox.Visible=false
 end
-do
-    local descriptions={Monitor='Everything in view. Every run under control.',Draft='Build a stronger team. Climb through the bosses.',Climb='Smart card choices for your next milestone.',Boss='Your targets. Their cooldowns. One control center.',Dungeon='Build your squad. Choose your route. Collect the rewards.',Hardcore='Collect each cycle. Return automatically after reset.',Hunt='Your guild. Your team. Every wave counts.',Config='Your setup, ready for the next session.',Settings='Make this workspace feel like yours.'}
-    for _,tab in ipairs(tabNames) do
-        local hero=make('Frame',tabPages[tab],{Name=tab..'Hero',LayoutOrder=-20,Size=UDim2.new(1,-2,0,110),BorderSizePixel=0})
-        corner(hero,12);stroke(hero)
-        hero.BackgroundColor3=Color3.fromRGB(255,255,255)
-        make('UIGradient',hero,{Rotation=15,Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB(71,43,124)),ColorSequenceKeypoint.new(.6,Color3.fromRGB(26,88,124)),ColorSequenceKeypoint.new(1,Color3.fromRGB(20,111,101))})})
-        local kicker=newText(hero,'A Q U A   /   A U T O M A T I O N',10,false)
-        kicker.TextColor3=Color3.fromRGB(172,216,240);skinned[kicker]=nil
-        kicker.Position=UDim2.fromOffset(18,12);kicker.Size=UDim2.new(1,-36,0,16)
-        local title=newText(hero,tab=='Dungeon' and 'Dungeon expedition' or (tab=='Monitor' and 'Your command center' or tab),26,true)
-        gradientText(title,true)
-        title.Position=UDim2.fromOffset(18,33);title.Size=UDim2.new(1,-36,0,34)
-        local subtitle=newText(hero,descriptions[tab],12,false)
-        subtitle.TextColor3=Color3.fromRGB(187,213,235);skinned[subtitle]=nil
-        subtitle.Position=UDim2.fromOffset(18,74);subtitle.Size=UDim2.new(1,-36,0,28);subtitle.TextWrapped=true
-    end
-end
-section('Monitor','Live control center')
-local draftStatus=addStatus('Monitor','Draft Run','Ready')
-local climbStatus=addStatus('Monitor','Draft Climb','Ready')
-local bossStatus=addStatus('Monitor','Story Boss','Ready')
-local scoreStatus=addStatus('Monitor','Draft wins / losses / clears','0 / 0 / 0')
-local requestStatus=addStatus('Monitor','Story start requests','0')
-section('Draft','Auto Draft Run')
-addToggle('Draft','Auto Draft','DraftRunning')
-modeActions('Draft','draft','START DRAFT','STOP DRAFT')
-local draftLive=addStatus('Draft','Status','Ready')
-local draftRun=addStatus('Draft','Run / boss','--')
-local draftRecovery=addStatus('Draft','Recovery','--')
-local draftTeam=addStatus('Draft','Team','--')
-section('Draft','Recovery settings')
-addInput('Draft','Farm wins after loss','farm','3')
-addInput('Draft','Hard wins after boss loss','bossFarm','4')
-addInput('Draft','Action delay (seconds)','delay','0.8')
-addInput('Draft','Fight timeout (seconds)','timeout','180')
-section('Climb','Auto Draft Climb')
-addToggle('Climb','Auto pick / restart','ClimbRunning')
-modeActions('Climb','climb','START CLIMB','STOP CLIMB')
-local climbLive=addStatus('Climb','Status','Ready')
-local climbProgress=addStatus('Climb','Run / floor','--')
-local climbTeam=addStatus('Climb','Team','--')
-addStatus('Climb','Blocked at every border','Saiyan Prince / Atomic / Samurai Lost Man')
-addStatus('Climb','Teen Saski priority','+50%')
-addStatus('Climb','Other preferred cards','+25%')
-local nativeHint=addStatus('Climb','Combat','Enable native Auto Climb in the game')
-tooltip(nativeHint,'STOP CLIMB only stops this picker. The native game may continue advancing floors.')
 section('Boss','Boss control center')
 local selectedBosses
-selectedBosses=addAction('Boss','Bosses','SELECT  ▾',function()
+selectedBosses=addAction('Boss','Bosses','SELECT',function()
     if menu.Visible then hideMenu();return end
     local options={}
     for _,boss in ipairs(ctx.storyBosses) do options[#options+1]=boss.name..(boss.secret and ' [SECRET]' or '') end
@@ -2416,17 +2382,16 @@ selectedBosses=addAction('Boss','Bosses','SELECT  ▾',function()
     end)
     menuData.multi=true;menuData.selected=selected;renderMenuOptions()
 end)
+dropdownChevron(selectedBosses)
 widgets[#widgets+1]=function()
     local count=0
     for _,boss in ipairs(ctx.storyBosses) do if ctx.app.config['story_'..boss.key] then count=count+1 end end
-    selectedBosses.Text=count..' selected  ▾'
+    selectedBosses.Text=count..' selected'
 end
 addDropdown('Boss','Difficulty','storyDifficulty',{'Easy','Medium','Hard','Nightmare'})
 addToggle('Boss','Auto Start Fight','BossRunning')
 -- Story Boss is controlled only by its Auto toggle.
 local bossLive=addStatus('Boss','Status','Ready')
-local bossSummary=addStatus('Boss','Selected targets','--')
-addStatus('Boss','Attempt interval','1.5s / server cooldowns respected')
 section('Boss','Learned server cooldowns')
 local cooldownLabels={}
 for _,boss in ipairs(ctx.storyBosses) do
@@ -2464,12 +2429,13 @@ dungeonUI.current=dungeonUI.groups.Settings
 section('Dungeon','Route & difficulty')
 addDropdown('Dungeon','Difficulty','dungeonDifficulty',{'Normal','Hard','Nightmare'})
 local pathButton
-pathButton=addAction('Dungeon','Path','Balanced  ▾',function()
+pathButton=addAction('Dungeon','Path','Balanced',function()
     openMenu(pathButton,{'Balanced','Most Loot','Safest'},function(index)
         setFlag('dungeonPath',({'Balanced','Loot','Safe'})[index])
     end)
 end)
-widgets[#widgets+1]=function()pathButton.Text=({Balanced='Balanced',Loot='Most Loot',Safe='Safest'})[flags.dungeonPath]..'  ▾'end
+dropdownChevron(pathButton)
+widgets[#widgets+1]=function()pathButton.Text=({Balanced='Balanced',Loot='Most Loot',Safe='Safest'})[flags.dungeonPath]..''end
 addDropdown('Dungeon','Cash out at room','dungeonCashOut',{5,10,15,20})
 do
     local app=ctx.app
@@ -2518,12 +2484,12 @@ do
     corner(search,8);skin(search,'BackgroundColor3','row');skin(search,'TextColor3','text');skin(search,'PlaceholderColor3','muted')
     trackUI(search:GetPropertyChangedSignal('Text'):Connect(function()picker.query=search.Text;picker.page=1;picker.revision=nil;refreshPicker()end))
     local borderButton,sortButton
-    borderButton=addAction('Dungeon','Border filter','All  ▾',function()
+    borderButton=addAction('Dungeon','Border filter','All',function()
         openMenu(borderButton,{'All','Basic','Gold','Rainbow','Secret'},function(_,value)
             picker.border=value;picker.page=1;picker.revision=nil;refreshPicker()
         end)
     end)
-    sortButton=addAction('Dungeon','Sort cards','Power  ▾',function()
+    sortButton=addAction('Dungeon','Sort cards','Power',function()
         openMenu(sortButton,{'Power','Name','Quantity'},function(_,value)
             picker.sort=value;picker.page=1;picker.revision=nil;refreshPicker()
         end)
@@ -2565,7 +2531,7 @@ do
         end
         local cards=app.listDungeonCards(picker.query,picker.border,picker.sort)
         local pages=math.max(1,math.ceil(#cards/12));picker.page=math.clamp(picker.page,1,pages)
-        borderButton.Text=picker.border..'  ▾';sortButton.Text=picker.sort..'  ▾'
+        borderButton.Text=picker.border..'';sortButton.Text=picker.sort..''
         pageStatus.Text=#cards..' cards · page '..picker.page..' / '..pages..'\nClick a card to equip; click it again to remove.'
         local visible=0
         for i,t in ipairs(picker.tiles) do
@@ -2603,41 +2569,29 @@ addToggle('Hardcore','Wheel General · reset xx:25','hardcore_wheel_hc')
 local hardcoreLive=addStatus('Hardcore','Status','Ready')
 local hardcoreTimers={}
 for _,id in ipairs(hardcoreIds)do hardcoreTimers[id]=addStatus('Hardcore',id,'Not selected / ready')end
-addStatus('Hardcore','Cycle tracking','Tracks confirmed Hit damage to the final milestone, then waits for reset. Enabling mid-cycle may require extra fights. Completed cycles persist per account.')
-addStatus('Hardcore','Priorities','Rift first; Hardcore waits for the current battle before starting. No automatic character teleport.')
 section('Hunt','Guild Hunt Solo')
 addToggle('Hunt','Auto Guild Hunt','HuntRunning')
 local huntLive=addStatus('Hunt','Status','Ready')
 local huntProgress=addStatus('Hunt','Wave / checkpoint','—')
 addInput('Hunt','Cash out after cleared wave','huntCashOut','10')
-addStatus('Hunt','Team selection','Uses your saved HUNT TEAM in the game. Set four cards with Hunt Master before enabling. No healing or revives.')
-addStatus('Hunt','Checkpoints','Continue at every checkpoint below the selected wave; Cash Out only when the cleared wave reaches the target. HP never triggers Cash Out. Solo only; native battles are not cancelled.')
 section('Config','Profiles')
 local nameBox=addInput('Config','Profile name','ProfileName','Default')
 local savedDrop
-savedDrop=addAction('Config','Saved profiles','SELECT  ▾',function()
+savedDrop=addAction('Config','Saved profiles','SELECT',function()
     openMenu(savedDrop,profile.storedNames,function(_,name)
         flags.ProfileName=name;repaintControls()
     end)
 end)
+dropdownChevron(savedDrop)
 addAction('Config','Save profile','SAVE',function() ctx.saveProfile(flags.ProfileName) end)
 addAction('Config','Load profile','LOAD',function() ctx.loadProfile(flags.ProfileName) end)
 addAction('Config','Delete profile','DELETE',function() ctx.deleteProfile(flags.ProfileName) end)
-addAction('Config','Load on next execute','SET AUTO LOAD',function() ctx.setAutoProfile(flags.ProfileName) end)
-addAction('Config','Disable Auto Load','CLEAR AUTO LOAD',ctx.clearAutoProfile)
 local configStatus=addStatus('Config','Storage','Ready')
 local configAuto=addStatus('Config','Auto Load','None')
-local configModes=addStatus('Config','Saved mode preferences','--')
-section('Settings','AFK protection')
-addToggle('Settings','Anti-AFK','antiAfk')
-local afkStatus=addStatus('Settings','Anti-AFK status','Ready')
-section('Settings','Startup and connection')
-addToggle('Settings','Auto Start saved modes','autoStart')
-addToggle('Settings','Auto reconnect','autoReconnect')
-addToggle('Settings','Auto execute after hop','autoExecuteOnHop')
-local hopStatus=addStatus('Settings','Teleport execution','Ready')
+section('Settings','Server')
 addAction('Settings','Rejoin server','REJOIN',ctx.rejoinServer)
-local reconnectStatus=addStatus('Settings','Connection','Monitoring')
+addToggle('Settings','Anti-AFK','antiAfk')
+addToggle('Settings','Auto execute after hop','autoExecuteOnHop')
 section('Settings','Appearance')
 addDropdown('Settings','Theme','AO_UI_Theme',{'Midnight','Ocean','Violet','Emerald','Rose','Light'})
 local transparencyRow=row('Settings','Transparency')
@@ -2684,6 +2638,7 @@ slider.InputBegan:Connect(function(input)
     end
 end)
 
+section('Settings','Script')
 addAction('Settings','Unload script and UI','UNLOAD',function() state.stop() end)
 
 -- Responsive window interaction: all coordinates are clamped to the viewport.
@@ -2919,27 +2874,9 @@ local function refreshOverview()
     if not lifecycle.alive or not root.Enabled or window.minimized then return end
     pumpToast()
     local app=ctx.app
-    local running=(app.enabled and 1 or 0)+(app.climb.enabled and 1 or 0)+(app.story.enabled and 1 or 0)+(app.dungeon.enabled and 1 or 0)
+    local running=(app.story.enabled and 1 or 0)+(app.dungeon.enabled and 1 or 0)+(app.hardcore.enabled and 1 or 0)+(app.hunt.enabled and 1 or 0)
     showStatus(sessionBadge,running>0 and (running..' ACTIVE') or 'STANDBY')
-    showStatus(draftStatus,app.status);showStatus(draftLive,app.status)
-    showStatus(climbStatus,app.climb.status);showStatus(climbLive,app.climb.status)
-    showStatus(bossStatus,app.story.status);showStatus(bossLive,app.story.status)
-    for _,entry in ipairs({{draftStatus,app.enabled},{draftLive,app.enabled},{climbStatus,app.climb.enabled},{climbLive,app.climb.enabled},{bossStatus,app.story.enabled},{bossLive,app.story.enabled}}) do
-        local value=entry[1].Text
-        skin(entry[1],'TextColor3',value:find('ERROR:',1,true) and 'rose' or (entry[2] and 'mint' or 'muted'))
-    end
-    showStatus(scoreStatus,app.wins..' / '..app.losses..' / '..app.clears)
-    showStatus(requestStatus,tostring(app.story.requests))
-    local run=app.snapshot and app.snapshot.run
-    showStatus(draftRun,type(run)=='table' and ('#'..tostring(run.id)..' / Boss '..tostring(run.boss)) or '--')
-    showStatus(draftTeam,type(run)=='table' and type(run.team)=='table' and table.concat(run.team,' / ') or '--')
-    local recovery=app.recovery[#app.recovery]
-    showStatus(draftRecovery,recovery and (recovery.target..' / '..recovery.remaining..' wins left') or '--')
-    local climb=app.snapshot and app.snapshot.climb
-    local cr=type(climb)=='table' and climb.run
-    showStatus(climbProgress,type(cr)=='table' and ('#'..tostring(cr.id or cr.Id)..' / Floor '..tostring(cr.floor or cr.Floor)) or '--')
-    local team=type(cr)=='table' and (cr.team or cr.Team)
-    showStatus(climbTeam,type(team)=='table' and table.concat(team,' / ') or '--')
+    showStatus(bossLive,app.story.status)
     local selectedCount,readyCount,coolingCount=0,0,0
     for _,boss in ipairs(ctx.storyBosses) do
         local remaining=(app.story.cooldowns[ctx.cooldownKey(boss.id,boss.secret and 'Secret' or app.config.storyDifficulty)] or 0)-os.clock()
@@ -2951,7 +2888,6 @@ local function refreshOverview()
         end
         showStatus(cooldownLabels[boss.id],remaining>0 and ctx.cooldownText(remaining) or 'No known cooldown')
     end
-    showStatus(bossSummary,selectedCount..' selected  ·  '..readyCount..' no known CD  ·  '..coolingCount..' cooling')
     showStatus(priorityLive,ctx.app.priority.status)
     showStatus(huntLive,app.hunt.status)
     local hr=app.hunt.view and app.hunt.view.run
@@ -2985,12 +2921,7 @@ local function refreshOverview()
     end
     showStatus(configStatus,app.profiles.status)
     showStatus(configAuto,app.profiles.auto or 'OFF')
-    local preferences={}
-    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore','hunt'}) do preferences[#preferences+1]=mode..': '..(app.config[mode..'Enabled'] and 'ON' or 'OFF') end
-    showStatus(configModes,table.concat(preferences,' · '))
-    showStatus(hopStatus,app.config.autoExecuteOnHop and app.hop.status or 'OFF')
-    showStatus(afkStatus,app.config.antiAfk and app.afk.status or 'OFF')
-    showStatus(reconnectStatus,app.config.autoReconnect and app.reconnect.status or 'OFF')
+
 end
 do
     local ok,service=pcall(function()return game:GetService('RunService')end)
@@ -3028,7 +2959,7 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'huntCashOut','farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'huntCashOut','farm','bossFarm','delay','timeout','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     for _,id in ipairs(hardcoreIds)do uiFlags['hardcore_'..id]=app.config['hardcore_'..id]end
     uiFlags.HuntRunning=app.hunt.enabled
@@ -3092,4 +3023,4 @@ redraw()
 setStatus('Ready — Native UI / independent mode controls')
 monitorConnection()
 app.refreshDungeonCollection()
-if autoLoaded and app.config.autoStart then app.restoreSavedModes() end
+if autoLoaded then app.restoreSavedModes() end
