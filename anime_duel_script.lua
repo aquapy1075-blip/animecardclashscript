@@ -16,10 +16,10 @@ local playerGui = player:WaitForChild('PlayerGui')
 local env = getgenv and getgenv() or _G
 local previous = env.AnimeDuelScript
 if type(previous) == 'table' and type(previous.destroy) == 'function' then
-    if previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) then
+    if previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) or (previous.hunt and previous.hunt.worker) then
         previous.stop()
         local deadline=os.clock()+10
-        while previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) do
+        while previous.worker or (previous.climb and previous.climb.worker) or (previous.story and previous.story.worker) or (previous.dungeon and previous.dungeon.worker) or (previous.hardcore and previous.hardcore.worker) or (previous.hunt and previous.hunt.worker) do
             if os.clock()>=deadline then
                 previous.status='Old request is still pending; wait for it to finish before upgrading.'
                 return
@@ -39,10 +39,10 @@ assert(remotes, 'Remotes not found')
 local action = remotes:WaitForChild('DraftAction', 15)
 local event = remotes:WaitForChild('DraftEvent', 15)
 assert(action and event, 'DraftAction/DraftEvent not found')
-local app = {build='studio-v19-hourly-hardcore',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
+local app = {build='studio-v20-guild-hunt',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true, autoStart=false,huntEnabled=false,huntCashOut=10,huntHp=40,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -176,7 +176,7 @@ local profileDir=storage..'/profiles'
 local disk=type(readfile)=='function' and type(writefile)=='function'
 app.profiles={current='Default',auto=nil,names={},status=disk and 'Storage ready' or 'File API unavailable'}
 app.reconnect={attempts=0,lastTry=-math.huge,status='Monitoring',limit=3,interval=9}
-local ranges={dungeonCashOut={5,20,true},windowW={600,1200},windowH={420,1000},windowX={0,1},windowY={0,1},farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
+local ranges={huntCashOut={5,1000,true},huntHp={0,100,true},dungeonCashOut={5,20,true},windowW={600,1200},windowH={420,1000},windowX={0,1},windowY={0,1},farm={1,20,true},bossFarm={1,20,true},delay={.5,5},timeout={30,600},transparency={0,65}}
 local themesAllowed={Midnight=true,Emerald=true,Violet=true,Light=true,Ocean=true,Rose=true}
 local function profileId(name)
     if type(name)~='string' then return nil end
@@ -223,7 +223,7 @@ function app.saveProfile(name)
     return true
 end
 function app.loadProfile(name)
-    if app.worker or app.climb.worker or app.story.worker or app.dungeon.worker or (app.hardcore and app.hardcore.worker) then storageStatus('Stop active modes before loading a profile');return false end
+    if app.worker or app.climb.worker or app.story.worker or app.dungeon.worker or (app.hardcore and app.hardcore.worker) or (app.hunt and app.hunt.worker) then storageStatus('Stop active modes before loading a profile');return false end
     name=profileId(name)
     local data=name and readJson(profilePath(name))
     if not data or data.version~=1 or type(data.config)~='table' then
@@ -240,7 +240,7 @@ function app.loadProfile(name)
             app.config[key]=range[3] and math.floor(v) or v
         end
     end
-    if incoming.mode=='draft' or incoming.mode=='climb' or incoming.mode=='story' or incoming.mode=='dungeon' or incoming.mode=='hardcore' then app.config.mode=incoming.mode end
+    if incoming.mode=='draft' or incoming.mode=='climb' or incoming.mode=='story' or incoming.mode=='dungeon' or incoming.mode=='hardcore' or incoming.mode=='hunt' then app.config.mode=incoming.mode end
     if table.find(storyDifficulties,incoming.storyDifficulty) then app.config.storyDifficulty=incoming.storyDifficulty end
     for _,boss in ipairs(storyBosses) do
         local key='story_'..boss.key
@@ -251,7 +251,7 @@ function app.loadProfile(name)
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     local hasModes=false
-    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore'}) do
+    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore','hunt'}) do
         local key=mode..'Enabled'
         app.config[key]=incoming[key]==true
         if type(incoming[key])=='boolean' then hasModes=true end
@@ -371,6 +371,31 @@ local function findRemote(name)
     local ok,value=pcall(function()return remotes:FindFirstChild(name)end)
     return ok and value or nil
 end
+app.hunt={enabled=false,worker=false,status='Ready — uses your in-game HUNT TEAM',version=0,busy=false}
+local function acceptHuntState(data,explicit)
+    if type(data)~='table'then return false end
+    local state=data.GuildHunt or data
+    if type(state)~='table'then return false end
+    if not explicit and not data.GuildHunt then return false end
+    local raw=state.Run or state.run
+    if raw~=nil and type(raw)~='table'then return false end
+    local run
+    if raw then
+        local id,wave,phase=raw.Id or raw.id,raw.Wave or raw.wave,raw.Phase or raw.phase
+        if id==nil or type(wave)~='number' or type(phase)~='string'then return false end
+        run={id=id,wave=wave,phase=phase,size=raw.Size or raw.size,
+            cleared=raw.Cleared or raw.cleared or 0,team=raw.Team or raw.team or {},hp=raw.Hp or raw.hp or {},
+            fighting=type(raw.Fight)=='table' or raw.fighting==true,away=type(raw.Away)=='table' or raw.away==true}
+    elseif not data.GuildHunt and state.Run==nil and state.run==nil and state.Stats==nil and state.Week==nil then return false end
+    app.hunt.view={run=run};app.hunt.version=app.hunt.version+1
+    app.hunt.busy=run and run.fighting or false
+    redraw();return true
+end
+local huntEvent=findRemote('GuildHuntEvent')
+if huntEvent then track(huntEvent.OnClientEvent,function(kind,data)
+    if kind=='State'then acceptHuntState(data,true)end
+end)end
+
 local hardcoreIds={'broly_hc','beerus_hc','wheel_hc'}
 app.hardcore={enabled=false,worker=false,status='Ready',hits={},kills={},progress={},completed=readJson(storage..'/hardcore_cycles.json') or {},nextTry={},retrySlots={},waits={},ready=false,busy=false}
 local function loadHardcoreConfig()
@@ -411,6 +436,7 @@ local function loadRiftConfig()
     return riftConfig
 end
 local function acceptPrioritySnapshot(snapshot)
+    acceptHuntState(snapshot,false)
     if type(snapshot)~='table' then return end
     if type(snapshot.Rifts)=='table' then
         local record=snapshot.Rifts.Visit
@@ -516,12 +542,14 @@ local function priorityReason()
     if rift then app.priority.status=rift;return rift end
     if app.bosses.world or app.bosses.raid then return 'Paused — waiting for World/Raid boss death' end
     local ctx=controller();local p=app.priority
+    if ctx~=app.hunt and app.hunt.enabled and app.hunt.busy then return 'Paused — Guild Hunt battle in progress'end
     if ctx==app.hardcore then
         local dr=app.dungeon.view and app.dungeon.view.run
         if next(p.battles) or p.lease or (dr and dr.fighting)then return 'Hardcore waiting for the current battle to finish'end
     elseif app.hardcore.enabled and (app.hardcore.ready or app.hardcore.busy)then
         return 'Paused — hourly Hardcore Raid has priority'
     end
+    if ctx==app.hunt and (p.lease or (not app.hunt.busy and next(p.battles)))then return 'Guild Hunt waiting for the current battle'end
     if app.config.sequenceBossDungeon and p.canSequence then
         local run=app.dungeon.view and app.dungeon.view.run
         local fighting=run and (run.fighting or (app.dungeon.view and app.dungeon.view.battle))
@@ -767,6 +795,12 @@ local function call(name,a,b,remote)
                 end
                 break
             end
+        end
+    end
+    if remote and remote==findRemote('GuildHuntAction')then
+        for i=2,values.n do
+            local value=values[i]
+            if acceptHuntState(value,true)or(type(value)=='table' and (acceptHuntState(value.state,true)or acceptHuntState(value.view,true)))then break end
         end
     end
     if remote and remote==findRemote('DungeonAction') then
@@ -1457,8 +1491,84 @@ local function runHardcoreLoop()
     end
 end
 
+local function runHuntLoop()
+    local remote=findRemote('GuildHuntAction')
+    if not remote then error('GuildHuntAction unavailable.',0)end
+    local h=app.hunt
+    local lastRead=-math.huge
+    local function sync()
+        if os.clock()-lastRead<1 then return end
+        lastRead=os.clock()
+        local getter=findRemote('GetSnapshot')
+        if not getter then return end
+        while app.requestBusy do check();task.wait(.05)end
+        check();app.requestBusy=true
+        local ok,data=pcall(function()return getter:InvokeServer()end)
+        app.requestBusy=false
+        check();if ok then acceptHuntState(data,false)end
+    end
+    local function mutate(name,arg,confirmed)
+        local result=call(name,arg,nil,remote)
+        if result.uncertain then error(name..' Hunt response lost; no replay was sent.',0)end
+        if not result.ok then
+            sync()
+            if not h.view then error('Hunt '..name..' rejected: '..tostring(result.reason)..'; no Hunt State available.',0)end
+            setStatus('Hunt '..name..' rejected: '..tostring(result.reason));pause(3);return false
+        end
+        if not waitFor(function()sync();return confirmed()end,15)then
+            error('Hunt '..name..' not confirmed by State; stopped without resending.',0)
+        end
+        return true
+    end
+    sync()
+    local fightingAt
+    while h.enabled do
+        check()
+        sync()
+        if not h.busy and awaitPriority()then fightingAt=nil end
+        sync()
+        local run=h.view and h.view.run
+        if not run then
+            local old=h.lastRun
+            setStatus('Starting Solo Hunt with your in-game HUNT TEAM')
+            mutate('Start',1,function()
+                local r=h.view and h.view.run;return r and r.id~=old
+            end)
+            pause(.5)
+        elseif run.size~=1 then error('Auto Hunt only controls SOLO runs; party runs were left unchanged.',0)
+        elseif run.fighting or run.away then
+            fightingAt=fightingAt or os.clock()
+            if os.clock()-fightingAt>app.config.timeout then error('Hunt fight timed out; no duplicate Next was sent.',0)end
+            setStatus('Hunt wave '..run.wave..(run.away and ' — waiting for battle recovery' or ' — fighting'))
+            pause(.5)
+        else
+            fightingAt=nil;h.lastRun=run.id
+            local id,wave,phase=run.id,run.wave,run.phase
+            if phase=='decide'then
+                local alive,total=0,0
+                for _,card in ipairs(run.team)do local hp=tonumber(run.hp[card])or 0;if hp>0 then alive=alive+1;total=total+hp end end
+                local average=alive>0 and total/alive or 0
+                local withdraw=run.cleared>=app.config.huntCashOut or alive<2 or average<app.config.huntHp/100
+                local command=withdraw and 'CashOut' or 'Continue'
+                setStatus(command..' at Hunt checkpoint '..run.cleared)
+                mutate(command,nil,function()
+                    local r=h.view and h.view.run;return not r or r.id~=id or r.phase~=phase
+                end)
+                if withdraw then pause(3)end
+            elseif phase=='fight'then
+                setStatus('Starting Hunt wave '..wave)
+                mutate('Next',nil,function()
+                    local r=h.view and h.view.run
+                    return not r or r.id~=id or r.fighting or r.wave~=wave or r.phase~=phase
+                end)
+            else error('Unknown Hunt phase: '..phase,0)end
+            pause(.5)
+        end
+    end
+end
+
 local function stopController(ctx)
-    local mode=ctx==app.hardcore and 'hardcore' or ctx==app.climb and 'climb' or (ctx==app.story and 'story' or (ctx==app.dungeon and 'dungeon' or 'draft'))
+    local mode=ctx==app.hunt and 'hunt' or ctx==app.hardcore and 'hardcore' or ctx==app.climb and 'climb' or (ctx==app.story and 'story' or (ctx==app.dungeon and 'dungeon' or 'draft'))
     app.config[mode..'Enabled']=false;app.config.savedModeSelection=true
     ctx.enabled=false
     ctx.status=ctx.worker and 'Stopping — current server fight continues' or 'Stopped'
@@ -1468,13 +1578,14 @@ function app.stop(mode)
     elseif mode=='climb' then stopController(app.climb)
     elseif mode=='story' then stopController(app.story)
     elseif mode=='dungeon' then stopController(app.dungeon)
+    elseif mode=='hunt' then stopController(app.hunt)
     elseif mode=='hardcore' then stopController(app.hardcore)
-    else stopController(app);stopController(app.climb);stopController(app.story);stopController(app.dungeon);stopController(app.hardcore) end
+    else stopController(app);stopController(app.climb);stopController(app.story);stopController(app.dungeon);stopController(app.hardcore);stopController(app.hunt) end
     redraw()
 end
 function app.start(mode)
-    if mode~='draft' and mode~='climb' and mode~='story' and mode~='dungeon' and mode~='hardcore' then mode=app.config.mode end
-    local ctx=mode=='hardcore' and app.hardcore or mode=='climb' and app.climb or (mode=='story' and app.story or (mode=='dungeon' and app.dungeon or app))
+    if mode~='draft' and mode~='climb' and mode~='story' and mode~='dungeon' and mode~='hardcore' and mode~='hunt' then mode=app.config.mode end
+    local ctx=mode=='hunt' and app.hunt or mode=='hardcore' and app.hardcore or mode=='climb' and app.climb or (mode=='story' and app.story or (mode=='dungeon' and app.dungeon or app))
     if not app.alive or ctx.worker then return end
     app.config.mode=mode -- Auto Load preference only; never selects the live worker.
     app.config[mode..'Enabled']=true;app.config.savedModeSelection=true
@@ -1483,7 +1594,7 @@ function app.start(mode)
     task.spawn(function()
         local thread=coroutine.running()
         workerContexts[thread]=ctx
-        local ok,err=pcall(mode=='hardcore' and runHardcoreLoop or mode=='climb' and runClimbLoop or (mode=='story' and runStoryLoop or (mode=='dungeon' and runDungeonLoop or runLoop)))
+        local ok,err=pcall(mode=='hunt' and runHuntLoop or mode=='hardcore' and runHardcoreLoop or mode=='climb' and runClimbLoop or (mode=='story' and runStoryLoop or (mode=='dungeon' and runDungeonLoop or runLoop)))
         if ctx==app.hardcore then ctx.ready=false;ctx.busy=false;ctx.inFlightRaid=nil;ctx.inFlightSlot=nil end
         ctx.enabled=false;ctx.worker=false
         if not ok and tostring(err)~='__STOP__' then
@@ -1497,8 +1608,8 @@ end
 function app.restoreSavedModes()
     if not app.config.savedModeSelection then app.start(app.config.mode);return end
     local modes={}
-    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore'}) do modes[mode]=app.config[mode..'Enabled']==true end
-    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore'}) do if modes[mode] then app.start(mode) end end
+    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore','hunt'}) do modes[mode]=app.config[mode..'Enabled']==true end
+    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore','hunt'}) do if modes[mode] then app.start(mode) end end
 end
 
 -- Exact embedded Online UI library, upstream 831eaf86123661bbb2bad7d26605bde614a47262.
@@ -1783,7 +1894,7 @@ corner(gameIconImage,10)
 local bigTitle=newText(header,'ANIME DUEL',19,true)
 bigTitle.Position=UDim2.fromOffset(62,10)
 bigTitle.Size=UDim2.fromOffset(250,22)
-local smallTitle=newText(header,'AQUA  /  NATIVE EDITION  /  v19',11,false)
+local smallTitle=newText(header,'AQUA  /  NATIVE EDITION  /  v20',11,false)
 smallTitle.Position=UDim2.fromOffset(63,32)
 smallTitle.Size=UDim2.fromOffset(260,16)
 local sessionBadge=newText(header,'● READY',11,true)
@@ -1816,7 +1927,7 @@ local body=make('Frame',main,{
 local selectedTab='Monitor'
 local navButtons={}
 local tabPages={}
-local tabNames={'Monitor','Draft','Climb','Boss','Dungeon','Hardcore','Config','Settings'}
+local tabNames={'Monitor','Draft','Climb','Boss','Dungeon','Hardcore','Hunt','Config','Settings'}
 for i,name in ipairs(tabNames) do
     local tab=uiButton(sidebar,name,UDim2.new(1,-20,0,39))
     tab.Name='Nav'..name;tab.TextSize=15;tab.Font=Enum.Font.GothamMedium
@@ -1843,7 +1954,7 @@ for i,name in ipairs(tabNames) do
     tabPages[name]=page
     tab.MouseButton1Click:Connect(function()
         selectedTab=name
-        smallTitle.Text='AQUA  /  NATIVE EDITION  /  v19'
+        smallTitle.Text='AQUA  /  NATIVE EDITION  /  v20'
         for title,p in pairs(tabPages) do p.Visible=(title==name) end
         page.Position=UDim2.fromOffset(0,9)
         animate(page,{Position=UDim2.fromOffset(0,0)},.18)
@@ -2228,7 +2339,7 @@ local function clearNotifications()
     toastBox.Visible=false
 end
 do
-    local descriptions={Monitor='Everything in view. Every run under control.',Draft='Build a stronger team. Climb through the bosses.',Climb='Smart card choices for your next milestone.',Boss='Your targets. Their cooldowns. One control center.',Dungeon='Build your squad. Choose your route. Collect the rewards.',Hardcore='Collect each cycle. Return automatically after reset.',Config='Your setup, ready for the next session.',Settings='Make this workspace feel like yours.'}
+    local descriptions={Monitor='Everything in view. Every run under control.',Draft='Build a stronger team. Climb through the bosses.',Climb='Smart card choices for your next milestone.',Boss='Your targets. Their cooldowns. One control center.',Dungeon='Build your squad. Choose your route. Collect the rewards.',Hardcore='Collect each cycle. Return automatically after reset.',Hunt='Your guild. Your team. Every wave counts.',Config='Your setup, ready for the next session.',Settings='Make this workspace feel like yours.'}
     for _,tab in ipairs(tabNames) do
         local hero=make('Frame',tabPages[tab],{Name=tab..'Hero',LayoutOrder=-20,Size=UDim2.new(1,-2,0,110),BorderSizePixel=0})
         corner(hero,12);stroke(hero)
@@ -2482,6 +2593,14 @@ local hardcoreTimers={}
 for _,id in ipairs(hardcoreIds)do hardcoreTimers[id]=addStatus('Hardcore',id,'Not selected / ready')end
 addStatus('Hardcore','Cycle tracking','Tracks confirmed Hit damage to the final milestone, then waits for reset. Enabling mid-cycle may require extra fights. Completed cycles persist per account.')
 addStatus('Hardcore','Priorities','Rift first; Hardcore waits for the current battle before starting. No automatic character teleport.')
+section('Hunt','Guild Hunt Solo')
+addToggle('Hunt','Auto Guild Hunt','HuntRunning')
+local huntLive=addStatus('Hunt','Status','Ready')
+local huntProgress=addStatus('Hunt','Wave / checkpoint','—')
+addInput('Hunt','Cash out after cleared wave','huntCashOut','10')
+addInput('Hunt','Cash out below average HP (%)','huntHp','40')
+addStatus('Hunt','Team selection','Uses your saved HUNT TEAM in the game. Set four cards with Hunt Master before enabling. No healing or revives.')
+addStatus('Hunt','Checkpoints','Cash out at the next boss checkpoint after the configured wave, or early when HP is low / fewer than two cards remain. Solo only; native battles are not cancelled.')
 section('Config','Profiles')
 local nameBox=addInput('Config','Profile name','ProfileName','Default')
 local savedDrop
@@ -2823,6 +2942,9 @@ local function refreshOverview()
     end
     showStatus(bossSummary,selectedCount..' selected  ·  '..readyCount..' no known CD  ·  '..coolingCount..' cooling')
     showStatus(priorityLive,ctx.app.priority.status)
+    showStatus(huntLive,app.hunt.status)
+    local hr=app.hunt.view and app.hunt.view.run
+    showStatus(huntProgress,hr and ('Wave '..hr.wave..' / '..hr.phase..' / '..hr.cleared..' cleared')or'No active hunt')
     showStatus(hardcoreLive,app.hardcore.status)
     local serverNow=0
     pcall(function()serverNow=Workspace:GetServerTimeNow()end)
@@ -2853,7 +2975,7 @@ local function refreshOverview()
     showStatus(configStatus,app.profiles.status)
     showStatus(configAuto,app.profiles.auto or 'OFF')
     local preferences={}
-    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore'}) do preferences[#preferences+1]=mode..': '..(app.config[mode..'Enabled'] and 'ON' or 'OFF') end
+    for _,mode in ipairs({'draft','climb','story','dungeon','hardcore','hunt'}) do preferences[#preferences+1]=mode..': '..(app.config[mode..'Enabled'] and 'ON' or 'OFF') end
     showStatus(configModes,table.concat(preferences,' · '))
     showStatus(hopStatus,app.config.autoExecuteOnHop and app.hop.status or 'OFF')
     showStatus(afkStatus,app.config.antiAfk and app.afk.status or 'OFF')
@@ -2895,9 +3017,10 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'huntCashOut','huntHp','farm','bossFarm','delay','timeout','autoStart','autoReconnect','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     for _,id in ipairs(hardcoreIds)do uiFlags['hardcore_'..id]=app.config['hardcore_'..id]end
+    uiFlags.HuntRunning=app.hunt.enabled
     uiFlags.HardcoreRunning=app.hardcore.enabled
     uiFlags.DungeonRunning=app.dungeon.enabled;uiFlags.DraftRunning=app.enabled;uiFlags.ClimbRunning=app.climb.enabled;uiFlags.BossRunning=app.story.enabled
     local selection={}
@@ -2909,7 +3032,7 @@ end
 local function setUIFlag(key,value)
     uiFlags.InputRevision=(tonumber(uiFlags.InputRevision) or 0)+1
     if key=='ProfileName' then uiFlags.ProfileName=value;return end
-    local modes={HardcoreRunning='hardcore',DraftRunning='draft',ClimbRunning='climb',BossRunning='story',DungeonRunning='dungeon'}
+    local modes={HuntRunning='hunt',HardcoreRunning='hardcore',DraftRunning='draft',ClimbRunning='climb',BossRunning='story',DungeonRunning='dungeon'}
     if modes[key] then if value then app.start(modes[key]) else app.stop(modes[key]) end;return end
     local configKey=flagKeys[key] or key
     local range=ranges[configKey]
