@@ -602,7 +602,7 @@ drain()
 local current=env.AnimeDuelScript
 assert(current~=old,'must replace old app, not merely stop and return')
 assert(not old.alive and old.Root.Parent==nil,'old UI must be destroyed')
-assert(current.build=='studio-v19-hourly-hardcore','visible versioned build')
+assert(current.build=='studio-v20-guild-hunt','visible versioned build')
 assert(not current.worker and not current.climb.worker,'upgrade loads clean controllers')
 current.destroy()
 ''')
@@ -1719,4 +1719,61 @@ schedule(3,function()
 end)
 schedule(6,function()assert(hfights==2,'new cycle is not held by old retry');app.stop('hardcore')end)
 drain();app.destroy()
+''')
+
+hunt_mock=r'''
+local he={OnClientEvent=signal()};local hs={Stats={}};local hc={};local huntStarts=0;local huntCashouts=0;local huntContinues=0
+local function huntState()he.OnClientEvent:Fire('State',hs)end
+local huntRemote={InvokeServer=function(_,command,arg)
+ hc[#hc+1]={command,arg}
+ if command=='Start'then
+  assert(arg==1);huntStarts=huntStarts+1
+  if huntStarts==2 then env.AnimeDuelScript.stop('hunt');return {ok=true}end
+  hs.Run={Id='hunt1',Size=1,Wave=1,Cleared=0,Phase='fight',Team={'a','b','c','d'},Hp={a=1,b=1,c=1,d=1}};huntState();return {ok=true}
+ elseif command=='Next'then
+  local r=hs.Run;assert(arg==nil and r.Phase=='fight' and r.Fight==nil,'no duplicate Next')
+  r.Fight={Id='wave'..r.Wave};huntState()
+  schedule(.2,function()r.Fight=nil;r.Cleared=r.Wave;r.Wave=r.Wave+1;if r.Cleared%5==0 then r.Phase='decide'end;huntState()end)
+ elseif command=='Continue'then
+  assert(hs.Run.Phase=='decide' and arg==nil);huntContinues=huntContinues+1;hs.Run.Phase='fight';huntState()
+ elseif command=='CashOut'then
+  assert(hs.Run.Phase=='decide' and arg==nil);huntCashouts=huntCashouts+1;hs.Run=nil;huntState()
+ else error('unexpected Hunt command '..command)end
+ return {ok=true}
+end}
+remotes.FindFirstChild=function(_,name)
+ if name=='GuildHuntAction'then return huntRemote elseif name=='GuildHuntEvent'then return he
+ elseif name=='GetSnapshot'then return {InvokeServer=function()return {GuildHunt=hs}end}end
+end
+'''
+run_case('Guild Hunt Solo uses captured commands, continues at five, cashes at ten and restarts',mock+hunt_mock,r'''
+local app=env.AnimeDuelScript
+app.start('hunt');drain()
+assert(huntStarts==2 and huntContinues==1 and huntCashouts==1)
+local waves=0;for _,c in ipairs(hc)do if c[1]=='Next'then waves=waves+1 end end
+assert(waves==10 and not app.hunt.worker and app.hunt.status=='Stopped',app.hunt.status)
+app.destroy()
+''')
+run_case('Guild Hunt does not replay an accepted but unconfirmed Start',mock+hunt_mock+r'''
+huntRemote.InvokeServer=function(_,command,arg)hc[#hc+1]={command,arg};return {ok=true}end
+''',r'''
+local app=env.AnimeDuelScript;app.start('hunt');drain()
+assert(#hc==1 and hc[1][1]=='Start')
+assert(app.hunt.status:find('not confirmed',1,true),app.hunt.status)
+app.destroy()
+''')
+run_case('Guild Hunt refuses to control an existing party run',mock+hunt_mock+r'''
+hs.Run={Id='party',Size=2,Wave=6,Cleared=5,Phase='decide',Team={'a','b'},Hp={a=1,b=1}}
+''',r'''
+local app=env.AnimeDuelScript;app.start('hunt');drain()
+assert(#hc==0 and app.hunt.status:find('SOLO',1,true),app.hunt.status)
+app.destroy()
+''')
+run_case('Guild Hunt cashes out at a checkpoint when HP falls below configured threshold',mock+hunt_mock+r'''
+hs.Run={Id='low',Size=1,Wave=6,Cleared=5,Phase='decide',Team={'a','b','c','d'},Hp={a=.2,b=.2,c=.2,d=.2}}
+huntStarts=1
+''',r'''
+local app=env.AnimeDuelScript;app.start('hunt');drain()
+assert(huntCashouts==1 and huntContinues==0)
+app.destroy()
 ''')
