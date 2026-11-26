@@ -190,12 +190,13 @@ print('PASS: UI loads idle, themes/mobile layout, Start/Stop, single worker, pre
 def run_case(name, fixture, assertions):
     obsolete=['actual STOP DRAFT','actual STOP CLIMB','exact Online library keeps','Auto Start runs only','mode preferences load without','Mode preferences load without','status cards show full']
     if any(term in name for term in obsolete): return
-    if any(x in name.lower() for x in ['dungeon teleports','stop cancels rejected teleports','missing room guard']): return
     with tempfile.TemporaryDirectory(prefix='anime-duel-') as directory:
         path=Path(directory)/'test.luau'
         path.write_text(fixture+'\nlocal function loadScript()\n'+src+'\nend\nloadScript()\n'+assertions)
         result=subprocess.run([binary,str(path)],capture_output=True,text=True)
         if result.returncode:
+            print("FAILED:",name)
+            Path("/tmp/failed-duel-test.luau").write_text(path.read_text())
             print(result.stdout)
             print(result.stderr)
             raise SystemExit(result.returncode)
@@ -1090,6 +1091,7 @@ assert(app.config.dungeonWalk==true,'auto teleport on by default')
 app.start('dungeon');schedule(.1,dstate);drain()
 assert(starts==2 and portalTransfers==0,'teleport reaches all 20 rooms without walking to portal')
 assert(#teleports>15 and #moves==0,'teleports performed without MoveTo')
+assert(now<24,'20 one-second mock fights must not accumulate fixed action delays: '..now)
 assert(app.dungeon.status=='Stopped',app.dungeon.status)
 app.destroy()
 ''')
@@ -1610,7 +1612,7 @@ assert(loaded and env.AnimeDuelScript.Root)
 env.AnimeDuelScript.destroy()
 ''')
 
-run_case('Native frontend retains team cards and Dungeon workspaces without teleport controls',mock,r'''
+run_case('Native frontend retains team cards and Dungeon workspaces with room teleport control',mock,r'''
 local app=env.AnimeDuelScript
 local team,cards,tab=false,false,false
 for _,o in ipairs(objects)do
@@ -1619,7 +1621,7 @@ for _,o in ipairs(objects)do
  if o.Name=='NavDungeon' then tab=true;assert(o.Text=='Dungeon')end
  assert(o.Text~='Teleport to Dungeon guards' and o.Text~='START BOSS' and o.Text~='STOP BOSS')
 end
-assert(team and cards and tab and app.config.dungeonWalk==false)
+assert(team and cards and tab and app.config.dungeonWalk==true)
 assert(not app.uiError,tostring(app.uiError))
 app.destroy()
 ''')
@@ -1949,5 +1951,13 @@ local app=env.AnimeDuelScript;app.config.autoRealm=true;realmSnapshot={Realm=fal
 app.realm.tick();assert(#uses==1 and app.realm.pending)
 loadScript();app=env.AnimeDuelScript;app.config.autoRealm=true
 app.realm.tick();assert(#uses==1 and app.realm.pending,'reload must not replay accepted UseItem')
+app.destroy()
+''')
+
+run_case('Room teleport preference persists and can be disabled without removing other dungeon settings',mock+file_mock,r'''
+local app=env.AnimeDuelScript
+assert(app.config.dungeonWalk)
+app.config.dungeonWalk=false;assert(app.saveProfile('NoTeleport'))
+app.config.dungeonWalk=true;assert(app.loadProfile('NoTeleport'));assert(app.config.dungeonWalk==false)
 app.destroy()
 ''')
