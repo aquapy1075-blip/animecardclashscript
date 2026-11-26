@@ -42,7 +42,7 @@ assert(action and event, 'DraftAction/DraftEvent not found')
 local app = {build='studio-v20-guild-hunt',alive=true, enabled=false, worker=false, bosses={}, connections={}, snapshot=nil,
     version=0, resultVersion=0, wins=0, losses=0, clears=0,
     status='Ready — press START', recovery={}, stage=nil, runId=nil,
-    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true,autoRealm=false,realmPotion='Kimetsu',huntEnabled=false,huntCashOut=10,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=false,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
+    config={farm=3, bossFarm=4, delay=.8, timeout=180, theme='Midnight', transparency=15, autoExecuteOnHop=true,antiAfk=true,autoReconnect=true,autoRealm=false,realmPotion='Kimetsu',huntEnabled=false,huntCashOut=10,hardcoreEnabled=false,hardcore_broly_hc=false,hardcore_beerus_hc=false,hardcore_wheel_hc=true,savedModeSelection=false,draftEnabled=false,climbEnabled=false,storyEnabled=false,dungeonEnabled=false,pauseForRift=true,sequenceBossDungeon=true,mode='draft', dungeonWalk=true,dungeonDifficulty='Normal',dungeonPath='Balanced',dungeonCashOut=20,dungeonTeam='blonde_commander_rainbow,blue_duo_gold,first_emperor_gold,rose_evil_roku_gold',dungeonReserves='barrier_pirate_rainbow,blue_roku_gold', storyDifficulty='Nightmare', storyInterval=1.5, windowW=805,windowH=565,windowX=.5,windowY=.5, story_purple_forest=false, story_android_games=false, story_hollow_world=false, story_purple_town=false, story_toy_kingdom=true}}
 app.climb={enabled=false,worker=false,status='Ready — press START CLIMB'}
 app.dungeon={enabled=false,worker=false,status='Ready — press START DUNGEON',version=0,history={},historySeen={}}
 app.story={enabled=false,worker=false,status='Ready — press START BOSS',requests=0,cooldowns={},nextAttemptAt=0}
@@ -253,7 +253,7 @@ function app.loadProfile(name)
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     if themesAllowed[incoming.theme] then app.config.theme=incoming.theme end
-    for _,key in ipairs({'autoRealm','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','hardcore_broly_hc','hardcore_beerus_hc','hardcore_wheel_hc'}) do
+    for _,key in ipairs({'dungeonWalk','autoRealm','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','hardcore_broly_hc','hardcore_beerus_hc','hardcore_wheel_hc'}) do
         if type(incoming[key])=='boolean' then app.config[key]=incoming[key] end
     end
     local hasModes=false
@@ -820,12 +820,12 @@ local function pause(seconds)
     while os.clock()<untilAt do check(); task.wait(.1) end
     check()
 end
-local function waitFor(predicate, seconds)
+local function waitFor(predicate, seconds, interval)
     local untilAt=os.clock()+seconds
     repeat
         check()
         if predicate() then return true end
-        task.wait(.1)
+        task.wait(interval or .1)
     until os.clock()>=untilAt
     return false
 end
@@ -1406,6 +1406,38 @@ local function dungeonCards(text,count)
     if #out~=count then error('Dungeon requires '..count..' card IDs in this field.',0) end
     return out,seen
 end
+-- Range checks remain server-authoritative. Never Fight while a teleport is unconfirmed.
+local function approachDungeonGuard(run)
+    if not app.config.dungeonWalk then return true end
+    check()
+    local folder=Workspace:FindFirstChild('Dungeon Guards')
+    local guard
+    if folder then
+        for _,obj in ipairs(folder:GetDescendants()) do
+            if obj:IsA('Model') and obj:GetAttribute('DungeonRoom')==run.room then guard=obj;break end
+        end
+    end
+    if not guard then setStatus('Waiting for Room '..run.room..' NPC to stream in');pause(.3);return false end
+    local character=player.Character
+    local root=character and character:FindFirstChild('HumanoidRootPart')
+    local humanoid=character and character:FindFirstChildOfClass('Humanoid')
+    if not root or not humanoid or humanoid.Health<=0 then setStatus('Waiting for character');pause(.3);return false end
+    local targetRoot=guard:FindFirstChild('HumanoidRootPart')
+    local target=targetRoot and targetRoot.Position or guard:GetPivot().Position
+    if (root.Position-target).Magnitude>12 then
+        setStatus('Teleporting to Room '..run.room..' NPC')
+        local ok=pcall(function()root.CFrame=CFrame.new(target.X,target.Y+3,target.Z+5)end)
+        if not ok then setStatus('NPC teleport unavailable');pause(.5);return false end
+        task.wait(.05);check()
+    end
+    local current=app.dungeon.view and app.dungeon.view.run
+    if not current or current.id~=run.id or current.room~=run.room or current.phase~=run.phase
+        or player.Character~=character or humanoid.Health<=0 or not guard.Parent then return false end
+    if (root.Position-target).Magnitude>18 then
+        setStatus('Waiting for Room '..run.room..' NPC teleport to settle');pause(.5);return false
+    end
+    return true
+end
 local function runDungeonLoop()
     local remote=remotes:FindFirstChild('DungeonAction')
     if not remote then error('DungeonAction not found.',0) end
@@ -1417,7 +1449,7 @@ local function runDungeonLoop()
             setStatus('Entering Dungeon')
             local result=call('Enter',nil,nil,remote)
             if result.uncertain then error('Enter response lost; paused without replaying: '..tostring(result.reason),0) end
-            if result.ok then pause(1);return end
+            if result.ok then task.wait(.05);check();return end
             if not tostring(result.reason):lower():find('already teleporting',1,true) then
                 error('Enter rejected: '..tostring(result.reason),0)
             end
@@ -1447,9 +1479,10 @@ local function runDungeonLoop()
                 end
             end
             setStatus(name..' rejected: '..tostring(result.reason)..' — move near the guard/door if requested')
-            pause(3);return false
+            local rangeError=tostring(result.reason):lower():find('walk up',1,true)
+            pause(rangeError and .3 or 3);return false
         end
-        if not waitFor(function()return app.dungeon.version>before and confirmed()end,12) then
+        if not waitFor(function()return app.dungeon.version>before and confirmed()end,12,.03) then
             error(name..' not confirmed by Dungeon State; stopped without resending.',0)
         end
         return true
@@ -1471,7 +1504,7 @@ local function runDungeonLoop()
                     if not app.dungeon.collection.cards[id] then error('Dungeon card is no longer owned; update the team in the card picker.',0) end
                 end end
             end
-            if view.last then setStatus('Dungeon ended — preparing the next run');pause(1) end
+            if view.last then setStatus('Dungeon ended — preparing the next run') end
             local old=view.last and view.last.run
             setStatus('Starting Dungeon / '..app.config.dungeonDifficulty)
             mutate('Start',{team=team,reserves=reserves,difficulty=app.config.dungeonDifficulty},function()
@@ -1486,7 +1519,7 @@ local function runDungeonLoop()
             waitingSince=waitingSince or os.clock()
             setStatus(run.away and 'Waiting for server to recover the previous fight' or ('Fighting room '..tostring(run.room)))
             if os.clock()-waitingSince>app.config.timeout then error('Dungeon fight State timed out; no duplicate Fight was sent.',0) end
-            pause(.1)
+            task.wait(.03);check()
         else
             waitingSince=nil
             local id,room=run.id,run.room
@@ -1496,6 +1529,7 @@ local function runDungeonLoop()
                 enteredRun=nil
                 continue
             end
+            if not approachDungeonGuard(run) then continue end
             if run.phase=='fight' then
                 setStatus('Starting room '..room)
                 mutate('Fight',room,function()
@@ -1519,7 +1553,7 @@ local function runDungeonLoop()
                     local r=current();return not r or r.id~=id or r.phase~='checkpoint'
                 end)
             else error('Unknown Dungeon phase: '..tostring(run.phase),0) end
-            pause(.1)
+            task.wait(.03);check()
         end
     end
 end
@@ -2501,6 +2535,7 @@ end
 dungeonUI.current=dungeonUI.groups.Overview
 section('Dungeon','Expedition control')
 addToggle('Dungeon','Auto Dungeon','DungeonRunning')
+addToggle('Dungeon','Teleport to room NPCs','dungeonWalk')
 -- Auto Dungeon is controlled only by its toggle.
 local dungeonLive=addStatus('Dungeon','Status','Ready — Start requests the server directly')
 local dungeonProgress=addStatus('Dungeon','Room / phase','--')
@@ -2636,7 +2671,7 @@ addToggle('Dungeon','Pause autos for native Rift','pauseForRift')
 addToggle('Dungeon','Prioritize ready Story Boss','sequenceBossDungeon')
 local priorityLive=addStatus('Dungeon','Battle priority','Ready')
 addStatus('Dungeon','Checkpoint policy','Withdraw when in trouble; Safest also banks early when injured')
-addStatus('Dungeon','Movement','No automatic teleport between rooms. Enter still returns you to the run.')
+addStatus('Dungeon','Movement','Teleports to the current room NPC before actions; waits for server State between steps.')
 dungeonUI.current=dungeonUI.groups.History
 section('Dungeon','Last 10 runs · time tracked this session')
 local dungeonHistory={}
@@ -3044,7 +3079,7 @@ local profileView={}
 local flagKeys={AO_UI_Theme='theme',AO_UI_Transparency='transparency',AO_UI_WindowW='windowW',AO_UI_WindowH='windowH',AO_UI_WindowX='windowX',AO_UI_WindowY='windowY'}
 local function syncUI()
     for key,configKey in pairs(flagKeys) do uiFlags[key]=app.config[configKey] end
-    for _,key in ipairs({'autoRealm','realmPotion','huntCashOut','farm','bossFarm','delay','timeout','autoRealm','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
+    for _,key in ipairs({'dungeonWalk','autoRealm','realmPotion','huntCashOut','farm','bossFarm','delay','timeout','autoRealm','antiAfk','autoExecuteOnHop','pauseForRift','sequenceBossDungeon','storyDifficulty','dungeonDifficulty','dungeonPath','dungeonCashOut','dungeonTeam','dungeonReserves'}) do uiFlags[key]=app.config[key] end
     uiFlags.DungeonCollectionRevision=app.dungeon.collection.revision..'/'..app.dungeon.collection.status
     for _,id in ipairs(hardcoreIds)do uiFlags['hardcore_'..id]=app.config['hardcore_'..id]end
     uiFlags.HuntRunning=app.hunt.enabled
