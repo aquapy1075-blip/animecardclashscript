@@ -4,10 +4,20 @@ import os,shutil,subprocess,tempfile
 main=(Path(__file__).resolve().parents[1]/'cardorrigin.lua').read_text()
 controller=main[main.index('local function createPullWebhook()'):main.index('local pullWebhook=createPullWebhook()')]
 mock=r'''
+-- Baseline controller tests use synchronous remotes. Yielding/cancellation is tested separately.
+local function awaitRemote(remote,current,...)
+ if not current() then return false,'cancelled' end
+ local result=table.pack(pcall(remote.InvokeServer,remote,...))
+ if not current() then return false,'cancelled' end
+ return table.unpack(result,1,result.n)
+end
+local function acquireQueue(queue,current) if current() then return queue.acquire() end end
+
 local now=100
 local os={clock=function() return now end}
 local state={alive=true}
 local player={Name='TestPlayer'}
+local game={PlaceId=123}
 local task={spawn=function() end,wait=function() end}
 local inventory={}
 local inventoryCalls=0
@@ -40,8 +50,9 @@ end
 local readfile=function(path) assert(path=='AnimeOriginV9/webhook.json');return stored end
 local HttpService={JSONEncode=function(_,value) if value.url~=nil then savedJSON=table.clone(value);return 'settings' end;encoded=value;return 'body' end,JSONDecode=function(_,body) if body=='settings' then return savedJSON end;if body=='image' then return {data={{state='Completed',imageUrl='https://tr.rbxcdn.com/card.png'}}} end;return {retry_after=2} end}
 local requests={}
+local onThumbnail=nil
 local response={StatusCode=204}
-local request=function(options) if options.Method=='GET' then assert(options.Url:find('assetIds=12345',1,true));return {StatusCode=200,Body='image'} end;requests[#requests+1]=options;if response=='error' then error('private URL error') end;return response end
+local request=function(options) if options.Method=='GET' then if onThumbnail then onThumbnail() end;assert(options.Url:find('assetIds=12345',1,true));return {StatusCode=200,Body='image'} end;requests[#requests+1]=options;if response=='error' then error('private URL error') end;return response end
 '''
 checks=r'''
 local w=createPullWebhook()
@@ -81,9 +92,26 @@ local cleared=createPullWebhook();assert(not cleared.state.hasEndpoint,'cleared 
 diskFailure=true
 assert(cleared.setEndpoint('https://discord.com/api/webhooks/123/test') and not cleared.state.endpointSaved,'save failure keeps session URL but reports failure')
 restored.stop();cleared.stop()
+-- Mutating the endpoint during the thumbnail request must abort BEFORE POST.
+diskFailure=false
+local race=createPullWebhook();race.setEndpoint('https://discord.com/api/webhooks/123/old-token')
+inventory={['3']={counts={Normal=1}}};race.enable(true);race.tick()
+inventory={['3']={counts={Normal=2}}}
+onThumbnail=function() race.setEndpoint('https://discord.com/api/webhooks/456/new-token') end
+local before=#requests;now+=11;race.tick();onThumbnail=nil
+assert(#requests==before,'old payload cannot be sent to new destination after thumbnail yield')
+-- Reconnect notifications use saved endpoint even with rare-card notifications OFF.
+race.enable(false)
+assert(race.reconnect({attempt=2,reason='Account opened elsewhere',status='Reconnect attempt started'}))
+race.tick()
+assert(#requests==before+1 and requests[#requests].Url:find('/456/new-token',1,true))
+assert(encoded.embeds[1].title=='Anime Origin · Reconnect attempt' and race.state.sent==0)
+assert(race.state.status=='Reconnect notification delivered')
+race.stop()
 print('PASS: endpoint persistence, restore, clear, save failure; all-source inventory gains, baseline, polling, duplicate suppression, border conversions, strict base rarity, images, rate limits, cleanup')
 '''
 binary=os.environ.get('LUAU_BIN') or shutil.which('luau')
 if not binary:raise SystemExit('Set LUAU_BIN or add luau to PATH')
 with tempfile.TemporaryDirectory(prefix='pull-webhook-test-') as d:
  p=Path(d)/'pull.luau';p.write_text(mock+controller+checks);subprocess.run([binary,str(p)],check=True)
+

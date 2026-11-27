@@ -1,5 +1,5 @@
 --[[
- ANIME ORIGIN V10.7 | Add Multi-Siege (12-stage round-robin + server cooldown), Siege/Boss/Rift arbiter
+ ANIME ORIGIN V11.0 | Cancellation guards, bounded RPC waits, teleport bootstrap, reconnect notifications
   Colosseum: remote state machine; no game UI, NPC, world teleport or replay.
   Colosseum / Rift Gate / Multi-Boss / Raid / Siege / Settings / Config
  Game source: provided rbxl + prior working V8.2/V5 scripts.
@@ -19,22 +19,70 @@ if not player then return end
 local playerGui = player:WaitForChild('PlayerGui')
 local env = (getgenv and getgenv()) or _G
 local function loadUILibrary()
-    if type(env.AnimeOriginUILibrary)=='table' and env.AnimeOriginUILibrary.Version==1
+    if type(env.AnimeOriginUILibrary)=='table' and env.AnimeOriginUILibrary.Version==1 and env.AnimeOriginUILibrary.Build=='11.0'
         and type(env.AnimeOriginUILibrary.Create)=='function' then
         return env.AnimeOriginUILibrary
     end
     assert(type(loadstring)=='function','This executor must support loadstring')
     local ok,library=pcall(function()
         return loadstring(game:HttpGet(
-            'https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/main/anime_origin_ui.lua'
+            'https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/426b1f85a190748c867ac6f1d1e78e3adc315339/anime_origin_ui.lua'
         ))()
     end)
     assert(ok,'Cannot load Anime Origin UI from GitHub: '..tostring(library))
-    assert(type(library)=='table' and library.Version==1 and type(library.Create)=='function',
+    assert(type(library)=='table' and library.Version==1 and library.Build=='11.0' and type(library.Create)=='function',
         'Incompatible Anime Origin UI library')
+    env.AnimeOriginUILibrary=library
     return library
 end
 local UILibrary=loadUILibrary()
+
+-- Bounded waits do not cancel work already accepted by the Roblox server.
+-- Keep one outstanding request per remote across controller reloads; ignore stale results.
+local pendingRemotes=env.AnimeOriginPendingRemotes or setmetatable({}, {__mode='k'})
+env.AnimeOriginPendingRemotes=pendingRemotes
+local function awaitRemote(remote,current,...)
+    if not current() then return false,'Request cancelled' end
+    if pendingRemotes[remote] then return false,'Previous request still pending; waiting for server' end
+    local args=table.pack(...)
+    local flight={done=false}
+    pendingRemotes[remote]=flight
+    task.spawn(function()
+        flight.result=table.pack(pcall(function() return remote:InvokeServer(table.unpack(args,1,args.n)) end))
+        flight.done=true
+        if pendingRemotes[remote]==flight then pendingRemotes[remote]=nil end
+    end)
+    local deadline=os.clock()+20
+    while not flight.done do
+        if not current() then return false,'Request cancelled; server outcome unknown' end
+        if os.clock()>=deadline then return false,'Request timed out; server outcome unknown' end
+        task.wait(.05)
+    end
+    if not current() then return false,'Request cancelled; stale response ignored' end
+    return table.unpack(flight.result,1,flight.result.n)
+end
+local function acquireQueue(queue,current)
+    if not current() then return nil end
+    local done,release=false,nil
+    local abandoned=false
+    task.spawn(function()
+        local ok,value=pcall(queue.acquire)
+        if ok and type(value)=='function' then
+            local original=value
+            local released=false
+            value=function() if released then return end;released=true;original() end
+            if abandoned or not current() then pcall(value) else release=value end
+        end
+        done=true
+    end)
+    local deadline=os.clock()+20
+    while not done do
+        if not current() or os.clock()>=deadline then abandoned=true;return nil end
+        task.wait(.05)
+    end
+    if not current() then if release then pcall(release) end;return nil end
+    return release
+end
 
 -- Stop any older controllers: running two Colosseum or Rift loops causes collisions.
 for _,key in ipairs({
@@ -74,7 +122,7 @@ local cfg={
 }
 local rng=Random.new()
 local state={
-    alive=true, enabled=false, remoteColo=cfg.remoteColo,
+    alive=true, enabled=false, epoch=0, remoteColo=cfg.remoteColo,
     phase='', pending=nil, blocked=false, verified=0,
     stopFloor=nil,runCount=0,lastSeenWave=0,
     carryName=nil,carrySlot=nil,carryHp=nil,carryDmg=nil,
@@ -138,7 +186,7 @@ end
 -- RIFT GATE | exact live-event flow without its former independent UI.
 local function createRiftGateController()
     local cfg={minEntryGap=5*60,postClearGap=5*60,autoLeave=true}
-    local s={alive=true,on=false,connections={},phase='WAITING',status='AUTO OFF',
+    local s={alive=true,on=false,epoch=0,connections={},phase='WAITING',status='AUTO OFF',
         clears=0,runActive=false,isCleared=false,lastEntryEpoch=0,lastClearEpoch=0,
         rewardAt=0,clearedAt=0,fails={},nextAt=0,stage='idle',available=false}
     env.RiftGateAutoLogV2=s
@@ -318,11 +366,14 @@ end
             if not modulesReady() or not router.ready() then s.status='Waiting for battle engine';return end
             local builder=remote('BuildRiftGateBattle','RemoteFunction')
             if not builder then s.on=false;leave('BuildRiftGateBattle missing');return end
-            local unlock=queue.acquire()
+            local token=s.epoch
+            local function current() return s.alive and s.on and state.alive and token==s.epoch end
+            local unlock=acquireQueue(queue,current)
+            if not unlock then s.on=false;leave('Rift queue cancelled or timed out');return end
             if not s.alive or not s.on or not state.alive then unlock();return end
-            local ok,data=pcall(function() return builder:InvokeServer(true) end)
+            local ok,data=awaitRemote(builder,current,true)
             if not s.alive or not state.alive then unlock();return end
-            if not s.on then unlock();leave('Rift disabled before battle');return end
+            if not current() then unlock();leave('Rift disabled before battle');return end
             if not ok or type(data)~='table' or data.ok~=true
                 or type(data.party)~='table' or type(data.enemies)~='table' then
                 unlock();s.on=false
@@ -336,6 +387,10 @@ end
                 if completed then return end
                 completed=true
                 if not s.alive or not state.alive then return end
+                if token~=s.epoch then
+                    s.stage='leave';s.phase='LEAVE';s.nextAt=os.clock()
+                    s.status='Cancelled Rift result ignored';return
+                end
                 if won==true then
                     s.stage='reward';s.phase='REWARD';s.deadline=os.clock()+20
                     s.status='Victory verified; waiting for reward'
@@ -394,7 +449,11 @@ end
     end)
     return {
         state=s,tick=tick,
-        enable=function(on) s.on=on==true end,
+        enable=function(on)
+            on=on==true
+            if s.on~=on then s.epoch=s.epoch+1 end
+            s.on=on
+        end,
         setWalk=function() end, -- compatibility with previously saved profiles
         setLeave=function(on) cfg.autoLeave=on==true end,
         cooldownText=function()
@@ -409,10 +468,67 @@ end
 end
 local rift=createRiftGateController()
 
--- Auto reconnect is best effort. Roblox may reject TeleportService calls once
--- the network session is completely dead; no executor can guarantee a rejoin.
-local reconnect={enabled=true,attempts=0,lastTry=-math.huge,limit=3,interval=9,
-    status='Monitoring',lastReason='',connections={}}
+-- Reconnect and teleport bootstrap. Queue payloads contain no webhook secret.
+local SCRIPT_URL=env.AnimeOriginScriptURL or 'https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/main/cardorrigin.lua'
+local autoExecute={enabled=nil,status='OFF',queued=false}
+local function teleportQueue()
+    if type(queue_on_teleport)=='function' then return queue_on_teleport end
+    if type(queueonteleport)=='function' then return queueonteleport end
+    if type(syn)=='table' and type(syn.queue_on_teleport)=='function' then return syn.queue_on_teleport end
+    if type(fluxus)=='table' and type(fluxus.queue_on_teleport)=='function' then return fluxus.queue_on_teleport end
+end
+local function armAutoExecute()
+    if not autoExecute.enabled then autoExecute.status='OFF';return false end
+    local queue=teleportQueue()
+    if not queue then autoExecute.status='Executor has no queue-on-teleport API';return false end
+    if type(readfile)~='function' or type(writefile)~='function' then
+        autoExecute.status='Auto Execute needs readfile/writefile to respect OFF';return false
+    end
+    if autoExecute.queued then return true end
+    local payload=string.format([=[
+if not game:IsLoaded() then game.Loaded:Wait() end
+local bootEnv=(getgenv and getgenv()) or _G
+if bootEnv.AnimeOriginV10_7 and bootEnv.AnimeOriginV10_7.alive then return end
+if bootEnv.AnimeOriginTeleportBoot then return end
+local ok,settings=pcall(function()
+    return game:GetService('HttpService'):JSONDecode(readfile('AnimeOriginV9/auto_execute.json'))
+end)
+if not ok or type(settings)~='table' or settings.enabled~=true then return end
+bootEnv.AnimeOriginTeleportBoot=true
+bootEnv.AnimeOriginScriptURL=%q
+bootEnv.AnimeOriginReconnectArrival=settings.reconnect==true
+local loaded,err=pcall(function() loadstring(game:HttpGet(%q))() end)
+bootEnv.AnimeOriginTeleportBoot=nil
+if not loaded then warn('[Anime Origin] Auto Execute failed: '..tostring(err)) end
+]=],SCRIPT_URL,SCRIPT_URL)
+    local ok=pcall(queue,payload)
+    autoExecute.queued=ok
+    autoExecute.status=ok and 'Armed for next teleport / server hop' or 'Executor rejected teleport queue'
+    return ok
+end
+local function persistAutoExecute(reconnecting)
+    if type(writefile)~='function' then return false end
+    local ok=pcall(function()
+        if type(makefolder)=='function' then pcall(makefolder,'AnimeOriginV9') end
+        writefile('AnimeOriginV9/auto_execute.json',game:GetService('HttpService'):JSONEncode({
+            enabled=autoExecute.enabled,reconnect=reconnecting==true,
+        }))
+    end)
+    return ok
+end
+local function setAutoExecute(on)
+    local enabled=on==true
+    if autoExecute.enabled==enabled then return end
+    autoExecute.enabled=enabled
+    if not persistAutoExecute(false) then
+        autoExecute.status='Cannot save Auto Execute preference'
+        return
+    end
+    if enabled then armAutoExecute() else autoExecute.status='OFF (queued bootstrap will skip)' end
+end
+local reconnect={enabled=true,attempts=0,lastTry=-math.huge,limit=8,interval=8,
+    nextAt=0,status='Monitoring',lastReason='',connections={},pending=false,failure=false,
+    notify=function() end,healthySince=nil}
 local function disconnectionText()
     local message=''
     pcall(function() message=GuiService:GetErrorMessage() or '' end)
@@ -433,27 +549,23 @@ local function disconnectionText()
                 end
             end
             if #lines>0 then message=message..' '..table.concat(lines,' ') end
+            if message=='' then message='Roblox error prompt' end
         end
     end
     return tostring(message):lower()
 end
 local function isLostConnection(message)
     if message=='' then return false end
-    -- Only connectivity failures. Don't auto-return after a kick / ban / moderation.
-    if message:find('banned',1,true) or message:find('kicked',1,true)
-       or message:find('moderation',1,true) then return false end
-    return message:find('disconnected',1,true)~=nil
-        or message:find('lost connection',1,true)~=nil
-        or message:find('connection error',1,true)~=nil
-        or message:find('connection lost',1,true)~=nil
-        or message:find('timed out',1,true)~=nil
-        or message:find('error code: 277',1,true)~=nil
-        or message:find('error code: 279',1,true)~=nil
-        or message:find('error code: 266',1,true)~=nil
+    -- Include kicks and duplicate-account sessions as explicitly requested.
+    for _,term in ipairs({'disconnected','lost connection','connection error','connection lost',
+        'timed out','kicked','another device','another experience','same account',
+        'error code','roblox error prompt','server has shut down','server shutdown',
+        'mất kết nối','ngắt kết nối','thiết bị khác'}) do
+        if message:find(term,1,true) then return true end
+    end
+    return false
 end
 local function tryNativeReconnect()
-    -- Some Roblox versions expose a native Reconnect/Rejoin action on the
-    -- disconnect prompt. Try that before making a TeleportService request.
     local core
     pcall(function() core=game:GetService('CoreGui') end)
     if not core then return false end
@@ -464,7 +576,8 @@ local function tryNativeReconnect()
     for _,item in ipairs(prompt:GetDescendants()) do
         if item:IsA('GuiButton') and item.Visible then
             local label=(item:IsA('TextButton') and item.Text or item.Name):lower()
-            if label:find('reconnect',1,true) or label:find('rejoin',1,true) then
+            if label:find('reconnect',1,true) or label:find('rejoin',1,true)
+                or label:find('kết nối lại',1,true) or label:find('tham gia lại',1,true) then
                 local ok=pcall(function() item:Activate() end)
                 if not ok and type(firesignal)=='function' then
                     ok=pcall(function() firesignal(item.MouseButton1Click) end)
@@ -476,37 +589,62 @@ local function tryNativeReconnect()
     return false
 end
 local function requestReconnect(force)
-    if not state.alive then return false end
-    if not force and not reconnect.enabled then return false end
-    if reconnect.attempts>=reconnect.limit then
-        reconnect.status='Limit reached'
-        return false
-    end
+    if not state.alive or (not force and not reconnect.enabled) then return false end
     local now=os.clock()
-    if now-reconnect.lastTry<reconnect.interval then return false end
+    if reconnect.attempts>=reconnect.limit then reconnect.status='Retry limit reached; use REJOIN to retry';return false end
+    if now<reconnect.nextAt then return false end
     reconnect.lastTry=now
     reconnect.attempts=reconnect.attempts+1
-    reconnect.status='Rejoin '..reconnect.attempts..'/'..reconnect.limit
-    if tryNativeReconnect() then
-        reconnect.status='Native reconnect requested'
-        return true
+    local backoff=math.min(60,reconnect.interval*2^math.min(reconnect.attempts-1,3))
+    reconnect.nextAt=now+backoff
+    reconnect.pending=true;reconnect.failure=false
+    reconnect.status='Rejoin '..reconnect.attempts..'/'..reconnect.limit..' requested'
+    persistAutoExecute(true)
+    armAutoExecute()
+    reconnect.notify({attempt=reconnect.attempts,reason=reconnect.lastReason~='' and reconnect.lastReason or 'Manual rejoin',
+        status='Reconnect attempt started (arrival not yet confirmed)',delay=backoff})
+    local ok=tryNativeReconnect()
+    if not ok then
+        ok=pcall(function() TeleportService:Teleport(game.PlaceId,player) end)
     end
-    -- This requests a new server of the same Roblox place, not a game remote.
-    local ok=pcall(function()
-        TeleportService:Teleport(game.PlaceId,player)
-    end)
-    if not ok then reconnect.status='Rejoin unavailable; retry later' end
+    -- TeleportService returning without an error is only admission, not a completed reconnect.
+    if not ok then reconnect.pending=false;reconnect.failure=true;reconnect.status='Rejoin request failed; retry in '..backoff..'s' end
+    if not ok then reconnect.notify({attempt=reconnect.attempts,reason=reconnect.lastReason,
+        status='Reconnect request failed',delay=backoff}) end
     return ok
 end
 local function watchReconnect()
+    local function connect(signal,callback)
+        if signal then reconnect.connections[#reconnect.connections+1]=signal:Connect(callback) end
+    end
+    connect(TeleportService.TeleportInitFailed,function(who,result,message)
+        if who~=player or not state.alive then return end
+        reconnect.pending=false;reconnect.failure=true
+        reconnect.status='Teleport failed: '..tostring(result)..'; retry scheduled'
+        reconnect.lastReason=tostring(message or result):sub(1,300)
+        reconnect.notify({attempt=reconnect.attempts,reason=reconnect.lastReason,status='Teleport initialization failed'})
+        -- A failed teleport may consume the executor queue. Re-arm on the next attempt.
+        autoExecute.queued=false
+    end)
+    connect(player.OnTeleport,function(teleportState)
+        if not state.alive then return end
+        if teleportState==Enum.TeleportState.Failed then
+            reconnect.pending=false;autoExecute.queued=false
+        elseif teleportState==Enum.TeleportState.Started then
+            armAutoExecute()
+        end
+    end)
     task.spawn(function()
         while state.alive do
             local msg=disconnectionText()
-            if reconnect.enabled and isLostConnection(msg) then
-                reconnect.lastReason=msg
+            local disconnected=isLostConnection(msg)
+            if reconnect.enabled and (disconnected or reconnect.failure or reconnect.pending) then
+                reconnect.healthySince=nil
+                if disconnected then reconnect.lastReason=msg:sub(1,300) end
                 requestReconnect(false)
-            elseif not isLostConnection(msg) then
-                reconnect.attempts=0
+            elseif not disconnected and not reconnect.pending and not reconnect.failure then
+                reconnect.healthySince=reconnect.healthySince or os.clock()
+                if os.clock()-reconnect.healthySince>=30 then reconnect.attempts=0;reconnect.nextAt=0 end
                 if reconnect.enabled then reconnect.status='Monitoring' end
             end
             state.reconnectStatus=reconnect.enabled and reconnect.status or 'OFF'
@@ -520,8 +658,9 @@ local function stopReconnect()
 end
 watchReconnect()
 state.stop=function()
-    state.alive=false;state.enabled=false;state.pending=nil
+    state.alive=false;state.enabled=false;state.epoch=state.epoch+1;state.pending=nil
     stopReconnect()
+    autoExecute.enabled=false;persistAutoExecute(false)
     rift.stop()
 end
 
@@ -687,7 +826,7 @@ local function pollCooldown(b)
     local progress=getRemote('GetBossBorderProgress','RemoteFunction')
     if progress then
         if not b.cdProgressAt or now>=b.cdProgressAt then
-            local ok,level=pcall(function() return progress:InvokeServer(b.serverId or b.id) end)
+            local ok,level=awaitRemote(progress,function() return mainState.alive and not state.stopped end,b.serverId or b.id)
             if ok and type(level)=='number' then
                 b.cdUnlocked=math.clamp(math.floor(level),1,#borders)
             else
@@ -699,9 +838,7 @@ local function pollCooldown(b)
         effectiveIndex=math.min(selectedIndex,b.cdUnlocked or 1)
     end
     local actualKey=borderKeys[effectiveIndex]
-    local ok,seconds=pcall(function()
-        return cdRemote:InvokeServer(b.serverId or b.id,actualKey)
-    end)
+    local ok,seconds=awaitRemote(cdRemote,function() return mainState.alive and not state.stopped end,b.serverId or b.id,actualKey)
     b.cdPolling=false
     if state.stopped or not mainState.alive then return end
     if epoch~=(b.cdEpoch or 0) or b.border~=selectedIndex then
@@ -776,7 +913,7 @@ local function nativeAutoRunning()
         -- Prefer server state, since the attribute is only client UI state.
         for _,b in ipairs(bosses) do
             if resolveServerId(b) then
-            local ok,value=pcall(function() return check:InvokeServer(b.serverId or b.id) end)
+            local ok,value=awaitRemote(check,function() return mainState.alive and not state.stopped end,b.serverId or b.id)
             if ok and type(value)=="string" and value~="" then
                 return b.serverId or b.id,value,"server"
             end
@@ -806,8 +943,9 @@ local function disableNativeAuto(id)
     return ok
 end
 
-local function runBoss(b)
-    if not state.running then return end
+local function runBoss(b,token)
+    local function current() return mainState.alive and not state.stopped and state.running and token==state.epoch end
+    if not current() then return end
     if not resolveServerId(b) then notify(b.name..' / waiting for native boss config (no guessed ID)');b.nextTry=os.clock()+10;return end
     local cooldown=getRemote("GetBossCooldown","RemoteFunction")
     local builder=getRemote(b.build,"RemoteFunction")
@@ -823,7 +961,7 @@ local function runBoss(b)
     debugLog('BOSS',b.name..' id='..b.id..' builder='..b.build..' selected='..chosen..' key='..borderKeys[b.border])
     local progress=getRemote("GetBossBorderProgress","RemoteFunction")
     if progress then
-        local ok,level=pcall(function() return progress:InvokeServer(b.serverId or b.id) end)
+        local ok,level=awaitRemote(progress,current,b.serverId or b.id)
         debugLog('PROGRESS',b.name..' ok='..tostring(ok)..' level='..readable(level))
         if ok and type(level)=="number" then
             effectiveIndex=math.min(b.border,math.clamp(math.floor(level),1,#borders))
@@ -840,7 +978,7 @@ local function runBoss(b)
         notify(b.name.." / "..chosen.." locked; using "..actual)
     end
 
-    local okCd,seconds=pcall(function() return cooldown:InvokeServer(b.serverId or b.id,actualKey) end)
+    local okCd,seconds=awaitRemote(cooldown,current,b.serverId or b.id,actualKey)
     debugLog('COOLDOWN',b.name..' ok='..tostring(okCd)..' '..readable(seconds))
     if not okCd then
         notify(b.name.." / cooldown request failed")
@@ -858,7 +996,7 @@ local function runBoss(b)
         notify(b.name.." / cooldown "..math.ceil(seconds).."s")
         return
     end
-    if not state.running then return end
+    if not current() then return end
 
     if not router.ready() then
         notify("Battle UI not ready; waiting")
@@ -873,82 +1011,89 @@ local function runBoss(b)
     end
     notify("Preparing "..b.name.." / "..actual)
     debugLog('QUEUE',b.name..' acquiring battle slot')
-    local unlock=queue.acquire()
-    debugLog('QUEUE',b.name..' acquired')
-    if not state.running then unlock(); return end
-    slot=router.pickSlot()
-    if not slot or not router.ready() then
-        unlock()
-        b.nextTry=os.clock()+8
-        return
-    end
-    debugLog('BUILD',b.name..' :InvokeServer('..actualKey..',slot2='..tostring(slot==2)..')')
-    local okBuild,data=pcall(function()
-        return builder:InvokeServer(actualKey,slot==2)
-    end)
-    debugLog('BUILD',b.name..' ok='..tostring(okBuild)..' response='..readable(data))
-    if not okBuild or type(data)~="table" or data.ok~=true then
-        unlock()
-        local reason=type(data)=="table" and tostring(data.reason or data.error or "not ready") or "remote rejected"
-        notify(b.name.." / "..reason)
-        if type(data)=='table' and type(data.cooldown)=='number' and data.cooldown>0 then
-            b.cdState='ok'
-            b.cdUntil=os.clock()+data.cooldown
+    local unlock=acquireQueue(queue,current)
+    if not unlock then return end
+    local launchOk,launchError=pcall(function()
+        debugLog('QUEUE',b.name..' acquired')
+        if not current() then unlock(); return end
+        slot=router.pickSlot()
+        if not slot or not router.ready() then
+            unlock()
+            b.nextTry=os.clock()+8
+            return
         end
-        b.nextTry=os.clock()+math.max(15, tonumber(type(data)=="table" and data.cooldown) or 30)
-        return
-    end
+        debugLog('BUILD',b.name..' :InvokeServer('..actualKey..',slot2='..tostring(slot==2)..')')
+        local okBuild,data=awaitRemote(builder,current,actualKey,slot==2)
+        if not current() then unlock();return end
+        debugLog('BUILD',b.name..' ok='..tostring(okBuild)..' response='..readable(data))
+        if not okBuild or type(data)~="table" or data.ok~=true then
+            unlock()
+            local reason=type(data)=="table" and tostring(data.reason or data.error or "not ready") or "remote rejected"
+            notify(b.name.." / "..reason)
+            if type(data)=='table' and type(data.cooldown)=='number' and data.cooldown>0 then
+                b.cdState='ok'
+                b.cdUntil=os.clock()+data.cooldown
+            end
+            b.nextTry=os.clock()+math.max(15, tonumber(type(data)=="table" and data.cooldown) or 30)
+            return
+        end
 
-    local complete=Instance.new("BindableEvent")
-    local finished=false
-    local finalWin=nil
-    local function finish(won)
-        if finished then return end
-        finished=true
-        finalWin=won
-        debugLog('RESULT',b.name..' / '..actual..' won='..tostring(won))
-        if won==true then
-            state.wins=state.wins+1
-            -- Same order as BossPanel: report only AFTER genuine battle victory.
-            local okReward,errReward=pcall(function() reward:FireServer(b.serverId or b.id,actualKey) end)
-            debugLog('REWARD',b.name..' id='..b.id..' borderKey='..actualKey..' fireOK='..tostring(okReward)..' '..tostring(errReward or ''))
-            b.cdNextPoll=os.clock()+2 -- refresh verified server timer after reward
-            b.cdProgressAt=0   -- a victory may unlock the next border
-        elseif won==false then
-            state.losses=state.losses+1
+        local complete=Instance.new("BindableEvent")
+        local finished=false
+        local finalWin=nil
+        local function finish(won)
+            if finished then return end
+            finished=true
+            if not current() then complete:Fire();return end
+            finalWin=won
+            debugLog('RESULT',b.name..' / '..actual..' won='..tostring(won))
+            if won==true then
+                state.wins=state.wins+1
+                -- Same order as BossPanel: report only AFTER genuine battle victory.
+                local okReward,errReward=pcall(function() reward:FireServer(b.serverId or b.id,actualKey) end)
+                debugLog('REWARD',b.name..' id='..b.id..' borderKey='..actualKey..' fireOK='..tostring(okReward)..' '..tostring(errReward or ''))
+                b.cdNextPoll=os.clock()+2 -- refresh verified server timer after reward
+                b.cdProgressAt=0   -- a victory may unlock the next border
+            elseif won==false then
+                state.losses=state.losses+1
+            end
+            complete:Fire()
         end
-        complete:Fire()
-    end
-    debugLog('BATTLE',b.name..' starting playDummy slot='..tostring(slot))
-    local okPlay,started,reason=pcall(function()
-        return router.playDummy({
-            party=data.party,enemies=data.enemies,title=b.name,
-            startHidden=true,onDone=finish,
-        },slot)
-    end)
-    unlock()
-    debugLog('BATTLE',b.name..' launchOK='..tostring(okPlay)..' started='..tostring(started)..' reason='..tostring(reason))
-    if not okPlay or not started then
+        debugLog('BATTLE',b.name..' starting playDummy slot='..tostring(slot))
+        local okPlay,started,reason=pcall(function()
+            return router.playDummy({
+                party=data.party,enemies=data.enemies,title=b.name,
+                startHidden=true,onDone=finish,
+            },slot)
+        end)
+        unlock()
+        debugLog('BATTLE',b.name..' launchOK='..tostring(okPlay)..' started='..tostring(started)..' reason='..tostring(reason))
+        if not okPlay or not started then
+            finished=true
+            complete:Destroy()
+            notify(b.name.." / battle launch failed: "..tostring(reason or started))
+            b.nextTry=os.clock()+20
+            return
+        end
+        notify("FIGHTING  "..b.name.." / "..actual)
+        task.delay(240,function()
+            if not finished then
+                debugLog('TIMEOUT',b.name..' no onDone for 240s')
+                finish(nil)
+            end
+        end)
+        while not finished and current() do task.wait(.1) end
         finished=true
         complete:Destroy()
-        notify(b.name.." / battle launch failed: "..tostring(reason or started))
-        b.nextTry=os.clock()+20
-        return
-    end
-    notify("FIGHTING  "..b.name.." / "..actual)
-    task.delay(240,function()
-        if not finished then
-            debugLog('TIMEOUT',b.name..' no onDone for 240s')
-            finish(nil)
+        if not current() then return end
+        -- Recheck the actual server cooldown instead of assuming a fixed 150s.
+        b.nextTry=os.clock()+(finalWin==true and 4 or 30)
+        if state.running then
+            notify(b.name..(finalWin==true and " / WIN" or finalWin==false and " / LOSS" or " / interrupted"))
         end
     end)
-    if not finished then complete.Event:Wait() end
-    complete:Destroy()
-    -- Recheck the actual server cooldown instead of assuming a fixed 150s.
-    b.nextTry=os.clock()+(finalWin==true and 4 or 30)
-    if state.running then
-        notify(b.name..(finalWin==true and " / WIN" or finalWin==false and " / LOSS" or " / interrupted"))
-    end
+    pcall(unlock)
+    if not launchOk then error(launchError,0) end
 end
 
 
@@ -1034,7 +1179,7 @@ end
                                 local honorSiege=mainState.siegeRequested==true and combat.last=='boss'
                                     and os.clock()-(combat.since or 0)<8
                                 if not honorRaid and not honorSiege and tryCombat('boss') then
-                                    local ok,err=pcall(runBoss,b)
+                                    local ok,err=pcall(runBoss,b,token)
                                     freeCombat('boss')
                                     if not ok then
                                         debugLog('ERROR',b.name..' '..tostring(err))
@@ -1596,7 +1741,7 @@ local function createSiegeController(mainState)
     local function serverGet(name,...)
         local o=rf(name)
         if not o then return false,'missing '..name end
-        return pcall(function(...) return o:InvokeServer(...) end,...)
+        return awaitRemote(o,function() return st.alive and mainState.alive end,...)
     end
     local function initModules()
         if st.modules.router and st.modules.queue and st.modules.cards then return true end
@@ -1800,7 +1945,8 @@ local function createSiegeController(mainState)
         return result,nil
     end
     local function tryStage(stage,epoch)
-        if not st.on or epoch~=st.epoch then return end
+        local function current() return st.alive and mainState.alive and st.on and epoch==st.epoch end
+        if not current() then return end
         st.activeStage=stage.index
         local title='Stage '..stage.index..' / '..stage.name
         local m=st.modules
@@ -1821,72 +1967,76 @@ local function createSiegeController(mainState)
         end
         say('Starting '..title)
         trace('START',title..' slot='..slot)
-        local release=queue.acquire()
-        local success,result=pcall(function()
-            return build:InvokeServer(stage.index,nil,slot==2)
-        end)
-        if not success or type(result)~='table' or result.ok~=true then
-            pcall(release)
-            local errorText=type(result)=='table' and (result.error or result.reason) or result
-            if type(result)=='table' and result.error=='cooldown' then
-                st.cooldownUntil[stage.index]=os.clock()+math.max(1,tonumber(result.remaining) or 165)
-            end
-            st.retryUntil[stage.index]=os.clock()+15
-            say(title..' / denied: '..tostring(errorText):sub(1,65))
-            trace('DENIED',title..' '..tostring(errorText))
-            st.activeStage=nil
-            return
-        end
-        local enemies={}
-        for i=1,4 do
-            local enemy,err=makeEnemy(stage,i,result.enemyIds)
-            if not enemy then
+        local release=acquireQueue(queue,current)
+        if not release then st.activeStage=nil;return end
+        local launchOk,launchError=pcall(function()
+            slot=router.pickSlot()
+            if not slot or not router.ready() then pcall(release);st.activeStage=nil;return end
+            local success,result=awaitRemote(build,current,stage.index,nil,slot==2)
+            if not current() then pcall(release);st.activeStage=nil;return end
+            if not success or type(result)~='table' or result.ok~=true then
                 pcall(release)
-                st.retryUntil[stage.index]=os.clock()+35
-                say(title..' / '..tostring(err))
-                trace('ENEMY',tostring(err))
+                local errorText=type(result)=='table' and (result.error or result.reason) or result
+                if type(result)=='table' and result.error=='cooldown' then
+                    st.cooldownUntil[stage.index]=os.clock()+math.max(1,tonumber(result.remaining) or 165)
+                end
+                st.retryUntil[stage.index]=os.clock()+15
+                say(title..' / denied: '..tostring(errorText):sub(1,65))
+                trace('DENIED',title..' '..tostring(errorText))
                 st.activeStage=nil
                 return
             end
-            enemies[i]=enemy
-        end
-        local party=(type(result.party)=='table' and #result.party>0) and result.party or nil
-        if not party then
-            local fallback,errorText=fetchParty()
-            if not fallback or #fallback==0 then
-                pcall(release)
-                st.retryUntil[stage.index]=os.clock()+35
-                say(title..' / '..tostring(errorText or 'empty Siege deck'))
-                st.activeStage=nil
-                return
+            local enemies={}
+            for i=1,4 do
+                local enemy,err=makeEnemy(stage,i,result.enemyIds)
+                if not enemy then
+                    pcall(release)
+                    st.retryUntil[stage.index]=os.clock()+35
+                    say(title..' / '..tostring(err))
+                    trace('ENEMY',tostring(err))
+                    st.activeStage=nil
+                    return
+                end
+                enemies[i]=enemy
             end
-            party=fallback
-            if type(result.relics)=='table' then
-                local db=ReplicatedStorage:FindFirstChild('GameDatabase')
-                local mod=db and db:FindFirstChild('RelicCombat')
-                if mod then
-                    local relOk,rel=pcall(require,mod)
-                    if relOk and type(rel)=='table' and type(rel.applyPack)=='function' then
-                        for _,unit in ipairs(party) do
-                            local pack=result.relics[tostring(unit.CardID)..'|'..tostring(unit.Border or 'Normal')]
-                            pcall(rel.applyPack,unit,pack)
+            local party=(type(result.party)=='table' and #result.party>0) and result.party or nil
+            if not party then
+                local fallback,errorText=fetchParty()
+                if not fallback or #fallback==0 then
+                    pcall(release)
+                    st.retryUntil[stage.index]=os.clock()+35
+                    say(title..' / '..tostring(errorText or 'empty Siege deck'))
+                    st.activeStage=nil
+                    return
+                end
+                party=fallback
+                if type(result.relics)=='table' then
+                    local db=ReplicatedStorage:FindFirstChild('GameDatabase')
+                    local mod=db and db:FindFirstChild('RelicCombat')
+                    if mod then
+                        local relOk,rel=pcall(require,mod)
+                        if relOk and type(rel)=='table' and type(rel.applyPack)=='function' then
+                            for _,unit in ipairs(party) do
+                                local pack=result.relics[tostring(unit.CardID)..'|'..tostring(unit.Border or 'Normal')]
+                                pcall(rel.applyPack,unit,pack)
+                            end
                         end
                     end
                 end
             end
-        end
-        local finishEvent=Instance.new('BindableEvent')
-        local completed=false
-        local victory=nil
-        local function done(won)
-            if completed then return end
-            completed=true
-            victory=won
-            finishEvent:Fire()
-        end
-        local okPlay,started,reason=pcall(function()
-            return router.playDummy({party=party,enemies=enemies,
-                title='SIEGE — '..string.upper(stage.name),startHidden=true,onDone=done},slot)
+            if not current() then pcall(release);st.activeStage=nil;return end
+            local finishEvent=Instance.new('BindableEvent')
+            local completed=false
+            local victory=nil
+            local function done(won)
+                if completed then return end
+                completed=true
+                victory=won
+                finishEvent:Fire()
+            end
+            local okPlay,started,reason=pcall(function()
+                return router.playDummy({party=party,enemies=enemies,
+                    title='SIEGE — '..string.upper(stage.name),startHidden=true,onDone=done},slot)
         end)
         pcall(release)
         if not okPlay or not started then
@@ -1902,13 +2052,16 @@ local function createSiegeController(mainState)
         task.delay(200,function()
             if not completed then done(nil) end
         end)
-        if not completed then finishEvent.Event:Wait() end
+        while not completed and current() do task.wait(.1) end
+        completed=true
         finishEvent:Destroy()
+        if not current() then st.activeStage=nil;return end
         if victory==true then
             -- A local battle victory does NOT imply the server granted reward.
-            local rewardOk,reward=pcall(function() return claim:InvokeServer(stage.index) end)
+            local rewardOk,reward=awaitRemote(claim,current,stage.index)
+            if not current() then st.activeStage=nil;return end
             local confirmed=rewardOk and type(reward)=='table'
-                and reward.error==nil
+                and reward.ok~=false and reward.error==nil
             if rewardOk and type(reward)=='table' then
                 local cd=tonumber(reward.cooldown or (reward.error=='cooldown' and reward.remaining))
                 if cd and cd>0 then st.cooldownUntil[stage.index]=os.clock()+cd end
@@ -1941,6 +2094,9 @@ local function createSiegeController(mainState)
         end
         st.activeStage=nil
         st.lastFightAt=os.clock()
+        end)
+        pcall(release)
+        if not launchOk then error(launchError,0) end
     end
     local function enable(on)
         on=on==true
@@ -2087,12 +2243,12 @@ local function createPullWebhook()
         if not asset or asset=='0' then return nil end
         return {assetId=asset}
     end
-    local function enqueue(payload,isTest)
+    local function enqueue(payload,isTest,kind)
         if not s.alive then return false end
         if not endpoint then s.status='Enter a Discord webhook URL first';return false end
         if #queue>=10 then s.failed=s.failed+1;s.status='Webhook queue full';return false end
-        queue[#queue+1]={payload=payload,isTest=isTest,generation=generation,attempts=0}
-        s.status=isTest and 'Webhook test queued' or 'Rare pull queued'
+        queue[#queue+1]={payload=payload,isTest=isTest,generation=generation,attempts=0,kind=kind}
+        s.status=kind=='reconnect' and 'Reconnect notification queued' or isTest and 'Webhook test queued' or 'Rare pull queued'
         return true
     end
     local function onRoll(data)
@@ -2129,7 +2285,7 @@ local function createPullWebhook()
         if not remote or not remote:IsA('RemoteFunction') then s.status='Waiting for GetInventory';return end
         inventoryBusy=true
         local token=generation
-        local ok,raw=pcall(function() return remote:InvokeServer() end)
+        local ok,raw=awaitRemote(remote,function() return s.alive and s.on and state.alive and token==generation end)
         inventoryBusy=false
         if not s.alive or not s.on or token~=generation then return end
         if not ok or type(raw)~='table' then s.status='Inventory unavailable; will retry';return end
@@ -2171,11 +2327,12 @@ local function createPullWebhook()
     end
     local function tick()
         if not s.alive or not state.alive then return end
-        bind()
+        if #queue==0 then bind() end
         local entry=queue[1]
         if not entry or os.clock()<nextAt then return end
         if entry.generation~=generation then table.remove(queue,1);return end
         if not s.on and not entry.isTest then table.remove(queue,1);return end
+        local destination=endpoint
         local sender=type(request)=='function' and request or type(http_request)=='function' and http_request
             or (type(syn)=='table' and type(syn.request)=='function' and syn.request)
         local ok,response=pcall(function()
@@ -2195,8 +2352,10 @@ local function createPullWebhook()
                 end)
                 if resolved and result then embed.image={url=result} end
             end
+            if not s.alive or not state.alive or entry.generation~=generation
+                or (not s.on and not entry.isTest) then return nil end
             local body=HttpService:JSONEncode(entry.payload)
-            local options={Url=endpoint,Method='POST',Headers={['Content-Type']='application/json'},Body=body}
+            local options={Url=destination,Method='POST',Headers={['Content-Type']='application/json'},Body=body}
             if sender then return sender(options) end
             -- Native Roblox clients may deny HTTP; report that without changing game UI.
             return HttpService:RequestAsync(options)
@@ -2216,22 +2375,29 @@ local function createPullWebhook()
         table.remove(queue,1);nextAt=os.clock()+2
         if code and code>=200 and code<300 then
             if not entry.isTest then s.sent=s.sent+1 end
-            s.status=entry.isTest and 'Webhook test delivered' or 'Rare pull notification delivered'
+            s.status=entry.kind=='reconnect' and 'Reconnect notification delivered' or entry.isTest and 'Webhook test delivered' or 'Rare pull notification delivered'
         else
             s.failed=s.failed+1
             -- Request errors may contain the URL/token: never expose raw errors.
             s.status=code and ('Webhook HTTP '..code) or 'Webhook request failed; delivery unknown'
         end
     end
+    local workerBusy=false
+    local function guardedTick()
+        if workerBusy then return end
+        workerBusy=true
+        local ok=pcall(tick)
+        workerBusy=false
+        if not ok then s.status='Webhook worker error (details hidden)' end
+    end
     task.spawn(function()
         while s.alive and state.alive do
-            local ok=pcall(tick)
-            if not ok then s.status='Webhook worker error (details hidden)' end
+            guardedTick()
             task.wait(#queue>0 and .5 or 1)
         end
     end)
     local api={
-        state=s,tick=tick,
+        state=s,tick=guardedTick,
         setEndpoint=function(value)
             if not s.alive then return false end
             value=tostring(value or ''):gsub('^%s+',''):gsub('%s+$','')
@@ -2266,6 +2432,22 @@ local function createPullWebhook()
                 queue={};generation=generation+1;s.status='OFF'
             else snapshot=nil;inventoryAt=0;s.status='Preparing inventory baseline' end
         end,
+        reconnect=function(event)
+            if not endpoint then return false end
+            local queued=enqueue({allowed_mentions={parse={}},embeds={{
+                title=event.arrived and 'Anime Origin · Reconnected' or 'Anime Origin · Reconnect attempt',
+                color=event.arrived and 6747586 or 11303935,
+                fields={
+                    {name='Player',value=tostring(player.Name),inline=true},
+                    {name='Attempt',value=tostring(event.attempt or '--'),inline=true},
+                    {name='Status',value=tostring(event.status or '--'):sub(1,500)},
+                    {name='Reason',value=tostring(event.reason or '--'):sub(1,500)},
+                    {name='Place',value=tostring(game.PlaceId),inline=true},
+                },footer={text='Reconnect events · saved Settings webhook'},
+            }}},true,'reconnect')
+            if queued then task.spawn(guardedTick) end
+            return queued
+        end,
         test=function()
             return enqueue({content='Anime Origin: webhook test. Rare-pull alerts use base rarity strictly greater than 1 billion.',
                 allowed_mentions={parse={}}},true)
@@ -2286,6 +2468,11 @@ local function createPullWebhook()
     return api
 end
 local pullWebhook=createPullWebhook()
+reconnect.notify=pullWebhook.reconnect
+if env.AnimeOriginReconnectArrival then
+    env.AnimeOriginReconnectArrival=nil
+    pullWebhook.reconnect({arrived=true,status='Script resumed in destination server',reason='Auto Execute after reconnect'})
+end
 local stopBeforePullWebhook=state.stop
 state.stop=function()
     pullWebhook.stop()
@@ -2305,7 +2492,7 @@ local flags={
     AO_AutoColosseum=false, AO_AutoRift=false, AO_AutoBoss=false, AO_AutoMiniBoss=false, AO_AutoRaid=false, AO_AutoSiege=false,
     AO_Colo_Hell=true, AO_Colo_Endless=true, AO_Colo_StopFloor='30-40',
     AO_Rift_Walk=true, AO_Rift_Leave=true,
-    AO_PullWebhook=false, AO_Reconnect=true, AO_UI_Theme='Midnight', AO_UI_Transparency=15,
+    AO_PullWebhook=false, AO_Reconnect=true, AO_AutoExecute=false, AO_UI_Theme='Midnight', AO_UI_Transparency=15,
     AO_UI_WindowW=805, AO_UI_WindowH=565, AO_UI_WindowX=-1, AO_UI_WindowY=-1,
 }
 for _,b in ipairs(boss.bosses) do
@@ -2493,6 +2680,7 @@ local function applyFlags()
     end
     rift.setWalk(flags.AO_Rift_Walk)
     rift.setLeave(flags.AO_Rift_Leave)
+    setAutoExecute(flags.AO_AutoExecute==true)
     reconnect.enabled=flags.AO_Reconnect==true
     if not reconnect.enabled then reconnect.status='OFF' end
     for _,b in ipairs(boss.bosses) do
@@ -2528,7 +2716,9 @@ local function applyFlags()
         state.transportStatus='Connecting to ColosseumRemote'
     end
     if wantColo and not state.enabled then state.remoteNeedsSync=true end
-    state.enabled=wantColo and not state.blocked
+    local nextEnabled=wantColo and not state.blocked
+    if state.enabled~=nextEnabled then state.epoch=state.epoch+1 end
+    state.enabled=nextEnabled
     if not state.enabled then
         state.pending=nil
         handoff.requested=false
@@ -2570,7 +2760,7 @@ local function setFlag(key,value)
     applyFlags()
     repaintControls()
     if key=='AO_AutoColosseum' or key=='AO_AutoRift' or key=='AO_AutoMiniBoss'
-        or key=='AO_AutoBoss' or key=='AO_AutoRaid' or key=='AO_AutoSiege' then
+        or key=='AO_AutoBoss' or key=='AO_AutoRaid' or key=='AO_AutoSiege' or key=='AO_AutoExecute' then
         -- Do not wait for the 0.9s debouncer for AUTO modes. Persist both
         -- the actual flags AND profile chosen for next execution now.
         revision=revision+1
@@ -2625,6 +2815,7 @@ local ui=UILibrary.Create({
     raid=raid,
     siege=siege,
     reconnect=reconnect,
+    autoExecute=autoExecute,
     handoff=handoff,
     setFlag=setFlag,
     applyFlags=applyFlags,
@@ -2795,18 +2986,19 @@ local function createRemoteColo()
             return nil
         end
         engine.busy=true
-        local ok,result=pcall(function()
-            if action=='replayDone' then return remote:InvokeServer(action) end
-            return remote:InvokeServer(action,payload)
-        end)
+        local token=state.epoch
+        local function current() return state.alive and state.enabled and token==state.epoch end
+        local ok,result
+        if action=='replayDone' then ok,result=awaitRemote(remote,current,action)
+        else ok,result=awaitRemote(remote,current,action,payload) end
         engine.busy=false
         engine.nextAt=os.clock()+cfg.poll
         -- A yielding response must not restart a stopped controller.
-        if not state.alive then return nil end
+        if not current() then engine.replayPending=false;engine.resync=true;return nil end
         if not ok or type(result)~='table' then
             -- Mutation may have reached the server: resync rather than replay it.
             coloPause('Remote '..action..' response uncertain: '..tostring(result)..'; toggle AUTO to resync')
-            engine.resync=true
+            engine.replayPending=false;engine.resync=true
             return nil
         end
         if result.ok~=true then
@@ -3187,3 +3379,4 @@ task.spawn(function()
         task.wait(0.8)
     end
 end)
+

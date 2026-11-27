@@ -4,6 +4,15 @@ main=(Path(__file__).resolve().parents[1]/'cardorrigin.lua').read_text()
 controller=main[main.index('local function createBossController(mainState)'):main.index('local boss=createBossController(state)')]
 resolver=controller[controller.index('    local function resolveServerId(b)'):controller.index('    -- Sung Jinwoo/queen')]
 mock=r'''
+-- Baseline controller tests use synchronous remotes. Yielding/cancellation is tested separately.
+local function awaitRemote(remote,current,...)
+ if not current() then return false,'cancelled' end
+ local result=table.pack(pcall(remote.InvokeServer,remote,...))
+ if not current() then return false,'cancelled' end
+ return table.unpack(result,1,result.n)
+end
+local function acquireQueue(queue,current) if current() then return queue.acquire() end end
+
 local now=100
 local os={clock=function() return now end,date=function() return '' end}
 local task={spawn=function() end,wait=function() end}
@@ -51,3 +60,4 @@ binary=os.environ.get('LUAU_BIN') or shutil.which('luau')
 if not binary:raise SystemExit('Set LUAU_BIN or add luau to PATH')
 with tempfile.TemporaryDirectory(prefix='mini-boss-test-') as d:
  p=Path(d)/'mini.luau';p.write_text(mock+controller+checks+resolver_mock+resolver+resolver_checks);subprocess.run([binary,str(p)],check=True)
+

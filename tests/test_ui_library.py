@@ -129,6 +129,11 @@ local function find(predicate)
 end
 local function button(text) return find(function(o) return o:IsA('TextButton') and o.Text==text end) end
 local main=find(function(o) return o.Name=='Window' end)
+local noHeroes=true
+for _,obj in ipairs(objects) do if obj.Name=='PageHero' then noHeroes=false end end
+assert(noHeroes,'minimal layout has no per-mode hero/title banner')
+assert(find(function(o) return o.Text=='Auto Execute after teleport' end))
+assert(find(function(o) return o.Text=='Last reconnect reason' end))
 assert(math.abs(main.BackgroundTransparency-.15)<.001,'default transparency')
 local before=writes;ui.Repaint();assert(writes==before,'unchanged repaint must not write GUI properties')
 flags.AO_UI_Transparency=50;ui.Repaint();assert(main.BackgroundTransparency==.5,'background transparency')
@@ -143,7 +148,7 @@ assert(flags.AO_UI_Transparency==0,'released slider stops changing')
 profile.autoProfile='NewProfile';profile.configStatus='Fresh status';now+=1;ui.Refresh()
 assert(find(function(o) return o.Text=='NewProfile' end),'live profile state')
 assert(calls.boss==0 and calls.raid==0 and calls.siege==0,'hidden tabs skip cooldown scans')
-button('04   Raid').MouseButton1Click:Fire();now+=1;ui.Refresh()
+button('Raid').MouseButton1Click:Fire();now+=1;ui.Refresh()
 assert(calls.raid==1 and calls.boss==0 and calls.siege==0,'only active tab scans cooldowns')
 ui.Root.Enabled=false;now+=1;local before=writes;ui.Refresh();assert(before==writes,'hidden window does no GUI writes')
 ui.Root.Enabled=true
@@ -317,9 +322,9 @@ loader=main[main.index('local function loadUILibrary()'):main.index('local UILib
 loader_mock=r'''
 local env={}
 local requests=0
-local source='return {Version=1,Create=function() end}'
+local source="return {Version=1,Build='11.0',Create=function() end}"
 local game={HttpGet=function(_,url)
-    assert(url=='https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/main/anime_origin_ui.lua')
+    assert(url=='https://raw.githubusercontent.com/aquapy1075-blip/animecardclashscript/426b1f85a190748c867ac6f1d1e78e3adc315339/anime_origin_ui.lua')
     requests+=1
     if source==false then error('network unavailable') end
     return source
@@ -327,10 +332,11 @@ end}
 '''
 loader_checks=r'''
 assert(loadUILibrary().Version==1 and requests==1,'download and execute GitHub library')
-env.AnimeOriginUILibrary={Version=1,Create=function() end}
+env.AnimeOriginUILibrary={Version=1,Build='11.0',Create=function() end}
 assert(loadUILibrary()==env.AnimeOriginUILibrary and requests==1,'injected library bypass')
 env.AnimeOriginUILibrary=nil
 source='not valid Lua!';assert(not pcall(loadUILibrary),'reject invalid source')
+source='return {Version=1,Create=function() end}';assert(not pcall(loadUILibrary),'reject outdated build');
 source='return {Version=2}';assert(not pcall(loadUILibrary),'reject incompatible API')
 source=false;local ok,err=pcall(loadUILibrary)
 assert(not ok and tostring(err):find('Cannot load Anime Origin UI from GitHub',1,true),'clear network error')
@@ -346,3 +352,4 @@ with tempfile.TemporaryDirectory(prefix='anime-ui-test-') as directory:
 
     script.write_text(loader_mock+loader+loader_checks)
     subprocess.run([binary,str(script)],check=True)
+
